@@ -1,0 +1,30 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"name": "imagecore",
+			"path": "../../anaconda3/envs/dissertation-dev/lib/python3.9/site-packages/imagecore",
+		}
+	],
+	"settings": {
+		"hide-files.files": [
+			"**/__pycache__",
+			".pytest_cache"
+		]
+	},
+	"launch": {
+		"version": "0.2.0",
+		"configurations": [
+			{
+				"name": "Command line test: run.py",
+				"type": "python",
+				"request": "launch",
+				"program": "scripts/run.py",
+				"console": "integratedTerminal",
+				"justMyCode": true
+			}
+		]
+	}
+}

@@ -1,0 +1,39 @@
+# dataset: ixi
+
+extension: .nii.gz
+patient_data: /home/nicoleg/workspaces/dissertation/data/ixi/IXI.xls
+scan_data: /home/nicoleg/workspaces/dissertation/data/ixi/t2_orig/
+
+instantiate:
+  _target_: monai.data.ImageDataset
+
+transforms:
+  load:
+    - _target_: monai.transforms.LoadImage
+      image_only: true
+
+    - _target_: monai.transforms.EnsureChannelFirst
+      channel_dim: no_channel
+
+    - _target_: monai.transforms.EnsureType
+      track_meta: true
+
+    # - _target_: monai.transforms.Transpose
+    #   indices: [0, 3, 1, 2]
+
+    - _target_: monai.transforms.Resize
+      spatial_size: [96, 96, 96]
+
+  # baseline transforms from: Swin-UNETR
+  train:
+    # - _target_: monai.transforms.RandFlip
+    #   spatial_axis: [0, 1, 2]
+    #   prob: 0.5
+
+    # - _target_: monai.transforms.RandRotate90
+    #   prob: 0.5
+    #   max_k: 3
+
+    - _target_: monai.transforms.RandAdjustContrast
+      prob: 1.0
+      gamma: [1.0, 2]
