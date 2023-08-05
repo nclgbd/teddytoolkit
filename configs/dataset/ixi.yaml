@@ -2,10 +2,18 @@
 
 extension: .nii.gz
 patient_data: /home/nicoleg/workspaces/dissertation/data/ixi/IXI.xls
-scan_data: /home/nicoleg/workspaces/dissertation/data/ixi/t2_orig/
+scan_data: /home/nicoleg/workspaces/dissertation/data/ixi/t2_stripped/
 
 instantiate:
   _target_: monai.data.ImageDataset
+
+# preprocessing:
+#   positive_class: ""
+#   sample_value: -1
+#   sampling_method: ""
+#   exclude: ["_mask.nii.gz"]
+#   pipeline: []
+#   subset: []
 
 transforms:
   load:
