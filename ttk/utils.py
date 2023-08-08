@@ -10,6 +10,7 @@ import yaml
 from argparse import Namespace
 from colorlog import ColoredFormatter
 from logging import Logger
+from omegaconf import DictConfig
 from rich.console import Console
 from rich.logging import RichHandler
 
@@ -100,7 +101,6 @@ def get_logger(name: str = None, level: int = logging.INFO):
     return logger
 
 
-# TODO: Needs testing
 def load_patient_dataset(
     ws: Workspace,
     patient_dataset_name: str,
@@ -175,9 +175,27 @@ def load_scan_dataset(
         _logger.info(f"Mounting scan dataset to '{scan_mount.mount_point}'.")
         return scan_mount
     else:
+        target_path = os.path.join(data_dir, "scans", f"{scan_dataset_name}:{scan_dataset_version}")
         _logger.info(f"Downloading scan dataset to '{data_dir}'.")
-        scan_dataset.download(target_path=data_dir, overwrite=False)
+        scan_dataset.download(target_path=target_path, overwrite=True)
         return scan_dataset
+
+
+def hydra_instantiate(cfg: DictConfig, **kwargs):
+    """
+    Instantiates an objecy from a configuration.
+
+    ## Args:
+    * `cfg` (`DictConfig`): The Hydra config.
+    * `**kwargs`: Keyword arguments for the object.
+    ## Returns:
+    * `Any`: The instantiated class.
+    """
+    target_class_name = cfg["_target_"].split(".")[-1]
+    _logger.debug(
+        "Instantiating object '{}' from configuration".format(target_class_name)
+    )
+    return hydra.utils.instantiate(cfg, **kwargs)
 
 
 def yaml_to_namespace(yaml_file: os.PathLike):

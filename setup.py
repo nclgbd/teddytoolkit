@@ -12,6 +12,7 @@ setup(
     packages=find_packages(exclude=["tests", ".github"]),
     requires=[
         "azureml-core",
+        "azureml-dataset-runtime",
         "hydra-colorlog",
         "hydra-core",
         "ignite",

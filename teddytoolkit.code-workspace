@@ -15,11 +15,13 @@
 	"settings": {
 		"python.testing.pytestEnabled": true,
 		"python.testing.pytestPath": ".",
-		"python.testing.pytestArgs": [],
+		"python.testing.pytestArgs": ["-s"],
 		"hide-files.files": [
 			"__pycache__",
 			".pytest_cache",
-			".vscode/__pycache__"
+			".vscode/__pycache__",
+			"ttk/__pycache__",
+			"tests/__pycache__"
 		]
 	}
 }

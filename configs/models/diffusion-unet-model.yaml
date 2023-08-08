@@ -21,9 +21,7 @@ optimizer:
   lr: 0.0001
 
 scheduler:
-  instantiate:
-    _target_: generative.networks.schedulers.DDPMScheduler
+  _target_: generative.networks.schedulers.DDPMScheduler
 
 inference:
-  instantiate:
-    _target_: generative.inferers.DiffusionInferer
+  _target_: generative.inferers.DiffusionInferer

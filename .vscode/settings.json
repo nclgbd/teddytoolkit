@@ -8,7 +8,10 @@
         "**/Thumbs.db": true,
         ".vscode/settings.json": true,
         "__pycache__": true,
-        ".pytest_cache": true
+        ".pytest_cache": true,
+        ".vscode/__pycache__": true,
+        "ttk/__pycache__": true,
+        "tests/__pycache__": true
     },
     "hide-files.files": [
         ".vscode/settings.json"
