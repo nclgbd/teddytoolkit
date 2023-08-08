@@ -11,10 +11,12 @@ setup(
     long_description_content_type="text/markdown",
     packages=find_packages(exclude=["tests", ".github"]),
     requires=[
+        "azureml-core",
         "hydra-colorlog",
         "hydra-core",
         "ignite",
         "itk",
+        "matplotlib",
         "monai",
         "nibabel",
         "numpy",

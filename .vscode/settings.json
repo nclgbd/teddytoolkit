@@ -7,7 +7,8 @@
         "**/.DS_Store": true,
         "**/Thumbs.db": true,
         ".vscode/settings.json": true,
-        "**/__pycache__": true
+        "__pycache__": true,
+        ".pytest_cache": true
     },
     "hide-files.files": [
         ".vscode/settings.json"

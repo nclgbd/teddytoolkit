@@ -10,6 +10,11 @@ from omegaconf import OmegaConf, DictConfig, ListConfig
 from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 
+# ttk
+from ttk.utils import get_logger
+
+logger = get_logger(__name__)
+
 
 @dataclass
 class IgniteConfiguration:
@@ -108,14 +113,55 @@ class JobConfiguration:
 
     # whether to run in debug mode
     debug: bool = False
+    # the gpu device to use
+    device: str = "cpu"
     # whether to run in dry run mode
     dry_run: bool = True
     # the random seed for reproducibility
     random_state: int = random.randint(0, 8192)
+    # whether to track meta data or not
+    set_track_meta: bool = False
     # whether to use Azure ML
     use_azureml: bool = False
     # whether to use MLFlow
     use_mlflow: bool = False
+    #
+    use_pretrained_weights: bool = True
+    #
+    use_transforms: bool = False
+
+
+@dataclass
+class ModelConfiguration:
+    """
+    The model configuration class.
+
+    ## Attributes:
+    * `model` (`DictConfig`): The model configuration.
+    * `criterion` (`DictConfig`): The criterion configuration.
+    * `optimizer` (`DictConfig`): The optimizer configuration.
+    """
+
+    models: DictConfig = field(default_factory=lambda: DictConfig({"_target_": ""}))
+    criterion: DictConfig = field(default_factory=lambda: DictConfig({"_target_": ""}))
+    optimizer: DictConfig = field(default_factory=lambda: DictConfig({"_target_": ""}))
+
+
+@dataclass
+class DiffusionModelConfiguration(ModelConfiguration):
+    """
+    The diffusion model configuration class. Extends `ModelConfiguration`.
+
+    ## Attributes:
+    * `model` (`DictConfig`): The model configuration.
+    * `criterion` (`DictConfig`): The criterion configuration.
+    * `optimizer` (`DictConfig`): The optimizer configuration.
+    * `scheduler` (`DictConfig`): The scheduler configuration.
+    * `inference` (`DictConfig`): The inference configuration.
+    """
+
+    scheduler: DictConfig = field(default_factory=lambda: DictConfig({"_target_": ""}))
+    inference: DictConfig = field(default_factory=lambda: DictConfig({"_target_": ""}))
 
 
 @dataclass
@@ -134,9 +180,10 @@ class Configuration:
     target: str = ""
     date: str = ""
     timestamp: str = ""
-    dataset: DatasetConfiguration = field(default_factory=DatasetConfiguration())
+    datasets: DatasetConfiguration = field(default_factory=DatasetConfiguration())
     ignite: IgniteConfiguration = field(default_factory=IgniteConfiguration())
     job: JobConfiguration = field(default_factory=JobConfiguration())
+    models: ModelConfiguration = field(default_factory=ModelConfiguration())
     # artifacts_path: str = ""
     # results_path: str = ""
 
@@ -152,15 +199,15 @@ def set_hydra_configuration(
     Creates and returns a hydra configuration.
 
     ## Args:
-        * `config_name` (`str`, optional): The name of the config (usually the file name without the .yaml extension).
-        * `init_method` (`function`, optional): The initialization method to use. Should be either [`initialize`, `initialize_config_module`, `initialize_config_dir`].
-        Defaults to `initialize_config_dir`.
-        * `kwargs` (`dict`, optional): Keyword arguments for the `init_method` function.
+    * `config_name` (`str`, optional): The name of the config (usually the file name without the .yaml extension).
+    * `init_method` (`function`, optional): The initialization method to use. Should be either [`initialize`, `initialize_config_module`, `initialize_config_dir`].
+    Defaults to `initialize_config_dir`.
+    * `kwargs` (`dict`, optional): Keyword arguments for the `init_method` function.
 
     ## Returns:
-        * `DictConfig`: The hydra configuration.
+    * `DictConfig`: The hydra configuration.
     """
-    # _logger.info(f"Creating configuration: {config_name}")
+    logger.info(f"Creating configuration: '{config_name}'")
     GlobalHydra.instance().clear()
     init_method(version_base="1.1", **init_method_kwargs)
     cfg: DictConfig = compose(config_name=config_name, **compose_kwargs)

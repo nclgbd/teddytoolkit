@@ -1,5 +1,6 @@
-from omegaconf import OmegaConf
-
+"""
+Tests for the `ttk.config` module.
+"""
 from ttk.config import Configuration
 
 
@@ -7,9 +8,16 @@ class TestConfig:
     def test_config(self, test_cfg: Configuration):
         assert test_cfg is not None
         # dataset checks
-        assert test_cfg.dataset is not None
+        assert test_cfg.datasets is not None
         # job checks
         assert test_cfg.job is not None
         assert test_cfg.job.debug == True
         assert test_cfg.job.dry_run == True
+        # datasets
+        assert test_cfg.datasets is not None
+        assert any(test_cfg.datasets.dataloader._target_)
+        assert any(test_cfg.datasets.instantiate._target_)
         # model checks
+        assert any(test_cfg.models.model._target_)
+        assert any(test_cfg.models.criterion._target_)
+        assert any(test_cfg.models.optimizer._target_)

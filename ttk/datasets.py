@@ -13,6 +13,9 @@ import monai.transforms as monai_transforms
 
 # teddytoolkit
 from ttk.config import Configuration, DatasetConfiguration
+from ttk.utils import get_logger
+
+logger = get_logger(__name__)
 
 
 def create_transforms(
@@ -31,7 +34,7 @@ def create_transforms(
     * `torchvision.transforms.Compose`: The transforms for the model in the form of a `torchvision.transforms.Compose`
     object.
     """
-    # console.log("Creating transforms...")
+    logger.info("Creating transforms...")
     transform_dicts: dict = (
         transform_dicts
         if dataset_cfg is None
@@ -53,9 +56,9 @@ def create_transforms(
     ):
         _ret_transforms = []
         for transform in transforms:
-            # console.log(
-            #     "Adding transform: '{}'".format(transform["_target_"].split(".")[-1])
-            # )
+            logger.debug(
+                "Adding transform: '{}'".format(transform["_target_"].split(".")[-1])
+            )
             transform_fn = instantiate(transform)
             _ret_transforms.append(transform_fn)
 
@@ -68,7 +71,7 @@ def create_transforms(
     return monai_transforms.Compose(ret_transforms)
 
 
-def filter_scan_paths(
+def _filter_scan_paths(
     filter_function: callable, scan_paths: list, exclude: list = ["_mask.nii.gz"]
 ):
     """
@@ -87,9 +90,9 @@ def filter_scan_paths(
     return filtered_scan_paths
 
 
-def instantiate_monai_dataset(dataset_cfg: DatasetConfiguration, **kwargs):
+def instantiate_image_dataset(dataset_cfg: DatasetConfiguration, **kwargs):
     """
-    Instantiates a MONAI dataset given a hydra configuration. This uses the `hydra.utils.instantiate` function to instantiate the dataset from the MONAI python package.
+    Instantiates a MONAI image dataset given a hydra configuration. This uses the `hydra.utils.instantiate` function to instantiate the dataset from the MONAI python package.
 
     ## Args
     * `dataset_cfg` (`DatasetConfiguration`): The dataset configuration.
@@ -98,7 +101,7 @@ def instantiate_monai_dataset(dataset_cfg: DatasetConfiguration, **kwargs):
     """
     scan_data = dataset_cfg.scan_data
     scan_paths = [os.path.join(scan_data, f) for f in os.listdir(scan_data)]
-    filtered_scan_paths = filter_scan_paths(
+    filtered_scan_paths = _filter_scan_paths(
         filter_function=lambda x: x.split("/")[-1], scan_paths=scan_paths
     )
     dataset: monai.data.Dataset = instantiate(

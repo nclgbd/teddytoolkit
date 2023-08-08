@@ -4,27 +4,22 @@
 			"path": "."
 		},
 		{
+			"name": "GenerativeModels",
+			"path": "../GenerativeModels",
+		},
+		{
 			"name": "imagecore",
 			"path": "../../anaconda3/envs/dissertation-dev/lib/python3.9/site-packages/imagecore",
-		}
+		},
 	],
 	"settings": {
+		"python.testing.pytestEnabled": true,
+		"python.testing.pytestPath": ".",
+		"python.testing.pytestArgs": [],
 		"hide-files.files": [
-			"**/__pycache__",
-			".pytest_cache"
-		]
-	},
-	"launch": {
-		"version": "0.2.0",
-		"configurations": [
-			{
-				"name": "Command line test: run.py",
-				"type": "python",
-				"request": "launch",
-				"program": "scripts/run.py",
-				"console": "integratedTerminal",
-				"justMyCode": true
-			}
+			"__pycache__",
+			".pytest_cache",
+			".vscode/__pycache__"
 		]
 	}
 }
