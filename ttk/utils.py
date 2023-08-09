@@ -7,6 +7,7 @@ import logging
 import os
 import pandas as pd
 import yaml
+import hydra
 from argparse import Namespace
 from colorlog import ColoredFormatter
 from logging import Logger
@@ -147,7 +148,6 @@ def load_patient_dataset(
     return patient_df
 
 
-# TODO: Needs testing
 def load_scan_dataset(
     ws: Workspace,
     scan_dataset_name: str,
@@ -175,7 +175,9 @@ def load_scan_dataset(
         _logger.info(f"Mounting scan dataset to '{scan_mount.mount_point}'.")
         return scan_mount
     else:
-        target_path = os.path.join(data_dir, "scans", f"{scan_dataset_name}:{scan_dataset_version}")
+        target_path = os.path.join(
+            data_dir, "scans", f"{scan_dataset_name}:{scan_dataset_version}"
+        )
         _logger.info(f"Downloading scan dataset to '{data_dir}'.")
         scan_dataset.download(target_path=target_path, overwrite=True)
         return scan_dataset
@@ -183,7 +185,7 @@ def load_scan_dataset(
 
 def hydra_instantiate(cfg: DictConfig, **kwargs):
     """
-    Instantiates an objecy from a configuration.
+    Instantiates an object from a configuration.
 
     ## Args:
     * `cfg` (`DictConfig`): The Hydra config.

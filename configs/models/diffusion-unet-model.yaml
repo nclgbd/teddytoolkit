@@ -18,10 +18,14 @@ criterion:
 
 optimizer:
   _target_: torch.optim.Adam
-  lr: 0.0001
+  lr: 5e-5
 
 scheduler:
   _target_: generative.networks.schedulers.DDPMScheduler
+  beta_start: 0.0005
+  beta_end: 0.0195
+  num_train_timesteps: 1000
+  schedule: "scaled_linear_beta"
 
 inference:
   _target_: generative.inferers.DiffusionInferer

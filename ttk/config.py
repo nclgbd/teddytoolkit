@@ -142,7 +142,7 @@ class ModelConfiguration:
     * `optimizer` (`DictConfig`): The optimizer configuration.
     """
 
-    models: DictConfig = field(default_factory=lambda: DictConfig({"_target_": ""}))
+    model: DictConfig = field(default_factory=lambda: DictConfig({"_target_": ""}))
     criterion: DictConfig = field(default_factory=lambda: DictConfig({"_target_": ""}))
     optimizer: DictConfig = field(default_factory=lambda: DictConfig({"_target_": ""}))
 
