@@ -18,6 +18,7 @@ setup(
         "ignite",
         "itk",
         "matplotlib",
+        "mlflow",
         "monai",
         "nibabel",
         "numpy",
@@ -30,5 +31,6 @@ setup(
         "torch",
         "torchvision",
         "tqdm",
+        "xlrd",
     ],
 )

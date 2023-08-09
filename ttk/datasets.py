@@ -4,16 +4,20 @@ import pandas as pd
 from copy import deepcopy
 from hydra.utils import instantiate
 
+# sklearn
+from sklearn.model_selection import train_test_split
+
 # torch
 import torch
+from torch.utils.data import Subset
 
 # monai
 import monai
 import monai.transforms as monai_transforms
 
 # teddytoolkit
-from ttk.config import Configuration, DatasetConfiguration
-from ttk.utils import get_logger
+from ttk.config import Configuration, JobConfiguration, DatasetConfiguration
+from ttk.utils import get_logger, hydra_instantiate
 
 logger = get_logger(__name__)
 
@@ -89,8 +93,8 @@ def _filter_scan_paths(
     ]
     return filtered_scan_paths
 
-
-def instantiate_image_dataset(dataset_cfg: DatasetConfiguration, **kwargs):
+# TODO: Match IDs BEFORE pairing scan paths and labels to fix `ValueError: Found input variables with inconsistent numbers of samples: [578, 619]`
+def instantiate_image_dataset(cfg: Configuration, **kwargs):
     """
     Instantiates a MONAI image dataset given a hydra configuration. This uses the `hydra.utils.instantiate` function to instantiate the dataset from the MONAI python package.
 
@@ -99,14 +103,80 @@ def instantiate_image_dataset(dataset_cfg: DatasetConfiguration, **kwargs):
     ## Returns
     * `monai.data.Dataset`: The instantiated dataset.
     """
+    dataset_cfg: DatasetConfiguration = cfg.datasets
+    # index = cfg.index
+    target = cfg.target
     scan_data = dataset_cfg.scan_data
+    patient_data = dataset_cfg.patient_data
+
+    # get the scan paths
     scan_paths = [os.path.join(scan_data, f) for f in os.listdir(scan_data)]
+    # get the patient dataframe
+    patient_df = pd.read_excel(patient_data)
+    labels = patient_df[target].values
     filtered_scan_paths = _filter_scan_paths(
         filter_function=lambda x: x.split("/")[-1], scan_paths=scan_paths
     )
     dataset: monai.data.Dataset = instantiate(
         config=dataset_cfg.instantiate,
         image_files=filtered_scan_paths,
+        labels=labels,
         **kwargs,
     )
     return dataset
+
+
+def instantiate_train_val_test_datasets(
+    cfg: Configuration, dataset: monai.data.ImageDataset, **kwargs
+):
+    """
+    Create train/test splits for the data.
+    """
+    logger.info("Creating train/val/test splits...")
+    job_cfg: JobConfiguration = cfg.job
+    dataset_cfg: DatasetConfiguration = cfg.datasets
+    train_val_test_split_dict = {}
+    use_transforms = job_cfg.use_transforms
+    train_transforms = create_transforms(
+        dataset_cfg=dataset_cfg, use_transforms=use_transforms
+    )
+    eval_transforms = create_transforms(dataset_cfg=dataset_cfg, use_transforms=False)
+
+    # create the train/test splits
+    X = dataset.image_files
+    y = dataset.labels
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, stratify=y, **job_cfg.train_test_split
+    )
+    ## create test dataset
+    test_dataset: monai.data.Dataset = instantiate(
+        config=dataset_cfg.instantiate,
+        image_files=X_test,
+        labels=y_test,
+        transform=eval_transforms,
+        **kwargs,
+    )
+    train_val_test_split_dict["test_dataset"] = test_dataset
+    ## create the train/val splits
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_train, y_train, stratify=y_train, **job_cfg.train_val_split
+    )
+    ## create train and val datasets
+    train_dataset: monai.data.Dataset = instantiate(
+        config=dataset_cfg.instantiate,
+        image_files=X_train,
+        labels=y_train,
+        transform=train_transforms,
+        **kwargs,
+    )
+    train_val_test_split_dict["train_dataset"] = train_dataset
+    val_dataset: monai.data.Dataset = instantiate(
+        config=dataset_cfg.instantiate,
+        image_files=X_val,
+        labels=y_val,
+        transform=eval_transforms,
+        **kwargs,
+    )
+    train_val_test_split_dict["val_dataset"] = val_dataset
+    logger.info("Train/val/test splits created.")
+    return train_val_test_split_dict
