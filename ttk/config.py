@@ -94,7 +94,11 @@ class DatasetConfiguration:
     extension: str = ".nii.gz"
     # the kind of dataset to instantiate
     instantiate: DictConfig = field(
-        default_factory=lambda: DictConfig({"_target_": ""})
+        default_factory=lambda: DictConfig({"_target_": "monai.data.ImageDataset"})
+    )
+    #
+    dataloader: DictConfig = field(
+        default_factory=lambda: DictConfig({"_target_": "torch.utils.data.DataLoader"})
     )
 
 
@@ -117,6 +121,8 @@ class JobConfiguration:
     device: str = "cpu"
     # whether to run in dry run mode
     dry_run: bool = True
+    # whether to create an additional validation split or just use a train/test split
+    perform_validation: bool = True
     # the random seed for reproducibility
     random_state: int = random.randint(0, 8192)
     # whether to track meta data or not
@@ -127,7 +133,7 @@ class JobConfiguration:
     use_mlflow: bool = False
     #
     use_pretrained_weights: bool = True
-    #
+    # whether to use transforms or not
     use_transforms: bool = False
 
 
@@ -184,8 +190,6 @@ class Configuration:
     ignite: IgniteConfiguration = field(default_factory=IgniteConfiguration())
     job: JobConfiguration = field(default_factory=JobConfiguration())
     models: ModelConfiguration = field(default_factory=ModelConfiguration())
-    # artifacts_path: str = ""
-    # results_path: str = ""
 
 
 def set_hydra_configuration(

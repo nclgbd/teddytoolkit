@@ -1,4 +1,4 @@
-# dataset: ixi
+# datasets: ixi
 
 defaults:
   - _self_
@@ -11,17 +11,10 @@ instantiate:
   _target_: monai.data.ImageDataset
 
 dataloader:
-  _target_: torch.utils.data.DataLoader
+  _target_: monai.data.ThreadDataLoader
   batch_size: 1
-  num_workers: 4
-
-# preprocessing:
-#   positive_class: ""
-#   sample_value: -1
-#   sampling_method: ""
-#   exclude: ["_mask.nii.gz"]
-#   pipeline: []
-#   subset: []
+  num_workers: 24
+  # use_thread_workers: true
 
 transforms:
   load:
@@ -35,7 +28,7 @@ transforms:
     #   indices: [0, 3, 1, 2]
 
     - _target_: monai.transforms.Resize
-      spatial_size: [96, 96, 96]
+      spatial_size: [32, 40, 32]
 
   # baseline transforms from: Swin-UNETR
   train:

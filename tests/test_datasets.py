@@ -1,9 +1,13 @@
 """Tests for the `ttk.datasets` module."""
+import math
+import os
 import numpy as np
+import pandas as pd
 from omegaconf import DictConfig
 
-from ttk import datasets
-from ttk.config import Configuration, DatasetConfiguration
+# ttk
+from ttk import DEFAULT_DATA_PATH, datasets
+from ttk.config import Configuration, DatasetConfiguration, JobConfiguration
 
 
 class TestDatasets:
@@ -18,11 +22,13 @@ class TestDatasets:
         dataset_cfg: DatasetConfiguration = test_cfg.datasets
         transform_cfg: DictConfig = dataset_cfg.transforms
         transform = datasets.create_transforms(dataset_cfg)
-        dataset = datasets.instantiate_image_dataset(cfg=test_cfg, transform=transform)
+        dataset = datasets.instantiate_image_dataset(
+            cfg=test_cfg, save_metadata=True, transform=transform
+        )
         # assert dataset was created
         assert dataset is not None
         assert any(dataset.labels)
-        assert len(dataset) == 578
+        assert len(dataset) == 538
         # attempt retrieval of sample
         scan, label = dataset[0]
         assert scan is not None
@@ -34,10 +40,24 @@ class TestDatasets:
     def test_instantiate_train_val_test_datasets(self, test_cfg: Configuration):
         """Tests the `ttk.datasets.instantiate_train_val_test_datasets` function."""
         dataset_cfg: DatasetConfiguration = test_cfg.datasets
-        transform_cfg: DictConfig = dataset_cfg.transforms
-        # transform = datasets.create_transforms(dataset_cfg)
-        dataset = datasets.instantiate_image_dataset(cfg=test_cfg)
+        job_cfg: JobConfiguration = test_cfg.job
+
+        transform = datasets.create_transforms(dataset_cfg)
+        dataset = datasets.instantiate_image_dataset(cfg=test_cfg, transform=transform)
         train_val_test_split_dict = datasets.instantiate_train_val_test_datasets(
-            cfg=test_cfg, dataset=dataset
+            cfg=test_cfg, save_metadata=True, dataset=dataset
         )
+
         assert train_val_test_split_dict is not None
+        if job_cfg.perform_validation:
+            assert len(set(train_val_test_split_dict.keys())) == 3
+        else:
+            assert len(set(train_val_test_split_dict.keys())) == 2
+
+        test_dataset = train_val_test_split_dict["test"]
+        assert test_dataset is not None
+        test_dataset_len = len(test_dataset)
+        test_proportion = job_cfg.train_test_split["test_size"] * len(dataset)
+        assert (test_dataset_len == math.ceil(test_proportion)) or (
+            test_dataset_len == math.floor(test_proportion)
+        )

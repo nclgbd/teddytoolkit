@@ -1,4 +1,4 @@
-# model: diffusion-unet-model
+# models: diffusion-unet-model
 
 defaults:
   - _self_

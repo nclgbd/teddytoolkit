@@ -15,15 +15,17 @@ index: IXI_ID
 target: "SEX_ID (1=m, 2=f)"
 
 job:
-  debug: true
-  device: 3
+  device: 0
   dry_run: true
+  epochs: 10
+  perform_validation: true
   random_state: 42
   set_track_meta: false
+  use_autocast: true
   use_azureml: false
   use_mlflow: false
   use_pretrained_weights: true
-  use_transforms: false
+  use_transforms: true
   train_test_split:
     test_size: 0.1
     random_state: ${job.random_state}

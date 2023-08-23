@@ -19,6 +19,9 @@ from rich.logging import RichHandler
 from azureml.core import Workspace
 from azureml.core.dataset import Dataset
 
+# ttk
+from ttk import DEFAULT_DATA_PATH
+
 __all__ = [
     "_console",
     "_logger",
@@ -29,9 +32,6 @@ __all__ = [
     "repl",
 ]
 
-DEFAULT_DATA_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), ".cache", "datasets"
-)
 LOG_TIME_FORMAT = "[%X]"
 COLOR_LOGGER_FORMAT: logging.Formatter = ColoredFormatter(
     fmt="%(name)s: %(message)s", datefmt=LOG_TIME_FORMAT

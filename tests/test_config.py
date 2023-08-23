@@ -11,7 +11,6 @@ class TestConfig:
         assert test_cfg.datasets is not None
         # job checks
         assert test_cfg.job is not None
-        assert test_cfg.job.debug == True
         assert test_cfg.job.dry_run == True
         # datasets
         assert test_cfg.datasets is not None

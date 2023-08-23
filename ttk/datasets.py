@@ -1,8 +1,11 @@
 # imports
+import numpy as np
 import os
 import pandas as pd
+import sys
 from copy import deepcopy
 from hydra.utils import instantiate
+from tqdm import tqdm
 
 # sklearn
 from sklearn.model_selection import train_test_split
@@ -14,8 +17,10 @@ from torch.utils.data import Subset
 # monai
 import monai
 import monai.transforms as monai_transforms
+from monai.data import ImageDataset, ThreadDataLoader
 
 # teddytoolkit
+from ttk import DEFAULT_DATA_PATH
 from ttk.config import Configuration, JobConfiguration, DatasetConfiguration
 from ttk.utils import get_logger, hydra_instantiate
 
@@ -93,36 +98,92 @@ def _filter_scan_paths(
     ]
     return filtered_scan_paths
 
-# TODO: Match IDs BEFORE pairing scan paths and labels to fix `ValueError: Found input variables with inconsistent numbers of samples: [578, 619]`
-def instantiate_image_dataset(cfg: Configuration, **kwargs):
+
+# TODO: pd.Series are saved in the dataframe for some reason, so we need to convert them to ints
+def build_metadata_dataframe(
+    cfg: Configuration, image_files: list, labels: list = None
+):
+    index_name = cfg.index
+    target_name = cfg.target
+    dataset_cfg: DatasetConfiguration = cfg.datasets
+    patient_data = dataset_cfg.patient_data
+
+    # create temporary dataset and dataloader to get the metadata
+    patient_df = pd.read_excel(patient_data).set_index(index_name)
+    tmp_dataset = ImageDataset(image_files=image_files, labels=labels, transform=None)
+    tmp_dataloader = iter(
+        ThreadDataLoader(
+            tmp_dataset,
+            batch_size=dataset_cfg.dataloader.batch_size,
+            num_workers=dataset_cfg.dataloader.num_workers,
+        )
+    )
+
+    _metadata = {}
+    missing_counter = 0
+    logger.info("Building metadata dataframe. This may take a while...")
+    for scan in tqdm(tmp_dataloader, total=len(image_files)):
+        meta = scan._meta
+        filename = meta["filename_or_obj"][0].split("/")[-1]
+        patient = int(filename.split(".")[0].split("-")[0][-3:])
+        try:
+            target = int(patient_df.loc[patient, target_name])
+            _metadata[patient] = filename, target
+        except Exception as e:
+            # missing patient in metadata
+            if isinstance(e, KeyError):
+                missing_counter += 1
+                logger.debug(
+                    f"Patient '{patient}' not found in metadata. Missing counter increased to: {missing_counter} patients."
+                )
+                continue
+            # target is not an integer
+            elif isinstance(e, TypeError):
+                logger.debug(
+                    f"{target}. is not an integer. Skipping patient '{patient}'..."
+                )
+                continue
+
+    metadata = (
+        pd.DataFrame.from_dict(
+            _metadata, orient="index", columns=["filename", target_name]
+        )
+        .rename_axis("IXI_ID")
+        .dropna()
+        .dropna(subset=[target_name])
+    )
+    return metadata
+
+
+def instantiate_image_dataset(cfg: Configuration, save_metadata=False, **kwargs):
     """
     Instantiates a MONAI image dataset given a hydra configuration. This uses the `hydra.utils.instantiate` function to instantiate the dataset from the MONAI python package.
 
     ## Args
-    * `dataset_cfg` (`DatasetConfiguration`): The dataset configuration.
+    * `cfg` (`Configuration`): The configuration.
     ## Returns
     * `monai.data.Dataset`: The instantiated dataset.
     """
+    target_name = cfg.target
     dataset_cfg: DatasetConfiguration = cfg.datasets
-    # index = cfg.index
-    target = cfg.target
     scan_data = dataset_cfg.scan_data
-    patient_data = dataset_cfg.patient_data
-
-    # get the scan paths
     scan_paths = [os.path.join(scan_data, f) for f in os.listdir(scan_data)]
-    # get the patient dataframe
-    patient_df = pd.read_excel(patient_data)
-    labels = patient_df[target].values
     filtered_scan_paths = _filter_scan_paths(
         filter_function=lambda x: x.split("/")[-1], scan_paths=scan_paths
     )
+    metadata = build_metadata_dataframe(cfg=cfg, image_files=filtered_scan_paths)
+    image_files = metadata["filename"].values
+    labels = metadata[target_name].values
     dataset: monai.data.Dataset = instantiate(
         config=dataset_cfg.instantiate,
-        image_files=filtered_scan_paths,
+        image_files=[os.path.join(scan_data, f) for f in image_files],
         labels=labels,
         **kwargs,
     )
+    if save_metadata:
+        metadata.to_csv(
+            os.path.join(DEFAULT_DATA_PATH, "patients", "image_dataset_metadata.csv")
+        )
     return dataset
 
 
@@ -143,7 +204,7 @@ def instantiate_train_val_test_datasets(
     eval_transforms = create_transforms(dataset_cfg=dataset_cfg, use_transforms=False)
 
     # create the train/test splits
-    X = dataset.image_files
+    X = np.array(dataset.image_files)
     y = dataset.labels
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, stratify=y, **job_cfg.train_test_split
@@ -156,11 +217,21 @@ def instantiate_train_val_test_datasets(
         transform=eval_transforms,
         **kwargs,
     )
-    train_val_test_split_dict["test_dataset"] = test_dataset
-    ## create the train/val splits
-    X_train, X_val, y_train, y_val = train_test_split(
-        X_train, y_train, stratify=y_train, **job_cfg.train_val_split
-    )
+    train_val_test_split_dict["test"] = test_dataset
+    if job_cfg.perform_validation:
+        ## create the train/val splits
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_train, y_train, stratify=y_train, **job_cfg.train_test_split
+        )
+        val_dataset: monai.data.Dataset = instantiate(
+            config=dataset_cfg.instantiate,
+            image_files=X_val,
+            labels=y_val,
+            transform=eval_transforms,
+            **kwargs,
+        )
+        train_val_test_split_dict["val"] = val_dataset
+
     ## create train and val datasets
     train_dataset: monai.data.Dataset = instantiate(
         config=dataset_cfg.instantiate,
@@ -169,14 +240,6 @@ def instantiate_train_val_test_datasets(
         transform=train_transforms,
         **kwargs,
     )
-    train_val_test_split_dict["train_dataset"] = train_dataset
-    val_dataset: monai.data.Dataset = instantiate(
-        config=dataset_cfg.instantiate,
-        image_files=X_val,
-        labels=y_val,
-        transform=eval_transforms,
-        **kwargs,
-    )
-    train_val_test_split_dict["val_dataset"] = val_dataset
+    train_val_test_split_dict["train"] = train_dataset
     logger.info("Train/val/test splits created.")
     return train_val_test_split_dict
