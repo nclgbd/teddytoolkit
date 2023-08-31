@@ -1,4 +1,5 @@
 # ignite: ignite
+
 log_interval: 1
 score_name: loss
 use_checkpoint: true

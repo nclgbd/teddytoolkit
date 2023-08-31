@@ -5,10 +5,12 @@ import pandas as pd
 import sys
 from copy import deepcopy
 from hydra.utils import instantiate
+from rich import inspect
 from tqdm import tqdm
 
 # sklearn
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
 
 # torch
 import torch
@@ -100,7 +102,7 @@ def _filter_scan_paths(
 
 
 # TODO: pd.Series are saved in the dataframe for some reason, so we need to convert them to ints
-def build_metadata_dataframe(
+def build_ixi_metadata_dataframe(
     cfg: Configuration, image_files: list, labels: list = None
 ):
     index_name = cfg.index
@@ -155,6 +157,29 @@ def build_metadata_dataframe(
     return metadata
 
 
+def build_chest_xray_metadata_dataframe(cfg: Configuration, split: str):
+    logger.info(f"Building chest x-ray metadata dataframe for split: '{split}'...")
+    IGNORE = ".DS_Store"
+    scan_data = cfg.datasets.scan_data
+    split_dir = os.path.join(scan_data, split)
+    split_metadata = []
+    classes = sorted(os.listdir(split_dir))
+    classes.remove(IGNORE)
+    label_encoding = 0
+
+    for label in classes:
+        class_dir = os.path.join(split_dir, label)
+        class_files = os.listdir(class_dir)
+        try:
+            class_files.remove(IGNORE)
+        except ValueError:
+            pass
+        for f in class_files:
+            split_metadata.append((os.path.join(class_dir, f), label_encoding))
+        label_encoding += 1
+    return pd.DataFrame(split_metadata, columns=["image_files", "labels"])
+
+
 def instantiate_image_dataset(cfg: Configuration, save_metadata=False, **kwargs):
     """
     Instantiates a MONAI image dataset given a hydra configuration. This uses the `hydra.utils.instantiate` function to instantiate the dataset from the MONAI python package.
@@ -164,27 +189,64 @@ def instantiate_image_dataset(cfg: Configuration, save_metadata=False, **kwargs)
     ## Returns
     * `monai.data.Dataset`: The instantiated dataset.
     """
-    target_name = cfg.target
     dataset_cfg: DatasetConfiguration = cfg.datasets
-    scan_data = dataset_cfg.scan_data
-    scan_paths = [os.path.join(scan_data, f) for f in os.listdir(scan_data)]
-    filtered_scan_paths = _filter_scan_paths(
-        filter_function=lambda x: x.split("/")[-1], scan_paths=scan_paths
-    )
-    metadata = build_metadata_dataframe(cfg=cfg, image_files=filtered_scan_paths)
-    image_files = metadata["filename"].values
-    labels = metadata[target_name].values
-    dataset: monai.data.Dataset = instantiate(
-        config=dataset_cfg.instantiate,
-        image_files=[os.path.join(scan_data, f) for f in image_files],
-        labels=labels,
-        **kwargs,
-    )
-    if save_metadata:
-        metadata.to_csv(
-            os.path.join(DEFAULT_DATA_PATH, "patients", "image_dataset_metadata.csv")
+    if dataset_cfg.extension == ".nii.gz":
+        target_name = cfg.target
+        scan_data = dataset_cfg.scan_data
+        scan_paths = [os.path.join(scan_data, f) for f in os.listdir(scan_data)]
+        filtered_scan_paths = _filter_scan_paths(
+            filter_function=lambda x: x.split("/")[-1], scan_paths=scan_paths
         )
-    return dataset
+        metadata = build_ixi_metadata_dataframe(
+            cfg=cfg, image_files=filtered_scan_paths
+        )
+        image_files = metadata["filename"].values
+        labels = metadata[target_name].values
+        dataset: monai.data.Dataset = instantiate(
+            config=dataset_cfg.instantiate,
+            image_files=[os.path.join(scan_data, f) for f in image_files],
+            labels=labels,
+            **kwargs,
+        )
+        if save_metadata:
+            metadata.to_csv(
+                os.path.join(
+                    DEFAULT_DATA_PATH, "patients", "ixi_image_dataset_metadata.csv"
+                )
+            )
+        return dataset
+
+    elif dataset_cfg.extension == ".jpeg":
+        train_metadata = build_chest_xray_metadata_dataframe(cfg=cfg, split="train")
+        test_metadata = build_chest_xray_metadata_dataframe(cfg=cfg, split="test")
+        train_dataset = monai.data.Dataset = instantiate(
+            config=dataset_cfg.instantiate,
+            image_files=train_metadata["image_files"].values,
+            labels=train_metadata["labels"].values,
+            **kwargs,
+        )
+        test_dataset = monai.data.Dataset = instantiate(
+            config=dataset_cfg.instantiate,
+            image_files=test_metadata["image_files"].values,
+            labels=test_metadata["labels"].values,
+            **kwargs,
+        )
+        if save_metadata:
+            train_metadata.to_csv(
+                os.path.join(
+                    DEFAULT_DATA_PATH, "patients", "chest_xray_train_metadata.csv"
+                )
+            )
+            test_metadata.to_csv(
+                os.path.join(
+                    DEFAULT_DATA_PATH, "patients", "chest_xray_test_metadata.csv"
+                )
+            )
+        return train_dataset, test_dataset
+    else:
+        raise ValueError(
+            f"Dataset extension '{dataset_cfg.extension}' not supported. Please use '.nii.gz' or '.jpeg'."
+        )
 
 
 def instantiate_train_val_test_datasets(
@@ -205,7 +267,10 @@ def instantiate_train_val_test_datasets(
 
     # create the train/test splits
     X = np.array(dataset.image_files)
-    y = dataset.labels
+    encoder = LabelEncoder()
+    y = encoder.fit_transform(dataset.labels)
+    logger.info(f"Label encoder information for target: '{cfg.target}'")
+    inspect(encoder)
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, stratify=y, **job_cfg.train_test_split
     )

@@ -1,7 +1,8 @@
 # imports
-import os
 import hydra
+import logging
 import matplotlib.pyplot as plt
+import os
 from rich import inspect
 
 # torch
@@ -31,6 +32,10 @@ from ignite.contrib.handlers import ProgressBar
 IGNITE_METRICS_MODULE = [ignite_metrics_module, c_ignite_metrics_module]
 
 # monai
+import monai
+from monai.handlers import StatsHandler
+
+# generative
 from generative.inferers import DiffusionInferer
 from generative.networks.schedulers import Scheduler
 
@@ -42,14 +47,43 @@ from ttk.config import (
     DiffusionModelConfiguration,
     IgniteConfiguration,
     JobConfiguration,
+    ModelConfiguration,
 )
 from ttk.utils import get_logger
 
 logger = get_logger(__name__)
 # DFS = "diffusion_train_step"
-_DTS_LOGGER = setup_logger(name="diffusion_train_step", level="DEBUG")
+# _DTS_LOGGER = setup_logger(name="diffusion_train_step", level=logging.DEBUG)
 # DVS = "diffusion_validation_step"
-_DVS_LOGGER = setup_logger(name="diffusion_validation_step", level="DEBUG")
+# _DVS_LOGGER = setup_logger(name="diffusion_validation_step", level=logging.DEBUG)
+
+
+def create_default_trainer_args(
+    cfg: Configuration,
+    **kwargs,
+):
+    """
+    Prepares the data for the ignite trainer.
+    """
+    logger.info("Creating default trainer arguments...")
+    trainer_kwargs = dict()
+    job_cfg: JobConfiguration = kwargs.get("job_cfg", cfg.job)
+    model_cfg: ModelConfiguration = kwargs.get("model_cfg", cfg.models)
+    device: torch.device = kwargs.get("device", torch.device(job_cfg.device))
+    trainer_kwargs["device"] = device
+
+    # Prepare model, optimizer, loss function, and criterion
+    model: nn.Module = models.instantiate_model(model_cfg, device=device)
+    model.train()
+    trainer_kwargs["model"] = model
+    criterion = models.instantiate_criterion(model_cfg, device=device)
+    trainer_kwargs["loss_fn"] = criterion
+    optimizer: torch.optim.Optimizer = models.instantiate_optimizer(
+        model_cfg, model=model
+    )
+    trainer_kwargs["optimizer"] = optimizer
+
+    return trainer_kwargs
 
 
 def create_diffusion_model_evaluator(
@@ -205,19 +239,13 @@ def create_diffusion_model_engines(
     val_loader: torch.utils.data.DataLoader = None,
     **kwargs,
 ):
-    logger.info("Creating diffusion model engines...")
-    engine_dict = dict()
     ignite_cfg: IgniteConfiguration = kwargs.get("ignite_cfg", cfg.ignite)
+    trainer_kwargs = create_default_trainer_args(cfg=cfg, **kwargs)
+    model, optimizer = trainer_kwargs["model"], trainer_kwargs["optimizer"]
+    engine_dict = dict()
     job_cfg: JobConfiguration = kwargs.get("job_cfg", cfg.job)
-    model_cfg: DiffusionModelConfiguration = kwargs.get("model_cfg", cfg.models)
+    model_cfg: ModelConfiguration = kwargs.get("model_cfg", cfg.models)
     device: torch.device = kwargs.get("device", torch.device(job_cfg.device))
-
-    # Prepare model, optimizer, loss function, scheduler
-    model: nn.Module = models.instantiate_model(model_cfg, device=device)
-    # criterion = models.instantiate_criterion(model_cfg, device=device)
-    optimizer: torch.optim.Optimizer = models.instantiate_optimizer(
-        model_cfg, model=model
-    )
     scheduler: Scheduler = models.instantiate_diffusion_scheduler(model_cfg)
     inferer: DiffusionInferer = models.instantiate_diffusion_inferer(
         model_cfg, scheduler=scheduler

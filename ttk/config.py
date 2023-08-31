@@ -108,33 +108,44 @@ class JobConfiguration:
     Job configuration class.
 
     ## Attributes:
-    * `debug` (`bool`): Whether to run in debug mode.
+    * `device` (`str`): The gpu device to use.
     * `dry_run` (`bool`): Whether to run in dry run mode.
+    * `epochs` (`int`): The number of epochs to train for.
+    * `perform_validation` (`bool`): Whether to create an additional validation split or just use a train/test split.
     * `random_state` (`int`): The random seed for reproducibility.
+    * `set_track_meta` (`bool`): Whether to track meta data or not.
+    * `use_autocast` (`bool`): Whether to use automatic mixed precision or not.
     * `use_azureml` (`bool`): Whether to use Azure ML.
     * `use_mlflow` (`bool`): Whether to use MLflow.
+    * `use_pretrained_weights` (`bool`): Whether to use pretrained weights or not.
+    * `use_transforms` (`bool`): Whether to use transforms or not.
+    * `train_test_split` (`DictConfig`): The keyword arguments for `sklearn.model_selection.train_test_split` function.
     """
 
-    # whether to run in debug mode
-    debug: bool = False
     # the gpu device to use
     device: str = "cpu"
     # whether to run in dry run mode
     dry_run: bool = True
+    # the number of epochs to train for
+    epochs: int = 10
     # whether to create an additional validation split or just use a train/test split
     perform_validation: bool = True
     # the random seed for reproducibility
     random_state: int = random.randint(0, 8192)
     # whether to track meta data or not
     set_track_meta: bool = False
-    # whether to use Azure ML
+    # whether to use automatic mixed precision or not
+    use_autocast: bool = True
+    # whether to use AzureML
     use_azureml: bool = False
-    # whether to use MLFlow
+    # whether to use MLflow
     use_mlflow: bool = False
-    #
+    # whether to use pretrained weights or not
     use_pretrained_weights: bool = True
     # whether to use transforms or not
     use_transforms: bool = False
+    # the keyword arguments for `sklearn.model_selection.train_test_split` function
+    train_test_split: DictConfig = field(default_factory=lambda: DictConfig({}))
 
 
 @dataclass

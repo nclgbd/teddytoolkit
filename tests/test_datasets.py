@@ -25,17 +25,31 @@ class TestDatasets:
         dataset = datasets.instantiate_image_dataset(
             cfg=test_cfg, save_metadata=True, transform=transform
         )
-        # assert dataset was created
-        assert dataset is not None
-        assert any(dataset.labels)
-        assert len(dataset) == 538
+        train_dataset, test_dataset = dataset[0], dataset[1]
+        # assert ixi dataset was created
+        assert train_dataset is not None
+        assert len(train_dataset) == 5232
+        assert len(test_dataset) == 624
+        assert any(train_dataset.labels)
         # attempt retrieval of sample
-        scan, label = dataset[0]
+        scan, label = train_dataset[0]
         assert scan is not None
-        assert type(label) == np.int64
+        assert type(label) == np.int64 or type(label) == int
         # check shape of sample
         scan_shape = scan.shape[1:]
         assert scan_shape == tuple(transform_cfg["load"][-1]["spatial_size"])
+
+        ## assert ixi dataset was created
+        # assert dataset is not None
+        # assert any(dataset.labels)
+        # assert len(dataset) == 538
+        # # attempt retrieval of sample
+        # scan, label = dataset[0]
+        # assert scan is not None
+        # assert type(label) == np.int64
+        # # check shape of sample
+        # scan_shape = scan.shape[1:]
+        # assert scan_shape == tuple(transform_cfg["load"][-1]["spatial_size"])
 
     def test_instantiate_train_val_test_datasets(self, test_cfg: Configuration):
         """Tests the `ttk.datasets.instantiate_train_val_test_datasets` function."""

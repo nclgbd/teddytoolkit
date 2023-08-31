@@ -2,17 +2,18 @@
 
 defaults:
   - _self_
-  - datasets: ixi
+  - datasets: chest-xray
   - ignite: ignite
-  - models: diffusion-unet-model
+  # - models: diffusion-unet-model
+  - models: densenet-model
   # overrides:
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog
 
 date: ${now:%Y-%m-%d}
 timestamp: ${now:%H-%M-%S}
-index: IXI_ID
-target: "SEX_ID (1=m, 2=f)"
+# index: IXI_ID
+# target: "SEX_ID (1=m, 2=f)"
 
 job:
   device: 0
@@ -25,11 +26,11 @@ job:
   use_azureml: false
   use_mlflow: false
   use_pretrained_weights: true
-  use_transforms: true
+  use_transforms: false
   train_test_split:
-    test_size: 0.1
     random_state: ${job.random_state}
     shuffle: true
+    test_size: 0.1
 
 hydra:
   job:
