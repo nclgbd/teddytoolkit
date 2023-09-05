@@ -27,6 +27,7 @@ def instantiate_model(
     * `model_cfg` (`ModelConfiguration`): The model configuration.
     * `device` (`torch.device`, optional): The device to instantiate the model on. Defaults to `torch.device("cpu")`.
     """
+    logger.info("Instantiating model...")
     model: nn.Module = hydra_instantiate(cfg=model_cfg.model, **kwargs)
     return model.to(device)
 
@@ -40,6 +41,7 @@ def instantiate_criterion(
     ## Args:
     * `model_cfg` (`ModelConfiguration`): The model configuration.
     """
+    logger.info("Instantiating criterion (loss function)...")
     criterion: nn.Module = hydra_instantiate(cfg=model_cfg.criterion, **kwargs)
     return criterion.to(device)
 
@@ -52,6 +54,7 @@ def instantiate_optimizer(model_cfg: ModelConfiguration, model: nn.Module, **kwa
     * `model_cfg` (`ModelConfiguration`): The model configuration.
     * `model` (`nn.Module`): The model to optimize.
     """
+    logger.info("Instantiating optimizer...")
     optimizer: torch.optim.Optimizer = hydra_instantiate(
         cfg=model_cfg.optimizer, params=model.parameters(), **kwargs
     )

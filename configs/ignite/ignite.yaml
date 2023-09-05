@@ -2,17 +2,15 @@
 
 log_interval: 1
 score_name: loss
-use_checkpoint: true
-use_early_stopping: true
+use_checkpoint: false
+use_early_stopping: false
 use_lr_scheduler: false
 use_multi_gpu: false
 
-# metrics:
-#   Accuracy:
-#   Loss:
-#   Predictions:
-#   FID:
-#     num_features: 512
+metrics:
+  Accuracy:
+  Loss:
+  Predictions:
 
 checkpoint:
   _target_: ignite.handlers.checkpoint.Checkpoint

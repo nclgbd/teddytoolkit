@@ -52,10 +52,6 @@ from ttk.config import (
 from ttk.utils import get_logger
 
 logger = get_logger(__name__)
-# DFS = "diffusion_train_step"
-# _DTS_LOGGER = setup_logger(name="diffusion_train_step", level=logging.DEBUG)
-# DVS = "diffusion_validation_step"
-# _DVS_LOGGER = setup_logger(name="diffusion_validation_step", level=logging.DEBUG)
 
 
 def create_default_trainer_args(
@@ -368,9 +364,6 @@ def add_handlers(
     trainer: Engine,
     val_evaluator: Engine,
     optimizer: torch.optim.Optimizer = None,
-    checkpoint_kwargs: dict = {},
-    early_stopping_kwargs: dict = {},
-    lr_scheduler_kwargs: dict = {},
 ):
     logger.info("Adding additional handlers...")
     score_name = ignite_cfg.score_name
@@ -381,6 +374,7 @@ def add_handlers(
     if ignite_cfg.use_checkpoint:
         logger.info("Adding checkpoint for model...")
         global_step_transform = global_step_from_engine(trainer)
+        checkpoint_kwargs = ignite_cfg.checkpoint
         checkpoint_handler: Checkpoint = hydra.utils.instantiate(
             ignite_cfg.checkpoint,
             global_step_transform=global_step_transform,
@@ -396,6 +390,7 @@ def add_handlers(
 
     if ignite_cfg.use_early_stopping:
         logger.info("Adding early stopping...")
+        early_stopping_kwargs = ignite_cfg.early_stopping
         early_stopping_handler: EarlyStopping = hydra.utils.instantiate(
             ignite_cfg.early_stopping,
             score_function=score_fn,
@@ -410,6 +405,7 @@ def add_handlers(
 
     if ignite_cfg.use_lr_scheduler:
         logger.info("Adding learning rate scheduler...")
+        lr_scheduler_kwargs = ignite_cfg.lr_scheduler
         lr_scheduler = create_lr_scheduler(
             optimizer, ignite_config=ignite_cfg, **lr_scheduler_kwargs
         )
@@ -497,3 +493,70 @@ def create_lr_scheduler(
     inspect(lr_scheduler)
 
     return lr_scheduler
+
+
+def prepare_run(cfg: Configuration, loaders: dict, device: torch.device, **kwargs):
+    logger.info("Preparing ignite run...")
+    ignite_cfg: IgniteConfiguration = cfg.ignite
+
+    ## prepare run
+    trainer_args = create_default_trainer_args(cfg)
+    trainer = create_supervised_trainer(**trainer_args)
+    ProgressBar().attach(trainer)
+
+    metrics = create_metrics(
+        ignite_cfg, criterion=trainer_args["loss_fn"], device=device
+    )
+    ## create evaluators
+    train_evaluator = create_supervised_evaluator(
+        trainer_args["model"], metrics=metrics, device=device
+    )
+    ProgressBar().attach(train_evaluator)
+    val_evaluator = create_supervised_evaluator(
+        trainer_args["model"], metrics=metrics, device=device
+    )
+    ProgressBar().attach(val_evaluator)
+    test_evaluator = create_supervised_evaluator(
+        trainer_args["model"], metrics=metrics, device=device
+    )
+    ProgressBar().attach(test_evaluator)
+
+    # add additional handlers
+    _ = add_handlers(
+        ignite_cfg,
+        trainer=trainer,
+        val_evaluator=val_evaluator,
+        optimizer=trainer_args["optimizer"],
+    )
+
+    @trainer.on(Events.EPOCH_COMPLETED)
+    def log_metrics(trainer):
+        logger.info("Logging metrics...")
+        train_loader, val_loader = loaders[0], loaders[1]
+        if not cfg.job.dry_run:
+            train_evaluator.run(train_loader)
+            train_metrics = train_evaluator.state.metrics
+            logger.info(
+                f"Epoch: {trainer.state.epoch} train score: {train_metrics[ignite_cfg.score_name]}"
+            )
+        else:
+            logger.debug("Dry run, skipping train evaluation.")
+
+        val_evaluator.run(val_loader)
+        val_metrics = val_evaluator.state.metrics
+
+        logger.info(
+            f"Epoch: {trainer.state.epoch} validation score: {val_metrics[ignite_cfg.score_name]}"
+        )
+
+    # @trainer.on(Events.EXCEPTION_RAISED)
+    # def handle_exception_raised(error: Exception):
+    #     img, label = trainer.state.batch
+    #     logger.debug(
+    #         f"Exception raised during training at batch {trainer.state.iteration}."
+    #     )
+    #     logger.debug(f"Batch shape: {img.shape}. Label shape: {label}.")
+    #     logger.debug(f"Meta data: {img._meta}")
+    #     return
+
+    return trainer, (train_evaluator, val_evaluator, test_evaluator)

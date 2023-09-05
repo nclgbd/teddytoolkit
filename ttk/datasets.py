@@ -45,7 +45,7 @@ def create_transforms(
     * `torchvision.transforms.Compose`: The transforms for the model in the form of a `torchvision.transforms.Compose`
     object.
     """
-    logger.info("Creating transforms...")
+    logger.info("Creating transforms...\n")
     transform_dicts: dict = (
         transform_dicts
         if dataset_cfg is None
@@ -158,13 +158,16 @@ def build_ixi_metadata_dataframe(
 
 
 def build_chest_xray_metadata_dataframe(cfg: Configuration, split: str):
-    logger.info(f"Building chest x-ray metadata dataframe for split: '{split}'...")
+    logger.info(f"Building chest x-ray metadata dataframe for split: '{split}'...\n")
     IGNORE = ".DS_Store"
     scan_data = cfg.datasets.scan_data
     split_dir = os.path.join(scan_data, split)
     split_metadata = []
     classes = sorted(os.listdir(split_dir))
-    classes.remove(IGNORE)
+    try:
+        classes.remove(IGNORE)
+    except ValueError:
+        pass
     label_encoding = 0
 
     for label in classes:
@@ -189,6 +192,7 @@ def instantiate_image_dataset(cfg: Configuration, save_metadata=False, **kwargs)
     ## Returns
     * `monai.data.Dataset`: The instantiated dataset.
     """
+    logger.info("Instantiating image dataset...\n")
     dataset_cfg: DatasetConfiguration = cfg.datasets
     if dataset_cfg.extension == ".nii.gz":
         target_name = cfg.target
@@ -255,38 +259,75 @@ def instantiate_train_val_test_datasets(
     """
     Create train/test splits for the data.
     """
-    logger.info("Creating train/val/test splits...")
-    job_cfg: JobConfiguration = cfg.job
     dataset_cfg: DatasetConfiguration = cfg.datasets
+    job_cfg: JobConfiguration = cfg.job
+
     train_val_test_split_dict = {}
     use_transforms = job_cfg.use_transforms
     train_transforms = create_transforms(
         dataset_cfg=dataset_cfg, use_transforms=use_transforms
     )
     eval_transforms = create_transforms(dataset_cfg=dataset_cfg, use_transforms=False)
+    if dataset_cfg.extension == ".nii.gz":
+        logger.info("Creating train/val/test splits...\n")
 
-    # create the train/test splits
-    X = np.array(dataset.image_files)
-    encoder = LabelEncoder()
-    y = encoder.fit_transform(dataset.labels)
-    logger.info(f"Label encoder information for target: '{cfg.target}'")
-    inspect(encoder)
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, stratify=y, **job_cfg.train_test_split
-    )
-    ## create test dataset
-    test_dataset: monai.data.Dataset = instantiate(
-        config=dataset_cfg.instantiate,
-        image_files=X_test,
-        labels=y_test,
-        transform=eval_transforms,
-        **kwargs,
-    )
-    train_val_test_split_dict["test"] = test_dataset
-    if job_cfg.perform_validation:
-        ## create the train/val splits
+        X = np.array(dataset.image_files)
+        encoder = LabelEncoder()
+        y = encoder.fit_transform(dataset.labels)
+        logger.info(f"Label encoder information for target: '{cfg.target}'")
+        inspect(encoder)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, stratify=y, **job_cfg.train_test_split
+        )
+        ## create test dataset
+        test_dataset: monai.data.Dataset = instantiate(
+            config=dataset_cfg.instantiate,
+            image_files=X_test,
+            labels=y_test,
+            transform=eval_transforms,
+            **kwargs,
+        )
+        train_val_test_split_dict["test"] = test_dataset
+        if job_cfg.perform_validation:
+            ## create the train/val splits
+            X_train, X_val, y_train, y_val = train_test_split(
+                X_train, y_train, stratify=y_train, **job_cfg.train_test_split
+            )
+            val_dataset: monai.data.Dataset = instantiate(
+                config=dataset_cfg.instantiate,
+                image_files=X_val,
+                labels=y_val,
+                transform=eval_transforms,
+                **kwargs,
+            )
+            train_val_test_split_dict["val"] = val_dataset
+
+        ## create train and val datasets
+        train_dataset: monai.data.Dataset = instantiate(
+            config=dataset_cfg.instantiate,
+            image_files=X_train,
+            labels=y_train,
+            transform=train_transforms,
+            **kwargs,
+        )
+        train_val_test_split_dict["train"] = train_dataset
+        logger.info("Train/val/test splits created.")
+
+    elif dataset_cfg.extension == ".jpeg":
+        logger.info("Creating train/val splits...\n")
+        X = np.array(dataset.image_files)
+        y = dataset.labels
+
         X_train, X_val, y_train, y_val = train_test_split(
-            X_train, y_train, stratify=y_train, **job_cfg.train_test_split
+            X, y, stratify=y, **job_cfg.train_test_split
+        )
+
+        train_dataset: monai.data.Dataset = instantiate(
+            config=dataset_cfg.instantiate,
+            image_files=X_train,
+            labels=y_train,
+            transform=train_transforms,
+            **kwargs,
         )
         val_dataset: monai.data.Dataset = instantiate(
             config=dataset_cfg.instantiate,
@@ -295,16 +336,11 @@ def instantiate_train_val_test_datasets(
             transform=eval_transforms,
             **kwargs,
         )
+        train_val_test_split_dict["train"] = train_dataset
         train_val_test_split_dict["val"] = val_dataset
+    else:
+        raise ValueError(
+            f"Dataset extension '{dataset_cfg.extension}' not supported. Please use '.nii.gz' or '.jpeg'."
+        )
 
-    ## create train and val datasets
-    train_dataset: monai.data.Dataset = instantiate(
-        config=dataset_cfg.instantiate,
-        image_files=X_train,
-        labels=y_train,
-        transform=train_transforms,
-        **kwargs,
-    )
-    train_val_test_split_dict["train"] = train_dataset
-    logger.info("Train/val/test splits created.")
     return train_val_test_split_dict

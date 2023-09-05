@@ -26,11 +26,17 @@ class TestDatasets:
             cfg=test_cfg, save_metadata=True, transform=transform
         )
         train_dataset, test_dataset = dataset[0], dataset[1]
-        # assert ixi dataset was created
+        # assert dataset was created
         assert train_dataset is not None
-        assert len(train_dataset) == 5232
-        assert len(test_dataset) == 624
         assert any(train_dataset.labels)
+
+        # check length of dataset
+        if test_cfg.job.perform_validation and dataset_cfg.extension == ".nii.gz":
+            assert len(dataset) == 538
+        else:
+            assert len(train_dataset) == 5232
+            assert len(test_dataset) == 624
+
         # attempt retrieval of sample
         scan, label = train_dataset[0]
         assert scan is not None
@@ -39,18 +45,6 @@ class TestDatasets:
         scan_shape = scan.shape[1:]
         assert scan_shape == tuple(transform_cfg["load"][-1]["spatial_size"])
 
-        ## assert ixi dataset was created
-        # assert dataset is not None
-        # assert any(dataset.labels)
-        # assert len(dataset) == 538
-        # # attempt retrieval of sample
-        # scan, label = dataset[0]
-        # assert scan is not None
-        # assert type(label) == np.int64
-        # # check shape of sample
-        # scan_shape = scan.shape[1:]
-        # assert scan_shape == tuple(transform_cfg["load"][-1]["spatial_size"])
-
     def test_instantiate_train_val_test_datasets(self, test_cfg: Configuration):
         """Tests the `ttk.datasets.instantiate_train_val_test_datasets` function."""
         dataset_cfg: DatasetConfiguration = test_cfg.datasets
@@ -58,20 +52,16 @@ class TestDatasets:
 
         transform = datasets.create_transforms(dataset_cfg)
         dataset = datasets.instantiate_image_dataset(cfg=test_cfg, transform=transform)
+        train_dataset = dataset[0]
         train_val_test_split_dict = datasets.instantiate_train_val_test_datasets(
-            cfg=test_cfg, save_metadata=True, dataset=dataset
+            cfg=test_cfg, save_metadata=True, dataset=train_dataset
         )
 
         assert train_val_test_split_dict is not None
-        if job_cfg.perform_validation:
+        if job_cfg.perform_validation and dataset_cfg.extension == ".nii.gz":
             assert len(set(train_val_test_split_dict.keys())) == 3
         else:
             assert len(set(train_val_test_split_dict.keys())) == 2
 
-        test_dataset = train_val_test_split_dict["test"]
-        assert test_dataset is not None
-        test_dataset_len = len(test_dataset)
-        test_proportion = job_cfg.train_test_split["test_size"] * len(dataset)
-        assert (test_dataset_len == math.ceil(test_proportion)) or (
-            test_dataset_len == math.floor(test_proportion)
-        )
+        train_dataset = train_val_test_split_dict["train"]
+        assert train_dataset is not None

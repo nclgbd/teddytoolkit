@@ -126,8 +126,10 @@ class JobConfiguration:
     device: str = "cpu"
     # whether to run in dry run mode
     dry_run: bool = True
-    # the number of epochs to train for
-    epochs: int = 10
+    # the number of iterations within each epoch
+    epoch_length: int = None
+    # the maximum number of epochs to train for
+    max_epochs: int = 10
     # whether to create an additional validation split or just use a train/test split
     perform_validation: bool = True
     # the random seed for reproducibility
@@ -222,7 +224,7 @@ def set_hydra_configuration(
     ## Returns:
     * `DictConfig`: The hydra configuration.
     """
-    logger.info(f"Creating configuration: '{config_name}'")
+    logger.info(f"Creating configuration: '{config_name}'\n")
     GlobalHydra.instance().clear()
     init_method(version_base="1.1", **init_method_kwargs)
     cfg: DictConfig = compose(config_name=config_name, **compose_kwargs)

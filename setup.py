@@ -13,6 +13,7 @@ setup(
     requires=[
         "azureml-core",
         "azureml-dataset-runtime",
+        "einops",
         "hydra-colorlog",
         "hydra-core",
         "itk",

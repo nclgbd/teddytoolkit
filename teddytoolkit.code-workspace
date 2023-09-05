@@ -18,6 +18,8 @@
 		"python.testing.pytestArgs": [
 			"-v",
 			"--log-level=DEBUG",
+			"-m",
+			"not diffusion",
 		],
 		"hide-files.files": [
 			"__pycache__",

@@ -161,4 +161,5 @@ cython_debug/
 
 # teddytoolkit
 .data/
+outputs/
 config.json

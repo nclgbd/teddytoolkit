@@ -1,10 +1,9 @@
-# python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=tests
+# python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-baseline
 
 defaults:
   - _self_
   - datasets: chest-xray
   - ignite: ignite
-  # - models: diffusion-unet-model
   - models: densenet-model
   # overrides:
   - override hydra/job_logging: colorlog
@@ -12,13 +11,12 @@ defaults:
 
 date: ${now:%Y-%m-%d}
 timestamp: ${now:%H-%M-%S}
-# index: IXI_ID
-# target: "SEX_ID (1=m, 2=f)"
 
 job:
   device: 0
-  dry_run: true
-  max_epochs: 10
+  dry_run: false
+  epoch_length: null
+  max_epochs: 25
   perform_validation: true
   random_state: 42
   set_track_meta: false
@@ -26,7 +24,7 @@ job:
   use_azureml: false
   use_mlflow: false
   use_pretrained_weights: true
-  use_transforms: false
+  use_transforms: true
   train_test_split:
     random_state: ${job.random_state}
     shuffle: true
