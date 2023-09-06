@@ -16,8 +16,8 @@
                 "tests",
                 "--config-path",
                 "../configs/",
-                "job.max_epochs=3",
                 "job.epoch_length=128",
+                "job.max_epochs=3",
             ]
         },
         {
@@ -34,7 +34,7 @@
                 "../configs/",
                 "job.dry_run=true",
                 "job.epoch_length=128",
-                "job.max_epochs=3",
+                "job.max_epochs=2",
             ]
         }
     ]

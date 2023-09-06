@@ -4,13 +4,14 @@ defaults:
   - _self_
 
 model:
-  _target_: monai.networks.nets.DenseNet121
-  in_channels: 3
-  out_channels: 2
-  spatial_dims: 2
-  # _target_: torch.hub.load
-  # repo_or_dir: "pytorch/vision:v0.10.0"
-  # model: densenet121
+  # _target_: monai.networks.nets.DenseNet121
+  # in_channels: 3
+  # out_channels: 2
+  # spatial_dims: 2
+  _target_: torch.hub.load
+  repo_or_dir: "pytorch/vision:v0.10.0"
+  model: densenet121
+  pretrained: true
 
 criterion:
   _target_: torch.nn.CrossEntropyLoss

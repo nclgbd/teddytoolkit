@@ -21,14 +21,18 @@ job:
   random_state: 42
   set_track_meta: false
   use_autocast: true
-  use_azureml: false
-  use_mlflow: false
+  use_azureml: true
+  use_mlflow: true
   use_pretrained_weights: true
   use_transforms: true
   train_test_split:
     random_state: ${job.random_state}
     shuffle: true
     test_size: 0.1
+
+mlflow:
+  experiment_name: chest-xray-baseline
+  tracking_uri: file:///home/nicoleg/workspaces/teddytoolkit/mlruns/
 
 hydra:
   job:

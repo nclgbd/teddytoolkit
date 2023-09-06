@@ -4,7 +4,11 @@ import hydra
 import logging
 import os
 import sys
+import random
 from omegaconf import OmegaConf
+
+# mlflow
+import mlflow
 
 # torch
 import torch
@@ -24,14 +28,14 @@ CWD = os.getcwd()
 sys.path.append(os.path.abspath(os.path.join(CWD)))
 
 # ttk
-from ttk import datasets, models, repl
+from ttk import datasets, repl
 from ttk.config import (
     Configuration,
     DatasetConfiguration,
     JobConfiguration,
 )
-from ttk.ignite import create_default_trainer_args, prepare_run
-from ttk.utils import hydra_instantiate, get_logger
+from ttk.ignite import prepare_run
+from ttk.utils import hydra_instantiate, get_logger, login
 
 
 def create_loaders(cfg: Configuration):
@@ -79,30 +83,59 @@ def main(cfg: Configuration) -> None:
     # before we run....
     logger.debug(OmegaConf.to_yaml(cfg))
     job_cfg: JobConfiguration = cfg.job
-    monai.utils.set_determinism(seed=job_cfg.random_state)
-    logger.info(f"Using seed: {job_cfg.random_state}")
+    random_state = job_cfg.get("random_state", random.randint(0, 8192))
+    monai.utils.set_determinism(seed=random_state)
+    logger.info(f"Using seed: {random_state}")
 
     device = torch.device(job_cfg.device)
     logger.info(f"Using device: {job_cfg.device}")
 
     # prepare data
     loaders = create_loaders(cfg)
-
-    # prepare run
-    trainer, evaluators = prepare_run(cfg=cfg, loaders=loaders, device=device)
-
-    # # run trainer
     train_loader = loaders[0]
-    state = trainer.run(
-        data=train_loader,
-        max_epochs=job_cfg.max_epochs,
-        epoch_length=job_cfg.epoch_length,
-    )
+
+    # run trainer
+    if cfg.job.use_mlflow:
+        logger.info("Starting MLflow run...")
+        mlflow_cfg = cfg.mlflow
+        # experiment = mlflow.set_experiment(experiment_name=mlflow_cfg.experiment_name)
+        if cfg.job.use_azureml:
+            logger.info("Using AzureML for experiment tracking...")
+            ws = login()
+            tracking_uri = ws.get_mlflow_tracking_uri()
+
+        else:
+            tracking_uri = mlflow_cfg.get("tracking_uri", "~/mlruns/")
+
+        mlflow.set_tracking_uri(tracking_uri)
+        logger.info(f"MLflow tracking URI: {tracking_uri}")
+        start_run_kwargs = mlflow_cfg.get("start_run", {})
+        with mlflow.start_run(**start_run_kwargs) as mlflow_run:
+            logger.info(
+                "run_id: {}, status: {}".format(
+                    mlflow_run.info.run_id, mlflow_run.info.status
+                )
+            )
+            trainer, _ = prepare_run(cfg=cfg, loaders=loaders, device=device)
+            state = trainer.run(
+                data=train_loader,
+                max_epochs=job_cfg.max_epochs,
+                epoch_length=job_cfg.epoch_length,
+            )
+            mlflow.log_artifact("./")
+    else:
+        trainer, _ = prepare_run(cfg=cfg, loaders=loaders, device=device)
+        state = trainer.run(
+            data=train_loader,
+            max_epochs=job_cfg.max_epochs,
+            epoch_length=job_cfg.epoch_length,
+        )
+
     return state
 
 
 if __name__ == "__main__":
     repl.install(show_locals=False)
-    logger = get_logger("run_train")
+    logger = get_logger("train")
     monai.config.print_config()
     main()

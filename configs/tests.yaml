@@ -24,13 +24,18 @@ job:
   set_track_meta: false
   use_autocast: true
   use_azureml: false
-  use_mlflow: false
+  use_mlflow: true
   use_pretrained_weights: true
   use_transforms: false
   train_test_split:
     random_state: ${job.random_state}
     shuffle: true
     test_size: 0.1
+
+mlflow:
+  start_run:
+    experiment_id: tests
+    tracking_uri: file:///home/nicoleg/workspaces/teddytoolkit/mlruns/
 
 hydra:
   job:

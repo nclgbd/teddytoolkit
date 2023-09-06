@@ -3,13 +3,26 @@ import hydra
 import logging
 import matplotlib.pyplot as plt
 import os
+from copy import deepcopy
+import pandas as pd
 from rich import inspect
+
+# experiment managing
+## azureml
+from azureml.core import Experiment, Workspace
+
+## mlflow
+import mlflow
+
+# sklearn
+from sklearn.metrics import classification_report, confusion_matrix
 
 # torch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim.lr_scheduler as torch_lr_schedulers
+from torch.utils.data import DataLoader
 from torch.cuda.amp import autocast, GradScaler
 
 ## ignite.engine
@@ -49,7 +62,7 @@ from ttk.config import (
     JobConfiguration,
     ModelConfiguration,
 )
-from ttk.utils import get_logger
+from ttk.utils import get_logger, login, hydra_instantiate
 
 logger = get_logger(__name__)
 
@@ -364,6 +377,7 @@ def add_handlers(
     trainer: Engine,
     val_evaluator: Engine,
     optimizer: torch.optim.Optimizer = None,
+    model: nn.Module = None,
 ):
     logger.info("Adding additional handlers...")
     score_name = ignite_cfg.score_name
@@ -375,11 +389,13 @@ def add_handlers(
         logger.info("Adding checkpoint for model...")
         global_step_transform = global_step_from_engine(trainer)
         checkpoint_kwargs = ignite_cfg.checkpoint
+        to_save = {"model": model}
         checkpoint_handler: Checkpoint = hydra.utils.instantiate(
             ignite_cfg.checkpoint,
             global_step_transform=global_step_transform,
             score_function=score_fn,
             score_name=score_name,
+            to_save=to_save,
             **checkpoint_kwargs,
         )
         val_evaluator.add_event_handler(
@@ -469,6 +485,10 @@ def create_metrics(
     return metrics
 
 
+# def instantiate_ignite_metrics(ignite_cfg: IgniteConfiguration, **kwargs):
+#     ignite_cfg = cfg.ignite
+
+
 def create_lr_scheduler(
     optimizer: torch.optim.Optimizer,
     ignite_config: IgniteConfiguration,
@@ -525,38 +545,85 @@ def prepare_run(cfg: Configuration, loaders: dict, device: torch.device, **kwarg
     _ = add_handlers(
         ignite_cfg,
         trainer=trainer,
-        val_evaluator=val_evaluator,
+        model=trainer_args["model"],
         optimizer=trainer_args["optimizer"],
+        val_evaluator=val_evaluator,
     )
 
-    @trainer.on(Events.EPOCH_COMPLETED)
+    log_interval = ignite_cfg.get("log_interval", max(cfg.job.max_epochs // 10, 1))
+
+    os.makedirs("artifacts/train/", exist_ok=True)
+    os.makedirs("artifacts/val/", exist_ok=True)
+    os.makedirs("artifacts/test/", exist_ok=True)
+
+    def _log_metrics_to_mlflow(metrics: dict, split: str, epoch: int):
+        """Iterates through the metrics dictionary and logs the metrics to MLflow."""
+        split_key = split + "_"
+        logged_metrics = {}
+        for key in metrics.keys():
+            metric = metrics[key]
+            if isinstance(metric, float):
+                key_name = "".join([split_key, key])
+                logged_metrics[key_name] = metric
+        mlflow.log_metrics(logged_metrics, step=epoch)
+
+    def _log_metrics(evaluator: Engine, loader: DataLoader, split: str):
+        evaluator.run(loader)
+        metrics = evaluator.state.metrics
+        epoch = trainer.state.epoch
+
+        logger.info(
+            f"epoch: {epoch}, {split} {ignite_cfg.score_name}: {metrics[ignite_cfg.score_name]}"
+        )
+        y_true = metrics["y_true"]
+        y_pred = metrics["y_preds"]
+        labels = cfg.datasets.labels
+
+        # classification report
+        cr_str = classification_report(
+            y_true=y_true,
+            y_pred=y_pred,
+            target_names=labels,
+            zero_division=0.0,
+        )
+        logger.info(f"{split} classification report:\n{cr_str}")
+        cr = classification_report(
+            y_true=y_true,
+            y_pred=y_pred,
+            target_names=labels,
+            output_dict=True,
+            zero_division=0.0,
+        )
+        cr_df = pd.DataFrame.from_dict(cr)
+        cr_df.to_csv(f"artifacts/{split}/classification_report_epoch={epoch}.csv")
+        # confusion matrix
+        cfm = confusion_matrix(y_true=y_true, y_pred=y_pred)
+        cfm_df = pd.DataFrame(cfm, index=labels, columns=labels)
+        logger.info(f"{split} confusion matrix:\n{cfm_df}")
+        cfm_df.to_csv(f"artifacts/{split}/confusion_matrix_epoch={epoch}.csv")
+
+        if cfg.job.use_mlflow:
+            _log_metrics_to_mlflow(metrics=metrics, split=split, epoch=epoch)
+
+    @trainer.on(Events.EPOCH_COMPLETED(every=log_interval))
     def log_metrics(trainer):
         logger.info("Logging metrics...")
         train_loader, val_loader = loaders[0], loaders[1]
         if not cfg.job.dry_run:
-            train_evaluator.run(train_loader)
-            train_metrics = train_evaluator.state.metrics
-            logger.info(
-                f"Epoch: {trainer.state.epoch} train score: {train_metrics[ignite_cfg.score_name]}"
-            )
+            _log_metrics(train_evaluator, train_loader, "train")
         else:
             logger.debug("Dry run, skipping train evaluation.")
 
-        val_evaluator.run(val_loader)
-        val_metrics = val_evaluator.state.metrics
+        _log_metrics(val_evaluator, val_loader, "val")
 
-        logger.info(
-            f"Epoch: {trainer.state.epoch} validation score: {val_metrics[ignite_cfg.score_name]}"
-        )
+    @trainer.on(Events.COMPLETED)
+    def log_test_metrics(trainer):
+        logger.info("Logging test metrics...")
+        test_loader = loaders[2]
+        _log_metrics(test_evaluator, test_loader, "test")
 
-    # @trainer.on(Events.EXCEPTION_RAISED)
-    # def handle_exception_raised(error: Exception):
-    #     img, label = trainer.state.batch
-    #     logger.debug(
-    #         f"Exception raised during training at batch {trainer.state.iteration}."
-    #     )
-    #     logger.debug(f"Batch shape: {img.shape}. Label shape: {label}.")
-    #     logger.debug(f"Meta data: {img._meta}")
-    #     return
+    @trainer.on(Events.EXCEPTION_RAISED)
+    def handle_exception_raised(error: Exception):
+        mlflow.end_run()
 
     return trainer, (train_evaluator, val_evaluator, test_evaluator)

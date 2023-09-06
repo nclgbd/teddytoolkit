@@ -203,6 +203,7 @@ class Configuration:
     ignite: IgniteConfiguration = field(default_factory=IgniteConfiguration())
     job: JobConfiguration = field(default_factory=JobConfiguration())
     models: ModelConfiguration = field(default_factory=ModelConfiguration())
+    mlflow: DictConfig = field(default_factory=lambda: DictConfig({}))
 
 
 def set_hydra_configuration(
