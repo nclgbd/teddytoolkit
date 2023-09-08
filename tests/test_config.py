@@ -20,3 +20,8 @@ class TestConfig:
         assert any(test_cfg.models.model._target_)
         assert any(test_cfg.models.criterion._target_)
         assert any(test_cfg.models.optimizer._target_)
+
+        ## module configuration checks
+        assert any(test_cfg.ignite)
+        assert any(test_cfg.mlflow)
+        assert any(test_cfg.sklearn)

@@ -28,6 +28,10 @@ from ttk.utils import get_logger, hydra_instantiate
 
 logger = get_logger(__name__)
 
+_CHEST_XRAY_TRAIN_DATASET_SIZE = 5232
+_CHEST_XRAY_TEST_DATASET_SIZE = 624
+_IXI_MRI_DATASET_SIZE = 538
+
 
 def create_transforms(
     dataset_cfg: DatasetConfiguration = None,
@@ -159,6 +163,7 @@ def build_ixi_metadata_dataframe(
 
 def build_chest_xray_metadata_dataframe(cfg: Configuration, split: str):
     logger.info(f"Building chest x-ray metadata dataframe for split: '{split}'...\n")
+    resample_value: int = cfg.datasets.get("resample_value", 1)
     IGNORE = ".DS_Store"
     scan_data = cfg.datasets.scan_data
     split_dir = os.path.join(scan_data, split)
@@ -179,7 +184,13 @@ def build_chest_xray_metadata_dataframe(cfg: Configuration, split: str):
             pass
         for f in class_files:
             split_metadata.append((os.path.join(class_dir, f), label_encoding))
+
+        if resample_value > 1 and split == "train" and label_encoding == 0:
+            original_metadata = deepcopy(split_metadata)
+            for _ in range(resample_value - 1):
+                split_metadata += original_metadata
         label_encoding += 1
+
     return pd.DataFrame(split_metadata, columns=["image_files", "labels"])
 
 
@@ -261,13 +272,16 @@ def instantiate_train_val_test_datasets(
     """
     dataset_cfg: DatasetConfiguration = cfg.datasets
     job_cfg: JobConfiguration = cfg.job
+    sklearn_cfg = cfg.sklearn
 
     train_val_test_split_dict = {}
+    train_test_split_kwargs: dict = sklearn_cfg.model_selection.train_test_split
     use_transforms = job_cfg.use_transforms
     train_transforms = create_transforms(
         dataset_cfg=dataset_cfg, use_transforms=use_transforms
     )
     eval_transforms = create_transforms(dataset_cfg=dataset_cfg, use_transforms=False)
+    random_state = job_cfg.get("random_state", kwargs.get("random_state", 42))
     if dataset_cfg.extension == ".nii.gz":
         logger.info("Creating train/val/test splits...\n")
 
@@ -277,7 +291,11 @@ def instantiate_train_val_test_datasets(
         logger.info(f"Label encoder information for target: '{cfg.target}'")
         inspect(encoder)
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y, stratify=y, **job_cfg.train_test_split
+            X,
+            y,
+            stratify=y,
+            random_state=random_state,
+            **train_test_split_kwargs,
         )
         ## create test dataset
         test_dataset: monai.data.Dataset = instantiate(
@@ -291,7 +309,11 @@ def instantiate_train_val_test_datasets(
         if job_cfg.perform_validation:
             ## create the train/val splits
             X_train, X_val, y_train, y_val = train_test_split(
-                X_train, y_train, stratify=y_train, **job_cfg.train_test_split
+                X_train,
+                y_train,
+                stratify=y_train,
+                random_state=random_state,
+                **train_test_split_kwargs,
             )
             val_dataset: monai.data.Dataset = instantiate(
                 config=dataset_cfg.instantiate,
@@ -319,7 +341,11 @@ def instantiate_train_val_test_datasets(
         y = dataset.labels
 
         X_train, X_val, y_train, y_val = train_test_split(
-            X, y, stratify=y, **job_cfg.train_test_split
+            X,
+            y,
+            stratify=y,
+            random_state=random_state,
+            **train_test_split_kwargs,
         )
 
         train_dataset: monai.data.Dataset = instantiate(

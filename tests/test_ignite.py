@@ -32,8 +32,8 @@ from ttk.ignite import (
 )
 from ttk.utils import hydra_instantiate
 
-MAX_EPOCHS = 5
-EPOCH_LENGTH = 100
+MAX_EPOCHS = 3
+EPOCH_LENGTH = None
 TRAINER_RUN_KWARGS = {"epoch_length": EPOCH_LENGTH, "max_epochs": MAX_EPOCHS}
 
 
@@ -77,6 +77,13 @@ class TestIgnite:
         train_loader = loaders[0]
         state = trainer.run(data=train_loader, **TRAINER_RUN_KWARGS)
         assert state is not None
+
+    def test_create_metrics(self, test_cfg: Configuration):
+        """Test the `ttk.ignite.create_metrics` function."""
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        criterion = models.instantiate_criterion(test_cfg.models, device=device)
+        metrics = create_metrics(cfg=test_cfg, criterion=criterion)
+        assert metrics is not None
 
     def test_prepare_run(self, test_cfg: Configuration, loaders: tuple):
         """Test the `ttk.ignite.prepare_run` function."""

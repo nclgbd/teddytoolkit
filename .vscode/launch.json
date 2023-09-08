@@ -32,9 +32,9 @@
                 "chest-xray-baseline",
                 "--config-path",
                 "../configs/",
-                "job.dry_run=true",
-                "job.epoch_length=128",
-                "job.max_epochs=2",
+                // "job.dry_run=true",
+                // "job.epoch_length=128",
+                // "job.max_epochs=2",
             ]
         }
     ]

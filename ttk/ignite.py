@@ -1,4 +1,5 @@
 # imports
+from typing import Callable, Union
 import hydra
 import logging
 import matplotlib.pyplot as plt
@@ -15,7 +16,7 @@ from azureml.core import Experiment, Workspace
 import mlflow
 
 # sklearn
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
 
 # torch
 import torch
@@ -36,6 +37,7 @@ from ignite.engine.events import Events
 from ignite.handlers import Checkpoint, global_step_from_engine
 from ignite.handlers.early_stopping import EarlyStopping
 from ignite.handlers.param_scheduler import LRScheduler
+from ignite.metrics import Metric
 from ignite.utils import setup_logger
 
 ## ignite.contrib
@@ -433,8 +435,46 @@ def add_handlers(
     return handlers
 
 
+def _sigmoid_output_transform(output):
+    y_pred, y = output
+    y_pred = torch.sigmoid(y_pred)
+    return y_pred, y
+
+
+# class SKLearnMetric(Metric):
+#     def __init__(self, metric_fn: callable, output_transform=lambda x: x, device="cpu"):
+#         super().__init__(output_transform, device)
+#         self.metric_fn = metric_fn
+#         self.metric_name: str = metric_fn.__name__
+
+
+#     @sync_all_reduce("_num_examples", "_num_correct:SUM")
+#     def compute(self):
+#         if self._num_examples == 0:
+#             raise NotComputableError(f'{self.metric_name} must have at least one example before it can be computed.')
+#         return self._num_correct.item() / self._num_examples
+
+
+def add_sklearn_metrics(
+    old_metrics: dict,
+    metrics: list,
+):
+    _ret_metrics = []
+    for target_metric in metrics:
+        metric_name = target_metric["_target_"].split(".")[-1]
+        logger.debug("Adding: '{}'".format(metric_name))
+        sklearn_metric_fn: callable = hydra_instantiate(target_metric, _partial_=True)
+        sklearn_ignite_metric_fn = ignite_metrics_module.EpochMetric(
+            compute_fn=sklearn_metric_fn, device=torch.device("cpu")
+        )
+        old_metrics[metric_name.lower()] = sklearn_ignite_metric_fn
+        _ret_metrics.append(sklearn_metric_fn)
+
+    return _ret_metrics
+
+
 def create_metrics(
-    ignite_config: IgniteConfiguration = None,
+    cfg: Configuration = None,
     _metrics: dict = None,
     criterion: nn.Module = None,
     device: torch.device = torch.device("cpu"),
@@ -448,6 +488,7 @@ def create_metrics(
         `dict`: A dictionary of torch ignite metrics.
     """
     logger.info("Creating metrics...")
+    ignite_config = cfg.ignite
     _metrics = _metrics if _metrics is not None else ignite_config.metrics
     metrics = dict()
     for metric_name, metric_fn_kwargs in _metrics.items():
@@ -460,6 +501,8 @@ def create_metrics(
                 metric_fn = getattr(mod, metric_name)
                 if metric_name == "Loss":
                     metric_fn_kwargs["loss_fn"] = criterion
+                # if metric_name == "ROC_AUC":
+                #     metric_fn_kwargs["output_transform"] = _sigmoid_output_transform
                 metrics[metric_name.lower()] = (
                     metric_fn(device=device, **metric_fn_kwargs)
                     if any(metric_fn_kwargs)
@@ -478,6 +521,13 @@ def create_metrics(
             )
         elif not flag:
             logger.warn(f"Metric '{metric_name}' not found.")
+
+    # if "metrics" in cfg.sklearn.keys() and any(cfg.sklearn.metrics):
+    #     logger.info("Adding sklearn metrics...")
+    #     sklearn_metrics = add_sklearn_metrics(
+    #         old_metrics=metrics, metrics=cfg.sklearn.metrics
+    #     )
+    #     logger.debug(f"Sklearn metrics:\n{sklearn_metrics}\n")
 
     logger.info("Metrics created.\n")
     logger.debug(f"Metrics:\n{metrics}\n")
@@ -524,9 +574,7 @@ def prepare_run(cfg: Configuration, loaders: dict, device: torch.device, **kwarg
     trainer = create_supervised_trainer(**trainer_args)
     ProgressBar().attach(trainer)
 
-    metrics = create_metrics(
-        ignite_cfg, criterion=trainer_args["loss_fn"], device=device
-    )
+    metrics = create_metrics(cfg, criterion=trainer_args["loss_fn"], device=device)
     ## create evaluators
     train_evaluator = create_supervised_evaluator(
         trainer_args["model"], metrics=metrics, device=device
@@ -601,6 +649,10 @@ def prepare_run(cfg: Configuration, loaders: dict, device: torch.device, **kwarg
         cfm_df = pd.DataFrame(cfm, index=labels, columns=labels)
         logger.info(f"{split} confusion matrix:\n{cfm_df}")
         cfm_df.to_csv(f"artifacts/{split}/confusion_matrix_epoch={epoch}.csv")
+
+        # roc_auc
+        roc_auc = roc_auc_score(y_true=y_true, y_score=y_pred)
+        metrics["roc_auc"] = roc_auc
 
         if cfg.job.use_mlflow:
             _log_metrics_to_mlflow(metrics=metrics, split=split, epoch=epoch)

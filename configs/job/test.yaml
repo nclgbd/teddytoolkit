@@ -1,0 +1,14 @@
+# job: test
+
+device: 0
+dry_run: true
+epoch_length: null
+max_epochs: 10
+perform_validation: true
+random_state: 101
+set_track_meta: false
+use_autocast: true
+use_azureml: false
+use_mlflow: true
+use_pretrained_weights: true
+use_transforms: true

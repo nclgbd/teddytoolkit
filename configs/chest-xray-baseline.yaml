@@ -3,8 +3,11 @@
 defaults:
   - _self_
   - datasets: chest-xray
+  - models: inception-model
+  # module configurations
   - ignite: ignite
-  - models: densenet-model
+  - mlflow: local
+  - sklearn: classifier
   # overrides:
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog
@@ -18,7 +21,7 @@ job:
   epoch_length: null
   max_epochs: 25
   perform_validation: true
-  random_state: 42
+  random_state: 101
   set_track_meta: false
   use_autocast: true
   use_azureml: true
@@ -26,13 +29,9 @@ job:
   use_pretrained_weights: true
   use_transforms: true
   train_test_split:
-    random_state: ${job.random_state}
+    # random_state: ${job.random_state}
     shuffle: true
     test_size: 0.1
-
-mlflow:
-  experiment_name: chest-xray-baseline
-  tracking_uri: file:///home/nicoleg/workspaces/teddytoolkit/mlruns/
 
 hydra:
   job:

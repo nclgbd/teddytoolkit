@@ -84,6 +84,7 @@ def main(cfg: Configuration) -> None:
     logger.debug(OmegaConf.to_yaml(cfg))
     job_cfg: JobConfiguration = cfg.job
     random_state = job_cfg.get("random_state", random.randint(0, 8192))
+    # job_cfg["random_state"] = random_state
     monai.utils.set_determinism(seed=random_state)
     logger.info(f"Using seed: {random_state}")
 

@@ -6,7 +6,15 @@ import pandas as pd
 from omegaconf import DictConfig
 
 # ttk
-from ttk import DEFAULT_DATA_PATH, datasets
+from ttk import (
+    DEFAULT_DATA_PATH,
+    datasets,
+)
+from ttk.datasets import (
+    _CHEST_XRAY_TRAIN_DATASET_SIZE,
+    _CHEST_XRAY_TEST_DATASET_SIZE,
+    _IXI_MRI_DATASET_SIZE,
+)
 from ttk.config import Configuration, DatasetConfiguration, JobConfiguration
 
 
@@ -32,10 +40,17 @@ class TestDatasets:
 
         # check length of dataset
         if test_cfg.job.perform_validation and dataset_cfg.extension == ".nii.gz":
-            assert len(dataset) == 538
-        else:
-            assert len(train_dataset) == 5232
-            assert len(test_dataset) == 624
+            assert len(dataset) == _IXI_MRI_DATASET_SIZE
+        elif test_cfg.job.perform_validation and dataset_cfg.extension == ".jpeg":
+            # see if resampling was applied properly
+            resample_value: int = dataset_cfg.get("resample_value", 1)
+            if resample_value > 1:
+                labels: np.array = train_dataset.labels
+                assert len(np.unique(labels)) == len(dataset_cfg.labels)
+            else:
+                assert len(train_dataset) == _CHEST_XRAY_TRAIN_DATASET_SIZE
+
+            assert len(test_dataset) == _CHEST_XRAY_TEST_DATASET_SIZE
 
         # attempt retrieval of sample
         scan, label = train_dataset[0]
@@ -60,7 +75,7 @@ class TestDatasets:
         assert train_val_test_split_dict is not None
         if job_cfg.perform_validation and dataset_cfg.extension == ".nii.gz":
             assert len(set(train_val_test_split_dict.keys())) == 3
-        else:
+        elif job_cfg.perform_validation and dataset_cfg.extension == ".jpeg":
             assert len(set(train_val_test_split_dict.keys())) == 2
 
         train_dataset = train_val_test_split_dict["train"]

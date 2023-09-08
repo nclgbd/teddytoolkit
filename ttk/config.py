@@ -70,8 +70,24 @@ class IgniteConfiguration:
         )
     )
     lr_scheduler: DictConfig = field(
-        default_factory=lambda: DictConfig({"_target_": ""})
+        default_factory=lambda: dict(),
     )
+
+
+@dataclass
+class SklearnConfiguration:
+    """
+    Configuration for the `sklearn` python library.
+
+    ## Attributes:
+    * `metrics` (`ListConfig`): The metrics to use from `sklearn.metrics`.
+    * `model_selection` (`DictConfig`): The keyword arguments for `sklearn.model_selection` functions.
+    """
+
+    #
+    metrics: ListConfig = field(default_factory=lambda: ListConfig([]))
+    #
+    model_selection: DictConfig = field(default_factory=lambda: DictConfig({}))
 
 
 @dataclass
@@ -83,15 +99,22 @@ class DatasetConfiguration:
     * `patient_data` (`os.PathLike`): The path to the metadata of the dataset.
     * `scan_data` (`os.PathLike`, optional): The path to the scan of the dataset. Defaults to `"./data/"`.
     * `extension` (`str`, optional): The extension of the scan files. Defaults to `".nii.gz"`.
+    * `labels` (`list`, optional): The names for each label in alphabetical order. Defaults to `[]`.
     * `instantiate` (`DictConfig`, optional): The kind of dataset to instantiate. Defaults to `DictConfig({"_target_": "monai.data.ImageDataset"})`.
     """
 
+    # integer representation of how many times to expand the dataset
+    # i.e.: if the dataset has 100 samples and resample_value is 3, then the dataset will be expanded to 300 samples.
+    # default is 1, which means no expansion.
+    resample_value: int = 1
     # the path to the metadata of the dataset
     patient_data: os.PathLike = ""
     # the path to the scan of the dataset
-    scan_data: os.PathLike = "./data/"
+    scan_data: os.PathLike = ""
     # the extension of the scan files
     extension: str = ".nii.gz"
+    # the names for each label in alphabetical order
+    labels: list = field(default_factory=lambda: [])
     # the kind of dataset to instantiate
     instantiate: DictConfig = field(
         default_factory=lambda: DictConfig({"_target_": "monai.data.ImageDataset"})
@@ -110,7 +133,8 @@ class JobConfiguration:
     ## Attributes:
     * `device` (`str`): The gpu device to use.
     * `dry_run` (`bool`): Whether to run in dry run mode.
-    * `epochs` (`int`): The number of epochs to train for.
+    * `epoch_length` (`int`): The number of iterations within each epoch.
+    * `max_epochs` (`int`): The maximum number of epochs to train for.
     * `perform_validation` (`bool`): Whether to create an additional validation split or just use a train/test split.
     * `random_state` (`int`): The random seed for reproducibility.
     * `set_track_meta` (`bool`): Whether to track meta data or not.
@@ -119,7 +143,6 @@ class JobConfiguration:
     * `use_mlflow` (`bool`): Whether to use MLflow.
     * `use_pretrained_weights` (`bool`): Whether to use pretrained weights or not.
     * `use_transforms` (`bool`): Whether to use transforms or not.
-    * `train_test_split` (`DictConfig`): The keyword arguments for `sklearn.model_selection.train_test_split` function.
     """
 
     # the gpu device to use
@@ -146,8 +169,6 @@ class JobConfiguration:
     use_pretrained_weights: bool = True
     # whether to use transforms or not
     use_transforms: bool = False
-    # the keyword arguments for `sklearn.model_selection.train_test_split` function
-    train_test_split: DictConfig = field(default_factory=lambda: DictConfig({}))
 
 
 @dataclass
@@ -200,10 +221,13 @@ class Configuration:
     date: str = ""
     timestamp: str = ""
     datasets: DatasetConfiguration = field(default_factory=DatasetConfiguration())
-    ignite: IgniteConfiguration = field(default_factory=IgniteConfiguration())
     job: JobConfiguration = field(default_factory=JobConfiguration())
     models: ModelConfiguration = field(default_factory=ModelConfiguration())
+
+    # module specific configurations
+    ignite: IgniteConfiguration = field(default_factory=IgniteConfiguration())
     mlflow: DictConfig = field(default_factory=lambda: DictConfig({}))
+    sklearn: SklearnConfiguration = field(default_factory=SklearnConfiguration())
 
 
 def set_hydra_configuration(

@@ -17,6 +17,7 @@ checkpoint:
   save_handler: artifacts/checkpoints/
   filename_prefix: best
   n_saved: 10
+  # require_empty: false
 
 early_stopping:
   _target_: ignite.handlers.early_stopping.EarlyStopping
