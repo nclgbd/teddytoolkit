@@ -25,6 +25,15 @@ class TestDatasets:
         # assert transforms were created
         assert transforms is not None
 
+        # test diffusion transforms
+        transforms = datasets.create_transforms(
+            dataset_cfg=test_cfg.datasets,
+            mode="diffusion",
+            use_transforms=True,
+        )
+        # assert transforms were created
+        assert transforms is not None
+
     def test_instantiate_image_dataset(self, test_cfg: Configuration):
         """Tests the `ttk.datasets.instantiate_image_dataset` function."""
         dataset_cfg: DatasetConfiguration = test_cfg.datasets
@@ -80,3 +89,17 @@ class TestDatasets:
 
         train_dataset = train_val_test_split_dict["train"]
         assert train_dataset is not None
+
+        # test `ttk.datasets.resample_to_value`
+        if dataset_cfg.use_sampling:
+            num_classes = len(dataset_cfg.labels)
+            assert len(train_dataset) == dataset_cfg.sample_to_value * num_classes
+
+    def test_transform_image_dataset_to_dict(self, test_cfg):
+        """Tests the `ttk.datasets.transform_image_dataset_to_dict` function."""
+        dataset_cfg: DatasetConfiguration = test_cfg.datasets
+        transform = datasets.create_transforms(dataset_cfg)
+        dataset = datasets.instantiate_image_dataset(cfg=test_cfg, transform=transform)
+        train_dataset = dataset[0]
+        train_dataset_dict = datasets.transform_image_dataset_to_dict(train_dataset)
+        assert train_dataset_dict is not None

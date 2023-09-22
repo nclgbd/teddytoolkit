@@ -2,11 +2,11 @@
 
 defaults:
   - _self_
-  - datasets: chest-xray
-  - job: test
-  - models: resnet-model
+  - datasets: chest-xray-dataset
+  - job: train-diffusion
+  - models: ddpm-model
   # module configurations
-  - ignite: ignite
+  - ignite: diffusion-ignite
   - mlflow: local
   - sklearn: classifier
   # overrides:
@@ -15,8 +15,6 @@ defaults:
 
 date: ${now:%Y-%m-%d}
 timestamp: ${now:%H-%M-%S}
-# index: IXI_ID
-# target: "SEX_ID (1=m, 2=f)"
 
 # hydra settings
 hydra:

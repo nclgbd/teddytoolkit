@@ -91,6 +91,17 @@ class SklearnConfiguration:
 
 
 @dataclass
+class PreprocessingConfiguration:
+    """ """
+
+    resample_value: int = 1
+    sample_to_value: int = -1
+    subset: list = field(default_factory=lambda: [])
+    use_sampling: bool = False
+    use_subset: bool = True
+
+
+@dataclass
 class DatasetConfiguration:
     """
     Dataset configuration class.
@@ -115,6 +126,12 @@ class DatasetConfiguration:
     extension: str = ".nii.gz"
     # the names for each label in alphabetical order
     labels: list = field(default_factory=lambda: [])
+    # encoding
+    encoding: dict = field(default_factory=lambda: {})
+    # preprocessing configuration
+    preprocessing: PreprocessingConfiguration = field(
+        default_factory=lambda: PreprocessingConfiguration()
+    )
     # the kind of dataset to instantiate
     instantiate: DictConfig = field(
         default_factory=lambda: DictConfig({"_target_": "monai.data.ImageDataset"})
@@ -219,10 +236,14 @@ class Configuration:
     index: str = ""
     target: str = ""
     date: str = ""
+    postfix: str = ""
     timestamp: str = ""
     datasets: DatasetConfiguration = field(default_factory=DatasetConfiguration())
     job: JobConfiguration = field(default_factory=JobConfiguration())
     models: ModelConfiguration = field(default_factory=ModelConfiguration())
+    preprocessing: PreprocessingConfiguration = field(
+        default_factory=PreprocessingConfiguration()
+    )
 
     # module specific configurations
     ignite: IgniteConfiguration = field(default_factory=IgniteConfiguration())

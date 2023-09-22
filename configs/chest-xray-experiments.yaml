@@ -1,8 +1,11 @@
-# python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-baseline
+# python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-experiments
+# python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-experiments -m models.model.model_name=resnet18,mobilenetv2_100,densenet121
+# python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-experiments -m models.model.model_name=inception_v3,xception
 
 defaults:
   - _self_
-  - datasets: chest-xray
+  - datasets: chest-xray-dataset
+  - job: run-train
   - models: inception-model
   # module configurations
   - ignite: ignite
@@ -13,25 +16,8 @@ defaults:
   - override hydra/hydra_logging: colorlog
 
 date: ${now:%Y-%m-%d}
+postfix: pretrained=false
 timestamp: ${now:%H-%M-%S}
-
-job:
-  device: 0
-  dry_run: false
-  epoch_length: null
-  max_epochs: 25
-  perform_validation: true
-  random_state: 101
-  set_track_meta: false
-  use_autocast: true
-  use_azureml: true
-  use_mlflow: true
-  use_pretrained_weights: true
-  use_transforms: true
-  train_test_split:
-    # random_state: ${job.random_state}
-    shuffle: true
-    test_size: 0.1
 
 hydra:
   job:

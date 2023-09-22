@@ -1,14 +1,17 @@
-# job: test
+# job: train-diffusion
 
 device: 0
 dry_run: true
-epoch_length: null
-max_epochs: 10
+epoch_length: 64
+max_epochs: 3
 perform_validation: true
-random_state: 101
+random_state: 42
 set_track_meta: false
 use_autocast: true
 use_azureml: false
 use_mlflow: true
 use_pretrained_weights: true
 use_transforms: true
+
+# function kwargs
+prepare_function: prepare_diffusion_run

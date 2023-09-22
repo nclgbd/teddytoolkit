@@ -29,6 +29,7 @@ from ttk.ignite import (
     create_default_trainer_args,
     create_metrics,
     prepare_run,
+    prepare_diffusion_run,
 )
 from ttk.utils import hydra_instantiate
 
@@ -95,18 +96,30 @@ class TestIgnite:
         assert state is not None
 
     @pytest.mark.diffusion
-    def test_create_diffusion_model_engines(
-        self, test_cfg: Configuration, train_loader: DataLoader
-    ):
-        """Test the `ttk.ignite.create_diffusion_model_engines` function."""
+    def test_prepare_diffusion_run(self, test_cfg: Configuration, loaders: tuple):
+        """Test the `ttk.ignite.prepare_diffusion_run` function."""
 
-        ## create engines
-        # _callback_dict = {}
-        engine_dict = create_diffusion_model_engines(
-            cfg=test_cfg, train_loader=train_loader
+        dataset_cfg: DatasetConfiguration = test_cfg.datasets
+        device = torch.device(test_cfg.job.device)
+        train_dataset = datasets.transform_image_dataset_to_dict(loaders[0].dataset)
+        train_loader = hydra_instantiate(
+            cfg=dataset_cfg.dataloader,
+            dataset=train_dataset,
+            pin_memory=torch.cuda.is_available(),
+            shuffle=True,
         )
-        trainer = engine_dict["trainer"]
+        val_dataset = datasets.transform_image_dataset_to_dict(loaders[1].dataset)
+        val_loader = hydra_instantiate(
+            cfg=dataset_cfg.dataloader,
+            dataset=val_dataset,
+            pin_memory=torch.cuda.is_available(),
+            shuffle=True,
+        )
+        new_loaders = [train_loader, val_loader]
+        trainer, _ = prepare_diffusion_run(
+            cfg=test_cfg, loaders=new_loaders, device=device
+        )
 
         # run trainer
-        state = trainer.run(data=train_loader, **TRAINER_RUN_KWARGS)
-        assert state is not None
+        trainer.run()
+        assert True

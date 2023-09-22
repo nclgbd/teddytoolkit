@@ -48,9 +48,17 @@ IGNITE_METRICS_MODULE = [ignite_metrics_module, c_ignite_metrics_module]
 
 # monai
 import monai
-from monai.handlers import StatsHandler
+from monai.engines import SupervisedEvaluator, SupervisedTrainer
+from monai.handlers import (
+    MeanAbsoluteError,
+    MeanSquaredError,
+    StatsHandler,
+    ValidationHandler,
+    from_engine,
+)
 
 # generative
+from generative.engines import DiffusionPrepareBatch
 from generative.inferers import DiffusionInferer
 from generative.networks.schedulers import Scheduler
 
@@ -224,94 +232,74 @@ def create_diffusion_model_trainer(
     return trainer
 
 
-def run_diffusion_evaluator(
-    evaluator: Engine,
-    loader: torch.utils.data.DataLoader,
-    cfg: Configuration,
-    **sample_from_diffusion_model_kwargs,
-):
-    logger.info("Running diffusion model evaluator...")
-    state = evaluator.run(loader)
-    # TODO: Add validation metrics, particularly FID and SSIM
-    score_name = cfg.ignite.score_name
-    sample_from_diffusion_model_kwargs["epoch"] = state.epoch
-    sample_from_diffusion_model_kwargs["val_score"] = state.output.cpu().numpy()
-    sample_from_diffusion_model(cfg=cfg, **sample_from_diffusion_model_kwargs)
-    logger.debug(f"State:\n{state}\n")
+# def create_diffusion_model_engines(
+#     cfg: Configuration,
+#     train_loader: torch.utils.data.DataLoader,
+#     val_loader: torch.utils.data.DataLoader = None,
+#     **kwargs,
+# ):
+#     ignite_cfg: IgniteConfiguration = kwargs.get("ignite_cfg", cfg.ignite)
+#     trainer_kwargs = create_default_trainer_args(cfg=cfg, **kwargs)
+#     model, optimizer = trainer_kwargs["model"], trainer_kwargs["optimizer"]
+#     engine_dict = dict()
+#     job_cfg: JobConfiguration = kwargs.get("job_cfg", cfg.job)
+#     model_cfg: ModelConfiguration = kwargs.get("model_cfg", cfg.models)
+#     device: torch.device = kwargs.get("device", torch.device(job_cfg.device))
+#     scheduler: Scheduler = models.instantiate_diffusion_scheduler(model_cfg)
+#     inferer: DiffusionInferer = models.instantiate_diffusion_inferer(
+#         model_cfg, scheduler=scheduler
+#     )
 
-    # TODO: Callback for MLflow
+#     trainer = create_diffusion_model_trainer(
+#         cfg=cfg, model=model, optimizer=optimizer, inferer=inferer
+#     )
+#     engine_dict["trainer"] = trainer
+#     train_evaluator = create_diffusion_model_evaluator(
+#         cfg=cfg, model=model, inferer=inferer
+#     )
+#     engine_dict["train_evaluator"] = train_evaluator
 
-    # TODO: Callback for AzureML
+#     # add additional handlers
+#     ProgressBar().attach(trainer)
+#     log_interval = ignite_cfg.get("log_interval", job_cfg.epochs // 10)
+#     trainer.add_event_handler(
+#         event_name=Events.EPOCH_COMPLETED(every=log_interval),
+#         handler=prepare_diffusion_run,
+#         **{
+#             "evaluator": train_evaluator,
+#             "loader": train_loader,
+#             "cfg": cfg,
+#             # sampling from diffusion model kwargs
+#             "model": model,
+#             "scheduler": scheduler,
+#             "inferer": inferer,
+#             "device": device,
+#         },
+#     )
+#     ProgressBar().attach(train_evaluator)
 
+#     if val_loader is not None:
+#         val_evaluator = create_diffusion_model_evaluator(
+#             cfg=cfg, model=model, inferer=inferer
+#         )
+#         trainer.add_event_handler(
+#             event_name=Events.EPOCH_COMPLETED(every=log_interval),
+#             handler=prepare_diffusion_run,
+#             **{
+#                 "evaluator": val_evaluator,
+#                 "loader": val_loader,
+#                 "cfg": cfg,
+#                 # sample from diffusion model kwargs
+#                 "model": model,
+#                 "scheduler": scheduler,
+#                 "device": device,
+#             },
+#         )
+#         ProgressBar().attach(val_evaluator)
+#         engine_dict["val_evaluator"] = val_evaluator
 
-def create_diffusion_model_engines(
-    cfg: Configuration,
-    train_loader: torch.utils.data.DataLoader,
-    val_loader: torch.utils.data.DataLoader = None,
-    **kwargs,
-):
-    ignite_cfg: IgniteConfiguration = kwargs.get("ignite_cfg", cfg.ignite)
-    trainer_kwargs = create_default_trainer_args(cfg=cfg, **kwargs)
-    model, optimizer = trainer_kwargs["model"], trainer_kwargs["optimizer"]
-    engine_dict = dict()
-    job_cfg: JobConfiguration = kwargs.get("job_cfg", cfg.job)
-    model_cfg: ModelConfiguration = kwargs.get("model_cfg", cfg.models)
-    device: torch.device = kwargs.get("device", torch.device(job_cfg.device))
-    scheduler: Scheduler = models.instantiate_diffusion_scheduler(model_cfg)
-    inferer: DiffusionInferer = models.instantiate_diffusion_inferer(
-        model_cfg, scheduler=scheduler
-    )
-
-    trainer = create_diffusion_model_trainer(
-        cfg=cfg, model=model, optimizer=optimizer, inferer=inferer
-    )
-    engine_dict["trainer"] = trainer
-    train_evaluator = create_diffusion_model_evaluator(
-        cfg=cfg, model=model, inferer=inferer
-    )
-    engine_dict["train_evaluator"] = train_evaluator
-
-    # add additional handlers
-    ProgressBar().attach(trainer)
-    log_interval = ignite_cfg.get("log_interval", job_cfg.epochs // 10)
-    trainer.add_event_handler(
-        event_name=Events.EPOCH_COMPLETED(every=log_interval),
-        handler=run_diffusion_evaluator,
-        **{
-            "evaluator": train_evaluator,
-            "loader": train_loader,
-            "cfg": cfg,
-            # sampling from diffusion model kwargs
-            "model": model,
-            "scheduler": scheduler,
-            "inferer": inferer,
-            "device": device,
-        },
-    )
-    ProgressBar().attach(train_evaluator)
-
-    if val_loader is not None:
-        val_evaluator = create_diffusion_model_evaluator(
-            cfg=cfg, model=model, inferer=inferer
-        )
-        trainer.add_event_handler(
-            event_name=Events.EPOCH_COMPLETED(every=log_interval),
-            handler=run_diffusion_evaluator,
-            **{
-                "evaluator": val_evaluator,
-                "loader": val_loader,
-                "cfg": cfg,
-                # sample from diffusion model kwargs
-                "model": model,
-                "scheduler": scheduler,
-                "device": device,
-            },
-        )
-        ProgressBar().attach(val_evaluator)
-        engine_dict["val_evaluator"] = val_evaluator
-
-    logger.info("Diffusion model engines created.\n")
-    return engine_dict
+#     logger.info("Diffusion model engines created.\n")
+#     return engine_dict
 
 
 def sample_from_diffusion_model(
@@ -565,6 +553,18 @@ def create_lr_scheduler(
     return lr_scheduler
 
 
+def _log_metrics_to_mlflow(metrics: dict, split: str, epoch: int):
+    """Iterates through the metrics dictionary and logs the metrics to MLflow."""
+    split_key = split + "_"
+    logged_metrics = {}
+    for key in metrics.keys():
+        metric = metrics[key]
+        if isinstance(metric, float):
+            key_name = "".join([split_key, key])
+            logged_metrics[key_name] = metric
+    mlflow.log_metrics(logged_metrics, step=epoch)
+
+
 def prepare_run(cfg: Configuration, loaders: dict, device: torch.device, **kwargs):
     logger.info("Preparing ignite run...")
     ignite_cfg: IgniteConfiguration = cfg.ignite
@@ -603,17 +603,6 @@ def prepare_run(cfg: Configuration, loaders: dict, device: torch.device, **kwarg
     os.makedirs("artifacts/train/", exist_ok=True)
     os.makedirs("artifacts/val/", exist_ok=True)
     os.makedirs("artifacts/test/", exist_ok=True)
-
-    def _log_metrics_to_mlflow(metrics: dict, split: str, epoch: int):
-        """Iterates through the metrics dictionary and logs the metrics to MLflow."""
-        split_key = split + "_"
-        logged_metrics = {}
-        for key in metrics.keys():
-            metric = metrics[key]
-            if isinstance(metric, float):
-                key_name = "".join([split_key, key])
-                logged_metrics[key_name] = metric
-        mlflow.log_metrics(logged_metrics, step=epoch)
 
     def _log_metrics(evaluator: Engine, loader: DataLoader, split: str):
         evaluator.run(loader)
@@ -679,3 +668,173 @@ def prepare_run(cfg: Configuration, loaders: dict, device: torch.device, **kwarg
         mlflow.end_run()
 
     return trainer, (train_evaluator, val_evaluator, test_evaluator)
+
+
+def create_diffusion_model_engines(
+    cfg: Configuration,
+    loaders: list,
+    trainer_args: dict,
+    device: torch.device,
+    **kwargs,
+):
+    job_cfg: JobConfiguration = cfg.job
+    epoch_length: int = job_cfg.epoch_length
+    max_epochs = job_cfg.max_epochs
+    ignite_cfg: IgniteConfiguration = cfg.ignite
+    val_interval: int = ignite_cfg.get("log_interval", max(job_cfg.max_epochs // 10, 1))
+    model_cfg: DiffusionModelConfiguration = cfg.models
+    num_train_timesteps: int = model_cfg.scheduler.num_train_timesteps
+    val_handlers = [StatsHandler(name="train_log", output_transform=lambda x: None)]
+
+    train_loader, val_loader = loaders[0], loaders[1]
+    model = trainer_args["model"]
+    optimizer = trainer_args["optimizer"]
+    scheduler = models.instantiate_diffusion_scheduler(model_cfg)
+    inferer = models.instantiate_diffusion_inferer(model_cfg, scheduler=scheduler)
+    condition_name = "class"
+
+    # TODO: Add validation metrics, particularly FID and SSIM
+    evaluator = SupervisedEvaluator(
+        device=device,
+        epoch_length=epoch_length,
+        inferer=inferer,
+        network=model,
+        prepare_batch=DiffusionPrepareBatch(
+            num_train_timesteps=num_train_timesteps, condition_name=condition_name
+        ),
+        val_data_loader=val_loader,
+        val_handlers=val_handlers,
+        # additional_metrics=create_metrics(cfg, device=device),
+        key_val_metric={
+            "val_mean_abs_error": MeanAbsoluteError(
+                output_transform=from_engine(["pred", "label"])
+            )
+        },
+    )
+    ProgressBar().attach(evaluator)
+
+    train_handlers = [
+        ValidationHandler(validator=evaluator, interval=val_interval, epoch_level=True),
+        # StatsHandler(name="train_log", tag_name="train_loss", output_transform=from_engine(["loss"], first=True)),
+    ]
+
+    trainer = SupervisedTrainer(
+        device=device,
+        epoch_length=epoch_length,
+        inferer=inferer,
+        loss_function=trainer_args["loss_fn"],
+        max_epochs=max_epochs,
+        network=model,
+        optimizer=optimizer,
+        prepare_batch=DiffusionPrepareBatch(
+            num_train_timesteps=num_train_timesteps, condition_name=condition_name
+        ),
+        train_data_loader=train_loader,
+        train_handlers=train_handlers,
+        key_train_metric={
+            "train_accuracy": MeanSquaredError(
+                output_transform=from_engine(["pred", "label"])
+            )
+        },
+    )
+    ProgressBar().attach(trainer)
+
+    return trainer, evaluator
+
+
+def prepare_diffusion_run(
+    cfg: Configuration,
+    loaders: dict,
+    device: torch.device,
+    **kwargs,
+):
+    logger.info("Preparing ignite run...")
+    ignite_cfg = cfg.ignite
+    trainer_args = create_default_trainer_args(cfg)
+
+    ## prepare run
+    trainer, evaluator = create_diffusion_model_engines(
+        cfg, loaders, trainer_args=trainer_args, device=device, **kwargs
+    )
+
+    # logger.info("Running diffusion model evaluator...")
+    # state = evaluator.run(loader)
+    ## create evaluators
+    # metrics = create_metrics(cfg, criterion=trainer_args["loss_fn"], device=device)
+    # evaluator = create_supervised_evaluator(
+    #     trainer_args["model"], metrics=metrics, device=device
+    # )
+    # score_name = cfg.ignite.score_name
+    # sample_from_diffusion_model_kwargs["epoch"] = state.epoch
+    # sample_from_diffusion_model_kwargs["val_score"] = state.output.cpu().numpy()
+    # sample_from_diffusion_model(cfg=cfg, **sample_from_diffusion_model_kwargs)
+    # logger.debug(f"State:\n{state}\n")
+
+    # # TODO: Callback for MLflow
+    log_interval = ignite_cfg.get("log_interval", max(cfg.job.max_epochs // 10, 1))
+
+    def _log_metrics(evaluator: Engine, loader: DataLoader, split: str):
+        evaluator.run(loader)
+        metrics = evaluator.state.metrics
+        epoch = trainer.state.epoch
+
+        # logger.info(
+        #     f"epoch: {epoch}, {split} {ignite_cfg.score_name}: {metrics[ignite_cfg.score_name]}"
+        # )
+        logger.info(f"epoch: {epoch}\n{metrics}")
+        # y_true = metrics["y_true"]
+        # y_pred = metrics["y_preds"]
+        # labels = cfg.datasets.labels
+
+        # # classification report
+        # cr_str = classification_report(
+        #     y_true=y_true,
+        #     y_pred=y_pred,
+        #     target_names=labels,
+        #     zero_division=0.0,
+        # )
+        # logger.info(f"{split} classification report:\n{cr_str}")
+        # cr = classification_report(
+        #     y_true=y_true,
+        #     y_pred=y_pred,
+        #     target_names=labels,
+        #     output_dict=True,
+        #     zero_division=0.0,
+        # )
+        # cr_df = pd.DataFrame.from_dict(cr)
+        # cr_df.to_csv(f"artifacts/{split}/classification_report_epoch={epoch}.csv")
+        # # confusion matrix
+        # cfm = confusion_matrix(y_true=y_true, y_pred=y_pred)
+        # cfm_df = pd.DataFrame(cfm, index=labels, columns=labels)
+        # logger.info(f"{split} confusion matrix:\n{cfm_df}")
+        # cfm_df.to_csv(f"artifacts/{split}/confusion_matrix_epoch={epoch}.csv")
+
+        # # roc_auc
+        # roc_auc = roc_auc_score(y_true=y_true, y_score=y_pred)
+        # metrics["roc_auc"] = roc_auc
+
+        if cfg.job.use_mlflow:
+            _log_metrics_to_mlflow(metrics=metrics, split=split, epoch=epoch)
+
+    # @trainer.on(Events.EPOCH_COMPLETED(every=log_interval))
+    # def log_metrics(trainer):
+    #     logger.info("Logging metrics...")
+    #     train_loader, val_loader = loaders[0], loaders[1]
+    #     if not cfg.job.dry_run:
+    #         _log_metrics(train_evaluator, train_loader, "train")
+    #     else:
+    #         logger.debug("Dry run, skipping train evaluation.")
+
+    #     _log_metrics(val_evaluator, val_loader, "val")
+
+    # @trainer.on(Events.EPOCH_COMPLETED(every=log_interval))
+    # def log_metrics(trainer):
+    #     logger.info("Logging metrics...")
+    #     if not cfg.job.dry_run:
+    #         _log_metrics(train_evaluator, train_loader, "train")
+    #     else:
+    #         logger.debug("Dry run, skipping train evaluation.")
+
+    #     _log_metrics(val_evaluator, val_loader, "val")
+
+    return trainer, evaluator

@@ -21,7 +21,7 @@
             ]
         },
         {
-            "name": "Debug run_train.py: chest-xray-baseline conf",
+            "name": "Debug run_train.py: chest-xray-experiments conf",
             "type": "python",
             "request": "launch",
             "program": "scripts/run_train.py",
@@ -29,12 +29,12 @@
             "justMyCode": false,
             "args": [
                 "--config-name",
-                "chest-xray-baseline",
+                "chest-xray-experiments",
                 "--config-path",
                 "../configs/",
-                // "job.dry_run=true",
-                // "job.epoch_length=128",
-                // "job.max_epochs=2",
+                "job.dry_run=true",
+                "job.epoch_length=128",
+                "job.max_epochs=2",
             ]
         }
     ]

@@ -1,11 +1,18 @@
 ##!/usr/bin/env python
 """Script to train a model using Hydra configuration."""
-import hydra
 import logging
 import os
 import sys
 import random
 from omegaconf import OmegaConf
+
+# hydra
+import hydra
+from hydra.core.hydra_config import HydraConfig
+from hydra.utils import get_original_cwd
+
+# azureml
+from azureml.core import Run, Experiment
 
 # mlflow
 import mlflow
@@ -13,12 +20,6 @@ import mlflow
 # torch
 import torch
 from torch.utils.data import DataLoader
-
-# ignite
-from ignite.engine import Engine, create_supervised_trainer
-
-# ignite.contrib
-from ignite.contrib.handlers import ProgressBar
 
 # monai
 import monai
@@ -33,9 +34,10 @@ from ttk.config import (
     Configuration,
     DatasetConfiguration,
     JobConfiguration,
+    ModelConfiguration,
 )
 from ttk.ignite import prepare_run
-from ttk.utils import hydra_instantiate, get_logger, login
+from ttk.utils import hydra_instantiate, get_logger, login, create_run_name
 
 
 def create_loaders(cfg: Configuration):
@@ -78,13 +80,36 @@ def create_loaders(cfg: Configuration):
     return train_loader, val_loader, test_loader
 
 
+def prepare_mlflow(cfg: Configuration):
+    logger.info("Starting MLflow run...")
+    mlflow_cfg = cfg.mlflow
+    if cfg.job.use_azureml:
+        logger.info("Using AzureML for experiment tracking...")
+        ws = login()
+        tracking_uri = ws.get_mlflow_tracking_uri()
+
+    else:
+        tracking_uri = mlflow_cfg.get("tracking_uri", "~/mlruns/")
+
+    mlflow.set_tracking_uri(tracking_uri)
+    experiment_name = HydraConfig.get().job.config_name
+    experiment_id = mlflow.create_experiment(
+        experiment_name, artifact_location=tracking_uri
+    )
+    logger.debug(f"MLflow tracking URI: {tracking_uri}")
+    start_run_kwargs: dict = mlflow_cfg.get("start_run", {})
+    start_run_kwargs["experiment_id"] = experiment_id
+    return start_run_kwargs
+
+
 @hydra.main(version_base=None, config_path="", config_name="")
 def main(cfg: Configuration) -> None:
     # before we run....
     logger.debug(OmegaConf.to_yaml(cfg))
     job_cfg: JobConfiguration = cfg.job
-    random_state = job_cfg.get("random_state", random.randint(0, 8192))
-    # job_cfg["random_state"] = random_state
+    random_state: int = job_cfg.get("random_state", random.randint(0, 8192))
+    run_name = create_run_name(cfg=cfg, random_state=random_state)
+    logger.info(f"Run name: {run_name}")
     monai.utils.set_determinism(seed=random_state)
     logger.info(f"Using seed: {random_state}")
 
@@ -95,48 +120,42 @@ def main(cfg: Configuration) -> None:
     loaders = create_loaders(cfg)
     train_loader = loaders[0]
 
-    # run trainer
-    if cfg.job.use_mlflow:
-        logger.info("Starting MLflow run...")
-        mlflow_cfg = cfg.mlflow
-        # experiment = mlflow.set_experiment(experiment_name=mlflow_cfg.experiment_name)
-        if cfg.job.use_azureml:
-            logger.info("Using AzureML for experiment tracking...")
-            ws = login()
-            tracking_uri = ws.get_mlflow_tracking_uri()
-
-        else:
-            tracking_uri = mlflow_cfg.get("tracking_uri", "~/mlruns/")
-
-        mlflow.set_tracking_uri(tracking_uri)
-        logger.info(f"MLflow tracking URI: {tracking_uri}")
-        start_run_kwargs = mlflow_cfg.get("start_run", {})
-        with mlflow.start_run(**start_run_kwargs) as mlflow_run:
-            logger.info(
-                "run_id: {}, status: {}".format(
-                    mlflow_run.info.run_id, mlflow_run.info.status
-                )
-            )
-            trainer, _ = prepare_run(cfg=cfg, loaders=loaders, device=device)
-            state = trainer.run(
-                data=train_loader,
-                max_epochs=job_cfg.max_epochs,
-                epoch_length=job_cfg.epoch_length,
-            )
-            mlflow.log_artifact("./")
-    else:
-        trainer, _ = prepare_run(cfg=cfg, loaders=loaders, device=device)
+    def run_trainer():
+        # prepare_function_kwargs: dict = job_cfg.get("prepare_function", {})
+        # prepare_function_kwargs["cfg"] = cfg
+        # prepare_function_kwargs["loaders"] = loaders
+        # prepare_function_kwargs["device"] = device
+        # trainer, _ = prepare_run(**prepare_function_kwargs)
+        trainer, _ = prepare_run(loaders=loaders, device=device, cfg=cfg)
         state = trainer.run(
             data=train_loader,
             max_epochs=job_cfg.max_epochs,
             epoch_length=job_cfg.epoch_length,
         )
+        return state
+
+    # run trainer
+    if cfg.job.use_mlflow:
+        start_run_kwargs = prepare_mlflow(cfg)
+        with mlflow.start_run(
+            run_name=run_name,
+            **start_run_kwargs,
+        ) as mlflow_run:
+            logger.debug(
+                "run_id: {}, status: {}".format(
+                    mlflow_run.info.run_id, mlflow_run.info.status
+                )
+            )
+            state = run_trainer()
+            mlflow.log_artifact("./")
+    else:
+        state = run_trainer()
 
     return state
 
 
 if __name__ == "__main__":
     repl.install(show_locals=False)
-    logger = get_logger("train")
+    logger = get_logger("ttk.scripts.run_train")
     monai.config.print_config()
     main()

@@ -1,20 +1,30 @@
-# datasets: chest-xray
+# datasets: chest-xray-dataset
 
 defaults:
   - _self_
+  - transforms: diffusion-transforms
 
 extension: .jpeg
 patient_data: null
 scan_data: /home/nicoleg/workspaces/teddytoolkit/.data/Chest_XRay_Images_RGB/
 labels: [NORMAL, PNEUMONIA]
-resample_value: 3
+encoding:
+  NORMAL: 0
+  PNEUMONIA: 1
+
+preprocessing:
+  resample_value: 1
+  sample_to_value: -1
+  subset: [NORMAL]
+  use_sampling: false
+  use_subset: true
 
 instantiate:
   _target_: monai.data.ImageDataset
 
 dataloader:
   _target_: monai.data.ThreadDataLoader
-  batch_size: 16
+  batch_size: 1
   num_workers: 24
 
 transforms:
@@ -28,7 +38,7 @@ transforms:
       track_meta: true
 
     - _target_: monai.transforms.Resize
-      spatial_size: [224, 224]
+      spatial_size: [229, 229]
 
     # - _target_: monai.transforms.Transpose
     #   # indices: [2, 0, 1]
@@ -42,5 +52,5 @@ transforms:
 
     - _target_: torchvision.transforms.RandomResizedCrop
       scale: [0.75, 1.25]
-      size: [224, 224]
+      size: [229, 229]
       antialias: true

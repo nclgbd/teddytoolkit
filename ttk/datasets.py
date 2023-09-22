@@ -19,7 +19,7 @@ from torch.utils.data import Subset
 # monai
 import monai
 import monai.transforms as monai_transforms
-from monai.data import ImageDataset, ThreadDataLoader
+from monai.data import ImageDataset, ThreadDataLoader, CacheDataset
 
 # teddytoolkit
 from ttk import DEFAULT_DATA_PATH
@@ -77,6 +77,22 @@ def create_transforms(
             transform_fn = instantiate(transform)
             _ret_transforms.append(transform_fn)
 
+        # diffusion transforms
+        if kwargs.get("mode", "") == "diffusion":
+            if use_transforms:
+                rand_lambda_transform = monai_transforms.RandLambdad(
+                    keys=["class"], prob=0.15, func=lambda x: -1 * torch.ones_like(x)
+                )
+                _ret_transforms.append(rand_lambda_transform)
+            lambda_transform = monai_transforms.Lambdad(
+                keys=["class"],
+                func=lambda x: torch.tensor(x, dtype=torch.float32)
+                .unsqueeze(0)
+                .unsqueeze(0),
+            )
+            _ret_transforms.append(lambda_transform)
+            # _ret_transforms.appent(monai_transforms.EnsureType(dtype=torch.float32))
+
         # always convert to tensor at the end
         _ret_transforms.append(monai_transforms.ToTensor())
         return _ret_transforms
@@ -103,6 +119,39 @@ def _filter_scan_paths(
         if filter_function(scan_path) and not any(x in scan_path for x in exclude)
     ]
     return filtered_scan_paths
+
+
+def resample_to_value(cfg: Configuration, metadata: pd.DataFrame, **kwargs):
+    """
+    Resample a dataset by duplicating the data.
+    """
+    dataset_cfg = cfg.datasets
+    label_encoding = sorted(metadata["labels"].unique())
+    sample_to_value: int = dataset_cfg.get(
+        "sample_to_value", kwargs.get("sample_to_value", 3000)
+    )
+    new_metadata = deepcopy(metadata)
+    for label in label_encoding:
+        class_subset = metadata[metadata["labels"] == label]
+        offset_size = sample_to_value - len(class_subset)
+        resampled_image_files = np.random.choice(
+            class_subset["image_files"].values, size=offset_size
+        )
+        resampled_labels = np.array([label] * offset_size)
+        resampled_dict = {
+            "image_files": resampled_image_files,
+            "labels": resampled_labels,
+        }
+        new_metadata = pd.concat(
+            [
+                new_metadata,
+                pd.DataFrame.from_dict(
+                    resampled_dict,
+                ),
+            ],
+        )
+
+    return new_metadata
 
 
 # TODO: pd.Series are saved in the dataframe for some reason, so we need to convert them to ints
@@ -347,6 +396,13 @@ def instantiate_train_val_test_datasets(
             random_state=random_state,
             **train_test_split_kwargs,
         )
+        if dataset_cfg.get("use_sampling", False):
+            train_metadata = pd.DataFrame(
+                {"image_files": X_train, "labels": y_train}
+            ).reset_index(drop=True)
+            train_metadata = resample_to_value(cfg=cfg, metadata=train_metadata)
+            X_train = train_metadata["image_files"].values
+            y_train = train_metadata["labels"].values
 
         train_dataset: monai.data.Dataset = instantiate(
             config=dataset_cfg.instantiate,
@@ -370,3 +426,22 @@ def instantiate_train_val_test_datasets(
         )
 
     return train_val_test_split_dict
+
+
+def subset_to_class(cfg: Configuration, dataset: ImageDataset, **kwargs):
+    dataset_cfg: DatasetConfiguration = cfg.datasets
+    preprocessing_cfg = dataset_cfg.preprocessing
+
+
+def transform_image_dataset_to_dict(dataset: ImageDataset):
+    """
+    Transform an image dataset into a dictionary.
+    """
+    dataset_list = []
+    items = list(zip(dataset.image_files, dataset.labels))
+
+    for image_file, label in items:
+        dataset_list.append({"image": image_file, "class": label})
+
+    new_dataset = CacheDataset(data=dataset_list, transform=dataset.transform)
+    return new_dataset
