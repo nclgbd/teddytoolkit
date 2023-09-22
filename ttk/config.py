@@ -92,13 +92,21 @@ class SklearnConfiguration:
 
 @dataclass
 class PreprocessingConfiguration:
-    """ """
+    """Preprocessing configuration class.
+
+    ## Attributes:
+    * `resample_value` (`int`): Integer representation of how many times to expand the dataset.
+    * `sample_to_value` (`int`): Integer representation of how many samples to use from the dataset.
+    * `subset` (`list`): The subset of the dataset to use.
+    * `use_sampling` (`bool`): Whether to use sampling or not.
+    * `use_subset` (`bool`): Whether to use a subset or not.
+    """
 
     resample_value: int = 1
     sample_to_value: int = -1
     subset: list = field(default_factory=lambda: [])
     use_sampling: bool = False
-    use_subset: bool = True
+    use_subset: bool = False
 
 
 @dataclass
@@ -123,14 +131,14 @@ class DatasetConfiguration:
     # the path to the scan of the dataset
     scan_data: os.PathLike = ""
     # the extension of the scan files
-    extension: str = ".nii.gz"
+    extension: str = ".jpeg"
     # the names for each label in alphabetical order
     labels: list = field(default_factory=lambda: [])
     # encoding
     encoding: dict = field(default_factory=lambda: {})
     # preprocessing configuration
     preprocessing: PreprocessingConfiguration = field(
-        default_factory=lambda: PreprocessingConfiguration()
+        default_factory=PreprocessingConfiguration()
     )
     # the kind of dataset to instantiate
     instantiate: DictConfig = field(
@@ -139,6 +147,10 @@ class DatasetConfiguration:
     #
     dataloader: DictConfig = field(
         default_factory=lambda: DictConfig({"_target_": "torch.utils.data.DataLoader"})
+    )
+    # transforms
+    transforms: DictConfig = field(
+        default_factory=lambda: DictConfig({"load": [], "train": []})
     )
 
 
@@ -241,9 +253,6 @@ class Configuration:
     datasets: DatasetConfiguration = field(default_factory=DatasetConfiguration())
     job: JobConfiguration = field(default_factory=JobConfiguration())
     models: ModelConfiguration = field(default_factory=ModelConfiguration())
-    preprocessing: PreprocessingConfiguration = field(
-        default_factory=PreprocessingConfiguration()
-    )
 
     # module specific configurations
     ignite: IgniteConfiguration = field(default_factory=IgniteConfiguration())

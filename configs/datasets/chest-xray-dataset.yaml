@@ -2,6 +2,7 @@
 
 defaults:
   - _self_
+  - preprocessing: normal-subset-preprocessing
   - transforms: diffusion-transforms
 
 extension: .jpeg
@@ -9,15 +10,8 @@ patient_data: null
 scan_data: /home/nicoleg/workspaces/teddytoolkit/.data/Chest_XRay_Images_RGB/
 labels: [NORMAL, PNEUMONIA]
 encoding:
-  NORMAL: 0
-  PNEUMONIA: 1
-
-preprocessing:
-  resample_value: 1
-  sample_to_value: -1
-  subset: [NORMAL]
-  use_sampling: false
-  use_subset: true
+  0: NORMAL
+  1: PNEUMONIA
 
 instantiate:
   _target_: monai.data.ImageDataset

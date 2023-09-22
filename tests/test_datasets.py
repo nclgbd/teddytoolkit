@@ -95,11 +95,27 @@ class TestDatasets:
             num_classes = len(dataset_cfg.labels)
             assert len(train_dataset) == dataset_cfg.sample_to_value * num_classes
 
-    def test_transform_image_dataset_to_dict(self, test_cfg):
-        """Tests the `ttk.datasets.transform_image_dataset_to_dict` function."""
+    def test_transform_image_dataset_to_cache_dataset(self, test_cfg):
+        """Tests the `ttk.datasets.transform_image_dataset_to_cache_dataset` function."""
         dataset_cfg: DatasetConfiguration = test_cfg.datasets
         transform = datasets.create_transforms(dataset_cfg)
         dataset = datasets.instantiate_image_dataset(cfg=test_cfg, transform=transform)
         train_dataset = dataset[0]
-        train_dataset_dict = datasets.transform_image_dataset_to_dict(train_dataset)
+        train_dataset_dict = datasets.transform_image_dataset_to_cache_dataset(
+            train_dataset
+        )
         assert train_dataset_dict is not None
+
+    def test_preprocess_dataset(self, test_cfg: Configuration):
+        """Tests the `ttk.datasets.preprocess_dataset` function."""
+        dataset_cfg: DatasetConfiguration = test_cfg.datasets
+        transform = datasets.create_transforms(dataset_cfg)
+        dataset = datasets.instantiate_image_dataset(cfg=test_cfg, transform=transform)
+        train_dataset = dataset[0]
+        new_train_dataset = datasets.transform_image_dataset_to_cache_dataset(
+            train_dataset
+        )
+        new_dataset = datasets.preprocess_dataset(
+            dataset=new_train_dataset, cfg=dataset_cfg
+        )
+        assert new_dataset is not None

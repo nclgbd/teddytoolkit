@@ -101,14 +101,14 @@ class TestIgnite:
 
         dataset_cfg: DatasetConfiguration = test_cfg.datasets
         device = torch.device(test_cfg.job.device)
-        train_dataset = datasets.transform_image_dataset_to_dict(loaders[0].dataset)
+        train_dataset = datasets.transform_image_dataset_to_cache_dataset(loaders[0].dataset)
         train_loader = hydra_instantiate(
             cfg=dataset_cfg.dataloader,
             dataset=train_dataset,
             pin_memory=torch.cuda.is_available(),
             shuffle=True,
         )
-        val_dataset = datasets.transform_image_dataset_to_dict(loaders[1].dataset)
+        val_dataset = datasets.transform_image_dataset_to_cache_dataset(loaders[1].dataset)
         val_loader = hydra_instantiate(
             cfg=dataset_cfg.dataloader,
             dataset=val_dataset,

@@ -11,6 +11,7 @@ from tqdm import tqdm
 # sklearn
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
+from sklearn.pipeline import Pipeline
 
 # torch
 import torch
@@ -19,7 +20,7 @@ from torch.utils.data import Subset
 # monai
 import monai
 import monai.transforms as monai_transforms
-from monai.data import ImageDataset, ThreadDataLoader, CacheDataset
+from monai.data import ImageDataset, ThreadDataLoader, CacheDataset, PersistentDataset
 
 # teddytoolkit
 from ttk import DEFAULT_DATA_PATH
@@ -152,6 +153,48 @@ def resample_to_value(cfg: Configuration, metadata: pd.DataFrame, **kwargs):
         )
 
     return new_metadata
+
+
+def get_images_and_classes(dataset: ImageDataset, **kwargs):
+    """
+    Get the images and classes from a dataset.
+    """
+    try:
+        images = dataset.image_files
+        classes = dataset.labels
+    except AttributeError:
+        dataset: CacheDataset = dataset
+        datalist = dataset.data
+        images = [d["image"] for d in datalist]
+        classes = [d["class"] for d in datalist]
+    return images, classes
+
+
+def subset_to_class(cfg: Configuration, data_df: pd.DataFrame, **kwargs):
+    dataset_cfg: DatasetConfiguration = cfg.datasets
+    preprocessing_cfg = dataset_cfg.preprocessing
+    subset: list = preprocessing_cfg.get("subset", kwargs.get("subset", []))
+    if any(subset):
+        data_df = data_df[data_df["classes"].isin(subset)]
+        logger.debug(f"Subset dataframe:/n{data_df.head()}")
+    return data_df
+
+
+def preprocess_dataset(cfg: Configuration, dataset: ImageDataset, **kwargs):
+    preprocessing_cfg = cfg.datasets.preprocessing
+    X, y = get_images_and_classes(dataset=dataset)
+    data_df = pd.DataFrame({"images": X, "classes": y})
+
+    # 1. subset to class
+    if preprocessing_cfg.use_subset:
+        data_df = subset_to_class(cfg=cfg, dataset=dataset, **kwargs)
+        X, y = data_df["images"].values, data_df["classes"].values
+
+    # . convert to persistent dataset for faster lookup time
+    new_dataset = CacheDataset(
+        data=data_df.to_dict(orient="records"), transform=dataset.transform
+    )
+    return new_dataset
 
 
 # TODO: pd.Series are saved in the dataframe for some reason, so we need to convert them to ints
@@ -428,14 +471,9 @@ def instantiate_train_val_test_datasets(
     return train_val_test_split_dict
 
 
-def subset_to_class(cfg: Configuration, dataset: ImageDataset, **kwargs):
-    dataset_cfg: DatasetConfiguration = cfg.datasets
-    preprocessing_cfg = dataset_cfg.preprocessing
-
-
-def transform_image_dataset_to_dict(dataset: ImageDataset):
+def transform_image_dataset_to_cache_dataset(dataset: ImageDataset):
     """
-    Transform an image dataset into a dictionary.
+    Transform an image dataset to a cache dataset.
     """
     dataset_list = []
     items = list(zip(dataset.image_files, dataset.labels))
@@ -443,5 +481,5 @@ def transform_image_dataset_to_dict(dataset: ImageDataset):
     for image_file, label in items:
         dataset_list.append({"image": image_file, "class": label})
 
-    new_dataset = CacheDataset(data=dataset_list, transform=dataset.transform)
+    new_dataset = PersistentDataset(data=dataset_list, transform=dataset.transform)
     return new_dataset
