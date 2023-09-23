@@ -136,10 +136,6 @@ class DatasetConfiguration:
     labels: list = field(default_factory=lambda: [])
     # encoding
     encoding: dict = field(default_factory=lambda: {})
-    # preprocessing configuration
-    preprocessing: PreprocessingConfiguration = field(
-        default_factory=PreprocessingConfiguration()
-    )
     # the kind of dataset to instantiate
     instantiate: DictConfig = field(
         default_factory=lambda: DictConfig({"_target_": "monai.data.ImageDataset"})
@@ -147,6 +143,10 @@ class DatasetConfiguration:
     #
     dataloader: DictConfig = field(
         default_factory=lambda: DictConfig({"_target_": "torch.utils.data.DataLoader"})
+    )
+    # preprocessing configuration
+    preprocessing: PreprocessingConfiguration = field(
+        default_factory=PreprocessingConfiguration()
     )
     # transforms
     transforms: DictConfig = field(
