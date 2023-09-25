@@ -22,10 +22,10 @@ import monai
 import monai.transforms as monai_transforms
 from monai.data import ImageDataset, ThreadDataLoader, CacheDataset, PersistentDataset
 
-# teddytoolkit
-from ttk import DEFAULT_DATA_PATH
-from ttk.config import Configuration, JobConfiguration, DatasetConfiguration
-from ttk.utils import get_logger, hydra_instantiate
+# rtk
+from rtk import DEFAULT_CACHE_DIR, DEFAULT_DATA_PATH
+from rtk.config import Configuration, JobConfiguration, DatasetConfiguration
+from rtk.utils import get_logger, hydra_instantiate
 
 logger = get_logger(__name__)
 
@@ -33,10 +33,16 @@ _CHEST_XRAY_TRAIN_DATASET_SIZE = 5232
 _CHEST_XRAY_TEST_DATASET_SIZE = 624
 _IXI_MRI_DATASET_SIZE = 538
 
+_IMAGE_KEYNAME = "image"
+_LABEL_KEYNAME = "class"
+_COLUMN_NAMES = [_IMAGE_KEYNAME, _LABEL_KEYNAME]
+_CACHE_DIR = os.path.join(DEFAULT_CACHE_DIR, "tmp")
+
 
 def create_transforms(
+    cfg: Configuration,
     dataset_cfg: DatasetConfiguration = None,
-    use_transforms: bool = False,
+    use_transforms: bool = None,
     transform_dicts: dict = None,
     **kwargs,
 ):
@@ -51,6 +57,8 @@ def create_transforms(
     object.
     """
     logger.info("Creating transforms...\n")
+    dataset_cfg = cfg.datasets if dataset_cfg is None else dataset_cfg
+    use_transforms = dataset_cfg.get("use_transforms", use_transforms is not None)
     transform_dicts: dict = (
         transform_dicts
         if dataset_cfg is None
@@ -82,11 +90,13 @@ def create_transforms(
         if kwargs.get("mode", "") == "diffusion":
             if use_transforms:
                 rand_lambda_transform = monai_transforms.RandLambdad(
-                    keys=["class"], prob=0.15, func=lambda x: -1 * torch.ones_like(x)
+                    keys=[_LABEL_KEYNAME],
+                    prob=0.15,
+                    func=lambda x: -1 * torch.ones_like(x),
                 )
                 _ret_transforms.append(rand_lambda_transform)
             lambda_transform = monai_transforms.Lambdad(
-                keys=["class"],
+                keys=[_LABEL_KEYNAME],
                 func=lambda x: torch.tensor(x, dtype=torch.float32)
                 .unsqueeze(0)
                 .unsqueeze(0),
@@ -136,12 +146,12 @@ def resample_to_value(cfg: Configuration, metadata: pd.DataFrame, **kwargs):
         class_subset = metadata[metadata["labels"] == label]
         offset_size = sample_to_value - len(class_subset)
         resampled_image_files = np.random.choice(
-            class_subset["image_files"].values, size=offset_size
+            class_subset[_IMAGE_KEYNAME].values, size=offset_size
         )
         resampled_labels = np.array([label] * offset_size)
         resampled_dict = {
-            "image_files": resampled_image_files,
-            "labels": resampled_labels,
+            _IMAGE_KEYNAME: resampled_image_files,
+            _LABEL_KEYNAME: resampled_labels,
         }
         new_metadata = pd.concat(
             [
@@ -165,8 +175,8 @@ def get_images_and_classes(dataset: ImageDataset, **kwargs):
     except AttributeError:
         dataset: CacheDataset = dataset
         datalist = dataset.data
-        images = [d["image"] for d in datalist]
-        classes = [d["class"] for d in datalist]
+        images = [d[_IMAGE_KEYNAME] for d in datalist]
+        classes = [d[_LABEL_KEYNAME] for d in datalist]
     return images, classes
 
 
@@ -174,25 +184,31 @@ def subset_to_class(cfg: Configuration, data_df: pd.DataFrame, **kwargs):
     dataset_cfg: DatasetConfiguration = cfg.datasets
     preprocessing_cfg = dataset_cfg.preprocessing
     subset: list = preprocessing_cfg.get("subset", kwargs.get("subset", []))
-    if any(subset):
-        data_df = data_df[data_df["classes"].isin(subset)]
+    if len(subset) > 0:
+        data_df = data_df[data_df[_LABEL_KEYNAME].isin(subset)]
         logger.debug(f"Subset dataframe:/n{data_df.head()}")
     return data_df
 
 
-def preprocess_dataset(cfg: Configuration, dataset: ImageDataset, **kwargs):
+def preprocess_dataset(
+    cfg: Configuration,
+    dataset: ImageDataset,
+    **kwargs,
+):
     preprocessing_cfg = cfg.datasets.preprocessing
     X, y = get_images_and_classes(dataset=dataset)
-    data_df = pd.DataFrame({"images": X, "classes": y})
+    data_df = pd.DataFrame({_IMAGE_KEYNAME: X, _LABEL_KEYNAME: y})
 
     # 1. subset to class
     if preprocessing_cfg.use_subset:
-        data_df = subset_to_class(cfg=cfg, dataset=dataset, **kwargs)
-        X, y = data_df["images"].values, data_df["classes"].values
+        data_df = subset_to_class(cfg=cfg, data_df=data_df, **kwargs)
+        X, y = data_df[_IMAGE_KEYNAME].values, data_df[_LABEL_KEYNAME].values
 
     # . convert to persistent dataset for faster lookup time
-    new_dataset = CacheDataset(
-        data=data_df.to_dict(orient="records"), transform=dataset.transform
+    new_dataset = PersistentDataset(
+        data=data_df.to_dict(orient="records"),
+        transform=dataset.transform,
+        cache_dir=_CACHE_DIR,
     )
     return new_dataset
 
@@ -283,7 +299,33 @@ def build_chest_xray_metadata_dataframe(cfg: Configuration, split: str):
                 split_metadata += original_metadata
         label_encoding += 1
 
-    return pd.DataFrame(split_metadata, columns=["image_files", "labels"])
+    return pd.DataFrame(split_metadata, columns=_COLUMN_NAMES)
+
+
+def load_ixi_dataset(cfg: Configuration, save_metadata=False, **kwargs):
+    dataset_cfg: DatasetConfiguration = cfg.datasets
+    target_name = cfg.target
+    scan_data = dataset_cfg.scan_data
+    scan_paths = [os.path.join(scan_data, f) for f in os.listdir(scan_data)]
+    filtered_scan_paths = _filter_scan_paths(
+        filter_function=lambda x: x.split("/")[-1], scan_paths=scan_paths
+    )
+    metadata = build_ixi_metadata_dataframe(cfg=cfg, image_files=filtered_scan_paths)
+    image_files = metadata["filename"].values
+    labels = metadata[target_name].values
+    dataset: monai.data.Dataset = instantiate(
+        config=dataset_cfg.instantiate,
+        image_files=[os.path.join(scan_data, f) for f in image_files],
+        labels=labels,
+        **kwargs,
+    )
+    if save_metadata:
+        metadata.to_csv(
+            os.path.join(
+                DEFAULT_DATA_PATH, "patients", "ixi_image_dataset_metadata.csv"
+            )
+        )
+    return dataset
 
 
 def instantiate_image_dataset(cfg: Configuration, save_metadata=False, **kwargs):
@@ -297,47 +339,24 @@ def instantiate_image_dataset(cfg: Configuration, save_metadata=False, **kwargs)
     """
     logger.info("Instantiating image dataset...\n")
     dataset_cfg: DatasetConfiguration = cfg.datasets
-    if dataset_cfg.extension == ".nii.gz":
-        target_name = cfg.target
-        scan_data = dataset_cfg.scan_data
-        scan_paths = [os.path.join(scan_data, f) for f in os.listdir(scan_data)]
-        filtered_scan_paths = _filter_scan_paths(
-            filter_function=lambda x: x.split("/")[-1], scan_paths=scan_paths
-        )
-        metadata = build_ixi_metadata_dataframe(
-            cfg=cfg, image_files=filtered_scan_paths
-        )
-        image_files = metadata["filename"].values
-        labels = metadata[target_name].values
-        dataset: monai.data.Dataset = instantiate(
-            config=dataset_cfg.instantiate,
-            image_files=[os.path.join(scan_data, f) for f in image_files],
-            labels=labels,
-            **kwargs,
-        )
-        if save_metadata:
-            metadata.to_csv(
-                os.path.join(
-                    DEFAULT_DATA_PATH, "patients", "ixi_image_dataset_metadata.csv"
-                )
-            )
-        return dataset
 
-    elif dataset_cfg.extension == ".jpeg":
+    if dataset_cfg.extension == ".jpeg":
         train_metadata = build_chest_xray_metadata_dataframe(cfg=cfg, split="train")
         test_metadata = build_chest_xray_metadata_dataframe(cfg=cfg, split="test")
         train_dataset = monai.data.Dataset = instantiate(
             config=dataset_cfg.instantiate,
-            image_files=train_metadata["image_files"].values,
-            labels=train_metadata["labels"].values,
+            image_files=train_metadata[_IMAGE_KEYNAME].values,
+            labels=train_metadata[_LABEL_KEYNAME].values,
             **kwargs,
         )
+        train_dataset: monai.data.Dataset = convert_image_dataset(train_dataset)
         test_dataset = monai.data.Dataset = instantiate(
             config=dataset_cfg.instantiate,
-            image_files=test_metadata["image_files"].values,
-            labels=test_metadata["labels"].values,
+            image_files=test_metadata[_IMAGE_KEYNAME].values,
+            labels=test_metadata[_LABEL_KEYNAME].values,
             **kwargs,
         )
+        test_dataset: monai.data.Dataset = convert_image_dataset(test_dataset)
         if save_metadata:
             train_metadata.to_csv(
                 os.path.join(
@@ -350,6 +369,8 @@ def instantiate_image_dataset(cfg: Configuration, save_metadata=False, **kwargs)
                 )
             )
         return train_dataset, test_dataset
+    elif dataset_cfg.extension == ".nii.gz":
+        train_dataset = load_ixi_dataset(cfg, save_metadata=False)
     else:
         raise ValueError(
             f"Dataset extension '{dataset_cfg.extension}' not supported. Please use '.nii.gz' or '.jpeg'."
@@ -357,7 +378,7 @@ def instantiate_image_dataset(cfg: Configuration, save_metadata=False, **kwargs)
 
 
 def instantiate_train_val_test_datasets(
-    cfg: Configuration, dataset: monai.data.ImageDataset, **kwargs
+    cfg: Configuration, dataset: monai.data.Dataset, use_val: bool = True, **kwargs
 ):
     """
     Create train/test splits for the data.
@@ -374,7 +395,51 @@ def instantiate_train_val_test_datasets(
     )
     eval_transforms = create_transforms(dataset_cfg=dataset_cfg, use_transforms=False)
     random_state = job_cfg.get("random_state", kwargs.get("random_state", 42))
-    if dataset_cfg.extension == ".nii.gz":
+    if dataset_cfg.extension == ".jpeg":
+        logger.info("Creating train/val splits...\n")
+        X, y = get_images_and_classes(dataset=dataset)
+
+        X_train, X_val, y_train, y_val = train_test_split(
+            X,
+            y,
+            stratify=y,
+            random_state=random_state,
+            **train_test_split_kwargs,
+        )
+        if dataset_cfg.get("use_sampling", False):
+            train_metadata = pd.DataFrame(
+                [X_train, y_train], columns=_COLUMN_NAMES
+            ).reset_index(drop=True)
+            train_metadata = resample_to_value(cfg=cfg, metadata=train_metadata)
+            X_train = train_metadata[_IMAGE_KEYNAME].values
+            y_train = train_metadata[_LABEL_KEYNAME].values
+
+        train_data = list(
+            {_IMAGE_KEYNAME: image_file, _LABEL_KEYNAME: label}
+            for image_file, label in zip(X_train, y_train)
+        )
+        train_dataset: PersistentDataset = PersistentDataset(
+            data=train_data,
+            transform=train_transforms,
+            cache_dir=_CACHE_DIR,
+            **kwargs,
+        )
+        train_val_test_split_dict["train"] = train_dataset
+
+        if use_val:
+            val_data = list(
+                {_IMAGE_KEYNAME: image_file, _LABEL_KEYNAME: label}
+                for image_file, label in zip(X_val, y_val)
+            )
+            val_dataset: PersistentDataset = PersistentDataset(
+                data=val_data,
+                transform=eval_transforms,
+                cache_dir=_CACHE_DIR,
+                **kwargs,
+            )
+            train_val_test_split_dict["val"] = val_dataset
+
+    elif dataset_cfg.extension == ".nii.gz":
         logger.info("Creating train/val/test splits...\n")
 
         X = np.array(dataset.image_files)
@@ -427,42 +492,6 @@ def instantiate_train_val_test_datasets(
         train_val_test_split_dict["train"] = train_dataset
         logger.info("Train/val/test splits created.")
 
-    elif dataset_cfg.extension == ".jpeg":
-        logger.info("Creating train/val splits...\n")
-        X = np.array(dataset.image_files)
-        y = dataset.labels
-
-        X_train, X_val, y_train, y_val = train_test_split(
-            X,
-            y,
-            stratify=y,
-            random_state=random_state,
-            **train_test_split_kwargs,
-        )
-        if dataset_cfg.get("use_sampling", False):
-            train_metadata = pd.DataFrame(
-                {"image_files": X_train, "labels": y_train}
-            ).reset_index(drop=True)
-            train_metadata = resample_to_value(cfg=cfg, metadata=train_metadata)
-            X_train = train_metadata["image_files"].values
-            y_train = train_metadata["labels"].values
-
-        train_dataset: monai.data.Dataset = instantiate(
-            config=dataset_cfg.instantiate,
-            image_files=X_train,
-            labels=y_train,
-            transform=train_transforms,
-            **kwargs,
-        )
-        val_dataset: monai.data.Dataset = instantiate(
-            config=dataset_cfg.instantiate,
-            image_files=X_val,
-            labels=y_val,
-            transform=eval_transforms,
-            **kwargs,
-        )
-        train_val_test_split_dict["train"] = train_dataset
-        train_val_test_split_dict["val"] = val_dataset
     else:
         raise ValueError(
             f"Dataset extension '{dataset_cfg.extension}' not supported. Please use '.nii.gz' or '.jpeg'."
@@ -471,15 +500,27 @@ def instantiate_train_val_test_datasets(
     return train_val_test_split_dict
 
 
-def transform_image_dataset_to_cache_dataset(dataset: ImageDataset):
+def convert_image_dataset(
+    dataset: ImageDataset,
+    transform: monai.transforms.Compose = None,
+    cache_dir: str = _CACHE_DIR,
+    **kwargs,
+):
     """
-    Transform an image dataset to a cache dataset.
+    Transforms a image dataset to a persistent dataset.
     """
     dataset_list = []
-    items = list(zip(dataset.image_files, dataset.labels))
+    images, classes = get_images_and_classes(dataset)
+    items = list(zip(images, classes))
 
     for image_file, label in items:
-        dataset_list.append({"image": image_file, "class": label})
+        dataset_list.append({_IMAGE_KEYNAME: image_file, _LABEL_KEYNAME: label})
 
-    new_dataset = PersistentDataset(data=dataset_list, transform=dataset.transform)
+    transform = dataset.transform if transform is None else transform
+    new_dataset: monai.data.Dataset = PersistentDataset(
+        data=dataset_list,
+        transform=transform,
+        cache_dir=cache_dir,
+        **kwargs,
+    )
     return new_dataset

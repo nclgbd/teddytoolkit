@@ -1,9 +1,9 @@
-"""Python `setup.py` for `ttk` package. Adapted from https://github.com/rochacbruno/python-project-template/blob/main/setup.py."""
+"""Python `setup.py` for `rtk` package. Adapted from https://github.com/rochacbruno/python-project-template/blob/main/setup.py."""
 from setuptools import setup, find_packages
-from ttk import __version__
+from rtk import __version__
 
 setup(
-    name="teddytoolkit",
+    name="researchtoolkit",
     version=__version__,
     author="nclgbd",
     description="Toolkit for working with medical imaging data.",

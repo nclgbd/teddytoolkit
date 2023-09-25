@@ -1,5 +1,5 @@
 """
-Basic hydra template configurations for the `ttk` package.
+Basic hydra template configurations for the `rtk` package.
 """
 import os
 import random
@@ -10,8 +10,8 @@ from omegaconf import OmegaConf, DictConfig, ListConfig
 from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 
-# ttk
-from ttk.utils import get_logger
+# rtk
+from rtk.utils import get_logger
 
 logger = get_logger(__name__)
 
@@ -122,6 +122,8 @@ class DatasetConfiguration:
     * `instantiate` (`DictConfig`, optional): The kind of dataset to instantiate. Defaults to `DictConfig({"_target_": "monai.data.ImageDataset"})`.
     """
 
+    # preprocessing configuration
+    preprocessing: PreprocessingConfiguration
     # integer representation of how many times to expand the dataset
     # i.e.: if the dataset has 100 samples and resample_value is 3, then the dataset will be expanded to 300 samples.
     # default is 1, which means no expansion.
@@ -144,10 +146,9 @@ class DatasetConfiguration:
     dataloader: DictConfig = field(
         default_factory=lambda: DictConfig({"_target_": "torch.utils.data.DataLoader"})
     )
-    # preprocessing configuration
-    preprocessing: PreprocessingConfiguration = field(
-        default_factory=PreprocessingConfiguration()
-    )
+    # preprocessing: PreprocessingConfiguration = field(
+    #     default_factory=PreprocessingConfiguration()
+    # )
     # transforms
     transforms: DictConfig = field(
         default_factory=lambda: DictConfig({"load": [], "train": []})
@@ -250,7 +251,9 @@ class Configuration:
     date: str = ""
     postfix: str = ""
     timestamp: str = ""
-    datasets: DatasetConfiguration = field(default_factory=DatasetConfiguration())
+    datasets: DatasetConfiguration = field(
+        default_factory=DatasetConfiguration(preprocessing=PreprocessingConfiguration())
+    )
     job: JobConfiguration = field(default_factory=JobConfiguration())
     models: ModelConfiguration = field(default_factory=ModelConfiguration())
 

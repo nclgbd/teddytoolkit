@@ -10,10 +10,10 @@ from omegaconf import OmegaConf, DictConfig
 CWD = os.getcwd()
 sys.path.append(os.path.abspath(os.path.join(CWD)))
 
-# ttk
-from ttk.utils import get_logger
+# rtk
+from rtk.utils import get_logger
 
-CHEST_XRAY_IMG_PATH = "/home/nicoleg/workspaces/teddytoolkit/ttk/.cache/datasets/scans/Chest_XRay_Images:latest/"
+CHEST_XRAY_IMG_PATH = "/home/nicoleg/workspaces/teddytoolkit/rtk/.cache/datasets/scans/Chest_XRay_Images:latest/"
 CHEST_XRAY_RGB_PATH = (
     "/home/nicoleg/workspaces/teddytoolkit/.data/Chest_XRay_Images_RGB/"
 )

@@ -62,9 +62,9 @@ from generative.engines import DiffusionPrepareBatch
 from generative.inferers import DiffusionInferer
 from generative.networks.schedulers import Scheduler
 
-# ttk
-from ttk import models
-from ttk.config import (
+# rtk
+from rtk import models
+from rtk.config import (
     Configuration,
     DatasetConfiguration,
     DiffusionModelConfiguration,
@@ -72,7 +72,7 @@ from ttk.config import (
     JobConfiguration,
     ModelConfiguration,
 )
-from ttk.utils import get_logger, login, hydra_instantiate
+from rtk.utils import get_logger, login, hydra_instantiate
 
 logger = get_logger(__name__)
 

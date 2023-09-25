@@ -3,7 +3,7 @@
 load:
   - _target_: monai.transforms.LoadImaged
     keys: [image]
-    image_only: true
+    # image_only: true
   - _target_: monai.transforms.EnsureChannelFirstd
     keys: [image]
   - _target_: monai.transforms.ScaleIntensityd

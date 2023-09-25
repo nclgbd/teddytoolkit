@@ -19,8 +19,8 @@ from rich.logging import RichHandler
 from azureml.core import Workspace
 from azureml.core.dataset import Dataset
 
-# ttk
-from ttk import DEFAULT_DATA_PATH
+# rtk
+from rtk import DEFAULT_DATA_PATH
 
 __all__ = [
     "_console",

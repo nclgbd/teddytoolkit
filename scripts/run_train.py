@@ -28,16 +28,16 @@ import monai
 CWD = os.getcwd()
 sys.path.append(os.path.abspath(os.path.join(CWD)))
 
-# ttk
-from ttk import datasets, repl
-from ttk.config import (
+# rtk
+from rtk import datasets, repl
+from rtk.config import (
     Configuration,
     DatasetConfiguration,
     JobConfiguration,
     ModelConfiguration,
 )
-from ttk.ignite import prepare_run
-from ttk.utils import hydra_instantiate, get_logger, login, create_run_name
+from rtk.ignite import prepare_run
+from rtk.utils import hydra_instantiate, get_logger, login, create_run_name
 
 
 def create_loaders(cfg: Configuration):
@@ -156,6 +156,6 @@ def main(cfg: Configuration) -> None:
 
 if __name__ == "__main__":
     repl.install(show_locals=False)
-    logger = get_logger("ttk.scripts.run_train")
+    logger = get_logger("rtk.scripts.run_train")
     monai.config.print_config()
     main()

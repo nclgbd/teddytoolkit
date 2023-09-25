@@ -10,9 +10,9 @@ import torch.nn as nn
 from generative.inferers import DiffusionInferer
 from generative.networks.schedulers import Scheduler
 
-# ttk imports
-from ttk.config import ModelConfiguration, DiffusionModelConfiguration
-from ttk.utils import get_logger, hydra_instantiate
+# rtk
+from rtk.config import ModelConfiguration, DiffusionModelConfiguration
+from rtk.utils import get_logger, hydra_instantiate
 
 logger = get_logger(__name__)
 

@@ -1,5 +1,5 @@
 """
-Tests for the `ttk.config` module.
+Tests for the `rtk.config` module.
 """
 # torch
 import pytest
@@ -10,9 +10,9 @@ from torch import nn
 from generative.inferers import DiffusionInferer
 from generative.networks.schedulers import DDPMScheduler
 
-# ttk
-from ttk import models
-from ttk.config import Configuration, ModelConfiguration, DiffusionModelConfiguration
+# rtk
+from rtk import models
+from rtk.config import Configuration, ModelConfiguration, DiffusionModelConfiguration
 
 
 class TestModels:
@@ -29,17 +29,17 @@ class TestModels:
         return test_cfg.models
 
     def test_instantiate_model(self, model_cfg: ModelConfiguration):
-        """Test the `ttk.models.instantiate_model` function."""
+        """Test the `rtk.models.instantiate_model` function."""
         model = models.instantiate_model(model_cfg, device=torch.device("cpu"))
         assert isinstance(model, nn.Module)
 
     def test_instantiate_criterion(self, model_cfg: ModelConfiguration):
-        """Test the `ttk.models.instantiate_criterion` function."""
+        """Test the `rtk.models.instantiate_criterion` function."""
         criterion = models.instantiate_criterion(model_cfg)
         assert isinstance(criterion, nn.Module)
 
     def test_instantiate_optimizer(self, model_cfg: ModelConfiguration):
-        """Test the `ttk.models.instantiate_optimizer` function."""
+        """Test the `rtk.models.instantiate_optimizer` function."""
         model = models.instantiate_model(model_cfg, device=torch.device("cpu"))
         optimizer = models.instantiate_optimizer(model_cfg, model=model)
         assert isinstance(optimizer, torch.optim.Optimizer)
@@ -48,7 +48,7 @@ class TestModels:
     def test_instantiate_diffusion_scheduler(
         self, diffusion_model_cfg: DiffusionModelConfiguration
     ):
-        """Test the `ttk.models.instantiate_diffusion_scheduler` function."""
+        """Test the `rtk.models.instantiate_diffusion_scheduler` function."""
         scheduler: DDPMScheduler = models.instantiate_diffusion_scheduler(
             diffusion_model_cfg
         )
@@ -58,7 +58,7 @@ class TestModels:
     def test_instantiate_diffusion_inferer(
         self, diffusion_model_cfg: DiffusionModelConfiguration
     ):
-        """Test the `ttk.models.instantiate_diffusion_inferer` function."""
+        """Test the `rtk.models.instantiate_diffusion_inferer` function."""
         scheduler: DDPMScheduler = models.instantiate_diffusion_scheduler(
             diffusion_model_cfg
         )
