@@ -45,9 +45,9 @@ def create_loaders(cfg: Configuration):
     dataset_cfg: DatasetConfiguration = cfg.datasets
     job_cfg: JobConfiguration = cfg.job
     train_transform = datasets.create_transforms(
-        dataset_cfg, use_transforms=job_cfg.use_transforms
+        cfg, use_transforms=job_cfg.use_transforms
     )
-    eval_transform = datasets.create_transforms(dataset_cfg, use_transforms=False)
+    eval_transform = datasets.create_transforms(cfg, use_transforms=False)
     dataset = datasets.instantiate_image_dataset(cfg=cfg, transform=train_transform)
     train_dataset, test_dataset = dataset[0], dataset[1]
     train_val_test_split_dict = datasets.instantiate_train_val_test_datasets(

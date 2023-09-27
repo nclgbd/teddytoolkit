@@ -217,12 +217,14 @@ def yaml_to_namespace(yaml_file: os.PathLike):
 def create_run_name(cfg, random_state: int, **kwargs):
     """Create a run name."""
     dataset_cfg = cfg.datasets
+    preprocessing_cfg = dataset_cfg.preprocessing
     job_cfg = cfg.job
     model_cfg = cfg.models
 
-    run_name: str = model_cfg.model.model_name
-    if dataset_cfg.use_sampling:
-        sample_to_value = dataset_cfg.sample_to_value
+    model_name = model_cfg.model._target_.split(".")[-1]
+    run_name: str = model_cfg.model.get("model_name", model_name.lower())
+    if preprocessing_cfg.use_sampling:
+        sample_to_value = preprocessing_cfg.sample_to_value
         run_name += f",sample_to_value={sample_to_value}"
 
     date = cfg.date

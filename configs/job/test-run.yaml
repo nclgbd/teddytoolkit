@@ -8,7 +8,7 @@ perform_validation: true
 random_state: 42
 set_track_meta: false
 use_autocast: true
-use_azureml: false
+use_azureml: true
 use_mlflow: true
 use_pretrained_weights: true
 use_transforms: true

@@ -3,10 +3,10 @@
 defaults:
   - _self_
   - datasets: chest-xray-dataset
-  - job: train-diffusion
-  - models: ddpm-model
+  - job: test-run
+  - models: coca-model
   # module configurations
-  - ignite: diffusion-ignite
+  - ignite: ignite
   - mlflow: local
   - sklearn: classifier
   # overrides:

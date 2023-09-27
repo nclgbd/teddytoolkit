@@ -10,15 +10,35 @@ import torch.nn as nn
 from generative.inferers import DiffusionInferer
 from generative.networks.schedulers import Scheduler
 
+# research libraries
+from coca_pytorch.coca_pytorch import CoCa
+from vit_pytorch.extractor import Extractor
+from vit_pytorch.simple_vit_with_patch_dropout import SimpleViT
+
 # rtk
-from rtk.config import ModelConfiguration, DiffusionModelConfiguration
+from rtk.config import Configuration, ModelConfiguration, DiffusionModelConfiguration
 from rtk.utils import get_logger, hydra_instantiate
 
 logger = get_logger(__name__)
 
 
+def get_vit_extractor():
+    vit = SimpleViT(
+        depth=6,
+        dim=1024,
+        heads=16,
+        image_size=256,
+        mlp_dim=2048,
+        num_classes=2,
+        patch_dropout=0.5,  # https://arxiv.org/abs/2212.00794
+        patch_size=32,
+    )
+    vit = Extractor(vit, return_embeddings_only=True, detach=False)
+    return vit
+
+
 def instantiate_model(
-    model_cfg: ModelConfiguration, device: torch.device = torch.device("cpu"), **kwargs
+    cfg: Configuration, device: torch.device = torch.device("cpu"), **kwargs
 ):
     """
     Instantiates a model from the given configuration.
@@ -28,35 +48,41 @@ def instantiate_model(
     * `device` (`torch.device`, optional): The device to instantiate the model on. Defaults to `torch.device("cpu")`.
     """
     logger.info("Instantiating model...")
+    model_cfg: ModelConfiguration = cfg.models
+    model_name: str = model_cfg.model._target_.split(".")[-1]
+
+    if model_name == "CoCa":
+        vit = get_vit_extractor()
+        kwargs["img_encoder"] = vit
     model: nn.Module = hydra_instantiate(cfg=model_cfg.model, **kwargs)
     return model.to(device)
 
 
 def instantiate_criterion(
-    model_cfg: ModelConfiguration, device: torch.device = torch.device("cpu"), **kwargs
+    cfg: Configuration, device: torch.device = torch.device("cpu"), **kwargs
 ):
     """
     Instantiates the criterion (loss function) from a given configuration.
 
     ## Args:
-    * `model_cfg` (`ModelConfiguration`): The model configuration.
+    * `cfg` (`Configuration`): The model configuration.
     """
     logger.info("Instantiating criterion (loss function)...")
-    criterion: nn.Module = hydra_instantiate(cfg=model_cfg.criterion, **kwargs)
+    criterion: nn.Module = hydra_instantiate(cfg=cfg.models.criterion, **kwargs)
     return criterion.to(device)
 
 
-def instantiate_optimizer(model_cfg: ModelConfiguration, model: nn.Module, **kwargs):
+def instantiate_optimizer(cfg: Configuration, model: nn.Module, **kwargs):
     """
     Instantiates the optimizer from a given configuration.
 
     ## Args:
-    * `model_cfg` (`ModelConfiguration`): The model configuration.
+    * `cfg` (`Configuration`): The model configuration.
     * `model` (`nn.Module`): The model to optimize.
     """
     logger.info("Instantiating optimizer...")
     optimizer: torch.optim.Optimizer = hydra_instantiate(
-        cfg=model_cfg.optimizer, params=model.parameters(), **kwargs
+        cfg=cfg.models.optimizer, params=model.parameters(), **kwargs
     )
     return optimizer
 

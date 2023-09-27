@@ -385,16 +385,15 @@ def instantiate_train_val_test_datasets(
     """
     dataset_cfg: DatasetConfiguration = cfg.datasets
     job_cfg: JobConfiguration = cfg.job
+    random_state = job_cfg.get("random_state", kwargs.get("random_state", 42))
+    use_transforms = job_cfg.use_transforms
     sklearn_cfg = cfg.sklearn
 
     train_val_test_split_dict = {}
     train_test_split_kwargs: dict = sklearn_cfg.model_selection.train_test_split
-    use_transforms = job_cfg.use_transforms
-    train_transforms = create_transforms(
-        dataset_cfg=dataset_cfg, use_transforms=use_transforms
-    )
-    eval_transforms = create_transforms(dataset_cfg=dataset_cfg, use_transforms=False)
-    random_state = job_cfg.get("random_state", kwargs.get("random_state", 42))
+    train_transforms = create_transforms(cfg, use_transforms=use_transforms)
+    eval_transforms = create_transforms(cfg, use_transforms=False)
+
     if dataset_cfg.extension == ".jpeg":
         logger.info("Creating train/val splits...\n")
         X, y = get_images_and_classes(dataset=dataset)

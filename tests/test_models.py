@@ -28,20 +28,20 @@ class TestModels:
         """Fixture for the model configuration."""
         return test_cfg.models
 
-    def test_instantiate_model(self, model_cfg: ModelConfiguration):
+    def test_instantiate_model(self, test_cfg: Configuration):
         """Test the `rtk.models.instantiate_model` function."""
-        model = models.instantiate_model(model_cfg, device=torch.device("cpu"))
+        model = models.instantiate_model(test_cfg, device=torch.device("cpu"))
         assert isinstance(model, nn.Module)
 
-    def test_instantiate_criterion(self, model_cfg: ModelConfiguration):
+    def test_instantiate_criterion(self, test_cfg: Configuration):
         """Test the `rtk.models.instantiate_criterion` function."""
-        criterion = models.instantiate_criterion(model_cfg)
+        criterion = models.instantiate_criterion(test_cfg, device=torch.device("cpu"))
         assert isinstance(criterion, nn.Module)
 
-    def test_instantiate_optimizer(self, model_cfg: ModelConfiguration):
+    def test_instantiate_optimizer(self, test_cfg: Configuration):
         """Test the `rtk.models.instantiate_optimizer` function."""
-        model = models.instantiate_model(model_cfg, device=torch.device("cpu"))
-        optimizer = models.instantiate_optimizer(model_cfg, model=model)
+        model = models.instantiate_model(test_cfg, device=torch.device("cpu"))
+        optimizer = models.instantiate_optimizer(test_cfg, model=model)
         assert isinstance(optimizer, torch.optim.Optimizer)
 
     @pytest.mark.diffusion

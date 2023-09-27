@@ -92,14 +92,12 @@ def create_default_trainer_args(
     trainer_kwargs["device"] = device
 
     # Prepare model, optimizer, loss function, and criterion
-    model: nn.Module = models.instantiate_model(model_cfg, device=device)
+    model: nn.Module = models.instantiate_model(cfg, device=device)
     model.train()
     trainer_kwargs["model"] = model
-    criterion = models.instantiate_criterion(model_cfg, device=device)
+    criterion = models.instantiate_criterion(cfg, device=device)
     trainer_kwargs["loss_fn"] = criterion
-    optimizer: torch.optim.Optimizer = models.instantiate_optimizer(
-        model_cfg, model=model
-    )
+    optimizer: torch.optim.Optimizer = models.instantiate_optimizer(cfg, model=model)
     trainer_kwargs["optimizer"] = optimizer
 
     return trainer_kwargs
