@@ -92,7 +92,9 @@ def prepare_mlflow(cfg: Configuration):
         tracking_uri = mlflow_cfg.get("tracking_uri", "~/mlruns/")
 
     mlflow.set_tracking_uri(tracking_uri)
-    experiment_name = HydraConfig.get().job.config_name
+    experiment_name = mlflow_cfg.get(
+        "experiment_name", HydraConfig.get().job.config_name
+    )
     experiment_id = mlflow.create_experiment(
         experiment_name, artifact_location=tracking_uri
     )
@@ -109,7 +111,7 @@ def main(cfg: Configuration) -> None:
     job_cfg: JobConfiguration = cfg.job
     random_state: int = job_cfg.get("random_state", random.randint(0, 8192))
     run_name = create_run_name(cfg=cfg, random_state=random_state)
-    logger.info(f"Run name: {run_name}")
+    logger.info(f"Run name: '{run_name}'")
     monai.utils.set_determinism(seed=random_state)
     logger.info(f"Using seed: {random_state}")
 
@@ -146,6 +148,7 @@ def main(cfg: Configuration) -> None:
                     mlflow_run.info.run_id, mlflow_run.info.status
                 )
             )
+            mlflow.log_params(cfg.models)
             state = run_trainer()
             mlflow.log_artifact("./")
     else:

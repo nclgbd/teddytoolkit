@@ -573,6 +573,7 @@ def prepare_run(cfg: Configuration, loaders: dict, device: torch.device, **kwarg
     ProgressBar().attach(trainer)
 
     metrics = create_metrics(cfg, criterion=trainer_args["loss_fn"], device=device)
+    # TODO: make the engines from monai.engines
     ## create evaluators
     train_evaluator = create_supervised_evaluator(
         trainer_args["model"], metrics=metrics, device=device

@@ -5,6 +5,7 @@ defaults:
   - preprocessing: default-preprocessing
   - transforms: default-transforms
 
+dim: 224
 extension: .jpeg
 labels: [NORMAL, PNEUMONIA]
 patient_data: null
@@ -17,6 +18,6 @@ instantiate:
   _target_: monai.data.ImageDataset
 
 dataloader:
-  _target_: monai.data.ThreadDataLoader
-  batch_size: 4
-  # num_workers: 24
+  _target_: monai.data.DataLoader
+  batch_size: 16
+  num_workers: 24

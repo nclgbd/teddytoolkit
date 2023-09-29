@@ -5,6 +5,9 @@ import numpy as np
 import pandas as pd
 from omegaconf import DictConfig
 
+# torch
+import torch
+
 # monai
 from monai.data import DataLoader
 from monai.utils import first
@@ -80,8 +83,8 @@ class TestDatasets:
 
         # attempt retrieval of sample
         # train_dataset = datasets.transform_image_dataset_to_cache_dataset(train_dataset)
-        scan, label = next(iter(DataLoader(train_dataset)))
-        assert scan is not None
+        scan, label = first(train_dataset)
+        assert isinstance(scan, torch.Tensor)
         assert type(label) == np.int64 or type(label) == int
         # check shape of sample
         scan_shape = scan.shape[1:]
@@ -92,15 +95,19 @@ class TestDatasets:
         dataset_cfg: DatasetConfiguration = test_cfg.datasets
         job_cfg: JobConfiguration = test_cfg.job
 
-        transform = datasets.create_transforms(dataset_cfg)
+        transform = datasets.create_transforms(test_cfg)
         dataset = datasets.instantiate_image_dataset(cfg=test_cfg, transform=transform)
         train_dataset = dataset[0]
+        use_val = True
         train_val_test_split_dict = datasets.instantiate_train_val_test_datasets(
-            cfg=test_cfg, save_metadata=True, dataset=train_dataset
+            cfg=test_cfg,
+            save_metadata=True,
+            dataset=train_dataset,
+            use_val=use_val,
         )
 
         assert train_val_test_split_dict is not None
-        if job_cfg.perform_validation and dataset_cfg.extension == ".nii.gz":
+        if use_val:
             assert len(set(train_val_test_split_dict.keys())) == 3
         elif job_cfg.perform_validation and dataset_cfg.extension == ".jpeg":
             assert len(set(train_val_test_split_dict.keys())) == 2
@@ -109,14 +116,17 @@ class TestDatasets:
         assert train_dataset is not None
 
         # test `rtk.datasets.resample_to_value`
-        if dataset_cfg.use_sampling:
+        if dataset_cfg.preprocessing.use_sampling:
             num_classes = len(dataset_cfg.labels)
-            assert len(train_dataset) == dataset_cfg.sample_to_value * num_classes
+            assert (
+                len(train_dataset)
+                == dataset_cfg.preprocessing.sample_to_value * num_classes
+            )
 
     def test_transform_image_dataset_to_cache_dataset(self, test_cfg):
         """Tests the `rtk.datasets.transform_image_dataset_to_cache_dataset` function."""
         dataset_cfg: DatasetConfiguration = test_cfg.datasets
-        transform = datasets.create_transforms(dataset_cfg)
+        transform = datasets.create_transforms(test_cfg)
         dataset = datasets.instantiate_image_dataset(cfg=test_cfg, transform=transform)
         train_dataset = dataset[0]
         train_dataset_dict = datasets.convert_image_dataset(train_dataset)
@@ -125,7 +135,7 @@ class TestDatasets:
     def test_preprocess_dataset(self, test_cfg: Configuration):
         """Tests the `rtk.datasets.preprocess_dataset` function."""
         dataset_cfg: DatasetConfiguration = test_cfg.datasets
-        transform = datasets.create_transforms(dataset_cfg)
+        transform = datasets.create_transforms(test_cfg)
         dataset = datasets.instantiate_image_dataset(cfg=test_cfg, transform=transform)
         train_dataset = dataset[0]
         new_train_dataset = datasets.convert_image_dataset(train_dataset)

@@ -16,8 +16,9 @@
                 "tests",
                 "--config-path",
                 "../configs/",
-                "job.epoch_length=128",
+                "job.epoch_length=32",
                 "job.max_epochs=3",
+                "mlflow.experiment_name=tests",
             ]
         },
         {
@@ -33,8 +34,9 @@
                 "--config-path",
                 "../configs/",
                 "job.dry_run=true",
-                "job.epoch_length=128",
+                "job.epoch_length=32",
                 "job.max_epochs=2",
+                "mlflow.experiment_name=tests",
             ]
         }
     ]

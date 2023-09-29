@@ -223,9 +223,14 @@ def create_run_name(cfg, random_state: int, **kwargs):
 
     model_name = model_cfg.model._target_.split(".")[-1]
     run_name: str = model_cfg.model.get("model_name", model_name.lower())
+    optimizer_name: str = model_cfg.optimizer._target_.split(".")[-1].lower()
+    criterion_name: str = model_cfg.criterion._target_.split(".")[-1].lower()
+    run_name += f",optimizer={optimizer_name},criterion={criterion_name}"
     if preprocessing_cfg.use_sampling:
         sample_to_value = preprocessing_cfg.sample_to_value
         run_name += f",sample_to_value={sample_to_value}"
+
+    run_name += f",pretrained={str(job_cfg.use_pretrained_weights).lower()}"
 
     date = cfg.date
     postfix: str = cfg.get("postfix", "")

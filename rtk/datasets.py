@@ -34,7 +34,7 @@ _CHEST_XRAY_TEST_DATASET_SIZE = 624
 _IXI_MRI_DATASET_SIZE = 538
 
 _IMAGE_KEYNAME = "image"
-_LABEL_KEYNAME = "class"
+_LABEL_KEYNAME = "label"
 _COLUMN_NAMES = [_IMAGE_KEYNAME, _LABEL_KEYNAME]
 _CACHE_DIR = os.path.join(DEFAULT_CACHE_DIR, "tmp")
 
@@ -58,7 +58,7 @@ def create_transforms(
     """
     logger.info("Creating transforms...\n")
     dataset_cfg = cfg.datasets if dataset_cfg is None else dataset_cfg
-    use_transforms = dataset_cfg.get("use_transforms", use_transforms is not None)
+    use_transforms = cfg.job.get("use_transforms", use_transforms is not None)
     transform_dicts: dict = (
         transform_dicts
         if dataset_cfg is None
@@ -349,14 +349,14 @@ def instantiate_image_dataset(cfg: Configuration, save_metadata=False, **kwargs)
             labels=train_metadata[_LABEL_KEYNAME].values,
             **kwargs,
         )
-        train_dataset: monai.data.Dataset = convert_image_dataset(train_dataset)
+        # train_dataset: monai.data.Dataset = convert_image_dataset(train_dataset)
         test_dataset = monai.data.Dataset = instantiate(
             config=dataset_cfg.instantiate,
             image_files=test_metadata[_IMAGE_KEYNAME].values,
             labels=test_metadata[_LABEL_KEYNAME].values,
             **kwargs,
         )
-        test_dataset: monai.data.Dataset = convert_image_dataset(test_dataset)
+        # test_dataset: monai.data.Dataset = convert_image_dataset(test_dataset)
         if save_metadata:
             train_metadata.to_csv(
                 os.path.join(
@@ -413,27 +413,29 @@ def instantiate_train_val_test_datasets(
             X_train = train_metadata[_IMAGE_KEYNAME].values
             y_train = train_metadata[_LABEL_KEYNAME].values
 
-        train_data = list(
-            {_IMAGE_KEYNAME: image_file, _LABEL_KEYNAME: label}
-            for image_file, label in zip(X_train, y_train)
-        )
-        train_dataset: PersistentDataset = PersistentDataset(
-            data=train_data,
+        # train_data = list(
+        #     {_IMAGE_KEYNAME: image_file, _LABEL_KEYNAME: label}
+        #     for image_file, label in zip(X_train, y_train)
+        # )
+        train_dataset: monai.data.Dataset = instantiate(
+            config=dataset_cfg.instantiate,
+            image_files=X_train,
+            labels=y_train,
             transform=train_transforms,
-            cache_dir=_CACHE_DIR,
             **kwargs,
         )
         train_val_test_split_dict["train"] = train_dataset
 
         if use_val:
-            val_data = list(
-                {_IMAGE_KEYNAME: image_file, _LABEL_KEYNAME: label}
-                for image_file, label in zip(X_val, y_val)
-            )
-            val_dataset: PersistentDataset = PersistentDataset(
-                data=val_data,
+            # val_data = list(
+            #     {_IMAGE_KEYNAME: image_file, _LABEL_KEYNAME: label}
+            #     for image_file, label in zip(X_val, y_val)
+            # )
+            val_dataset: monai.data.Dataset = instantiate(
+                config=dataset_cfg.instantiate,
+                image_files=X_val,
+                labels=y_val,
                 transform=eval_transforms,
-                cache_dir=_CACHE_DIR,
                 **kwargs,
             )
             train_val_test_split_dict["val"] = val_dataset
@@ -514,6 +516,7 @@ def convert_image_dataset(
 
     for image_file, label in items:
         dataset_list.append({_IMAGE_KEYNAME: image_file, _LABEL_KEYNAME: label})
+        # dataset_list.append((image_file, label))
 
     transform = dataset.transform if transform is None else transform
     new_dataset: monai.data.Dataset = PersistentDataset(

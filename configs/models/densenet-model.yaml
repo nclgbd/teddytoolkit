@@ -2,18 +2,11 @@
 
 defaults:
   - _self_
+  - criterion: cross-entropy
+  - optimizer: sgd
 
 model:
   _target_: timm.create_model
   model_name: densenet121
   num_classes: 2
-  pretrained: true
-
-criterion:
-  _target_: torch.nn.CrossEntropyLoss
-
-optimizer:
-  _target_: torch.optim.SGD
-  lr: 1e-3
-  momentum: 0.9
-  weight_decay: 1e-4
+  pretrained: ${job.use_pretrained_weights}

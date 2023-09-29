@@ -2,24 +2,26 @@
 
 defaults:
   - _self_
+  - criterion: cross-entropy
+  - optimizer: lion
 
 model:
   _target_: coca_pytorch.coca_pytorch.CoCa
   caption_loss_weight: 1. # weight on the autoregressive caption loss
   contrastive_loss_weight: 1. # weight on the contrastive loss between image and text CLS embeddings
-  dim: 512 # model dimension
+  dim: 256 # model dimension
   dim_head: 64 # dimension per attention head
   heads: 8 # number of attention heads
-  image_dim: 1024 # image embedding dimension if not the same as model dimensions
+  # image_dim: 1024 # image embedding dimension if not the same as model dimensions
   multimodal_depth: 6 # depth of the multimodal transformer
   num_tokens: 20000 # number of text tokens
   unimodal_depth: 6 # depth of the unimodal transformer
 
-criterion:
-  _target_: torch.nn.CrossEntropyLoss
+# criterion:
+#   _target_: torch.nn.CrossEntropyLoss
 
-optimizer:
-  _target_: timm.optim.lion.Lion
-  lr: 1e-4
-  betas: [0.9, 0.99]
-  # weight_decay: 1e-4
+# optimizer:
+#   _target_: timm.optim.lion.Lion
+#   lr: 1e-4
+#   betas: [0.9, 0.99]
+# # weight_decay: 1e-4

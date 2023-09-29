@@ -1,0 +1,3 @@
+# criterion: cross-entropy
+
+_target_: torch.nn.CrossEntropyLoss

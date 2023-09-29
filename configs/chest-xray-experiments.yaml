@@ -1,4 +1,5 @@
 # python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-experiments
+# python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-experiments -m
 # python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-experiments -m models.model.model_name=resnet18,mobilenetv2_100,densenet121
 # python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-experiments -m models.model.model_name=inception_v3,xception
 
@@ -6,7 +7,7 @@ defaults:
   - _self_
   - datasets: chest-xray-dataset
   - job: run-train
-  - models: inception-model
+  - models: vit-model
   # module configurations
   - ignite: ignite
   - mlflow: local
@@ -16,7 +17,7 @@ defaults:
   - override hydra/hydra_logging: colorlog
 
 date: ${now:%Y-%m-%d}
-postfix: pretrained=false
+postfix: NO_SAMPLING
 timestamp: ${now:%H-%M-%S}
 
 hydra:
