@@ -1,7 +1,7 @@
 # preprocessing: default-preprocessing
 
 resample_value: 1
-sample_to_value: -1
+sample_to_value: 3500
 use_sampling: false
 # subset: [0]
 # use_subset: true

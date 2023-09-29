@@ -137,13 +137,14 @@ def resample_to_value(cfg: Configuration, metadata: pd.DataFrame, **kwargs):
     Resample a dataset by duplicating the data.
     """
     dataset_cfg = cfg.datasets
-    label_encoding = sorted(metadata["labels"].unique())
-    sample_to_value: int = dataset_cfg.get(
-        "sample_to_value", kwargs.get("sample_to_value", 3000)
+    preprocessing_cfg = dataset_cfg.preprocessing
+    label_encoding = sorted(metadata[_LABEL_KEYNAME].unique())
+    sample_to_value: int = preprocessing_cfg.get(
+        "sample_to_value", kwargs.get("sample_to_value", 3500)
     )
     new_metadata = deepcopy(metadata)
     for label in label_encoding:
-        class_subset = metadata[metadata["labels"] == label]
+        class_subset = metadata[metadata[_LABEL_KEYNAME] == label]
         offset_size = sample_to_value - len(class_subset)
         resampled_image_files = np.random.choice(
             class_subset[_IMAGE_KEYNAME].values, size=offset_size
@@ -384,8 +385,9 @@ def instantiate_train_val_test_datasets(
     Create train/test splits for the data.
     """
     dataset_cfg: DatasetConfiguration = cfg.datasets
+    preprocessing_cfg = dataset_cfg.preprocessing
     job_cfg: JobConfiguration = cfg.job
-    random_state = job_cfg.get("random_state", kwargs.get("random_state", 42))
+    random_state = job_cfg.get("random_state", kwargs.get("random_state", 0))
     use_transforms = job_cfg.use_transforms
     sklearn_cfg = cfg.sklearn
 
@@ -405,10 +407,10 @@ def instantiate_train_val_test_datasets(
             random_state=random_state,
             **train_test_split_kwargs,
         )
-        if dataset_cfg.get("use_sampling", False):
-            train_metadata = pd.DataFrame(
-                [X_train, y_train], columns=_COLUMN_NAMES
-            ).reset_index(drop=True)
+        if preprocessing_cfg.get("use_sampling", False):
+            train_metadata = pd.DataFrame.from_dict(
+                {_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train}, orient="columns"
+            )
             train_metadata = resample_to_value(cfg=cfg, metadata=train_metadata)
             X_train = train_metadata[_IMAGE_KEYNAME].values
             y_train = train_metadata[_LABEL_KEYNAME].values

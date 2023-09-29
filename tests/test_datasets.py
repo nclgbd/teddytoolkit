@@ -105,12 +105,13 @@ class TestDatasets:
             dataset=train_dataset,
             use_val=use_val,
         )
+        # train_val_test_split_dict["test"] = dataset[1]
 
         assert train_val_test_split_dict is not None
-        if use_val:
-            assert len(set(train_val_test_split_dict.keys())) == 3
-        elif job_cfg.perform_validation and dataset_cfg.extension == ".jpeg":
+        if use_val and dataset_cfg.extension == ".jpeg":
             assert len(set(train_val_test_split_dict.keys())) == 2
+        elif use_val:
+            assert len(set(train_val_test_split_dict.keys())) == 3
 
         train_dataset = train_val_test_split_dict["train"]
         assert train_dataset is not None

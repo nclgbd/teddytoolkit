@@ -1,4 +1,4 @@
 # mlflow: local
 
-experiment_name: Default
+# experiment_name: Default
 tracking_uri: file:///home/nicoleg/workspaces/teddytoolkit/mlruns/

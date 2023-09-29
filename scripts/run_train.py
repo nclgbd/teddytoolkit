@@ -39,6 +39,8 @@ from rtk.config import (
 from rtk.ignite import prepare_run
 from rtk.utils import hydra_instantiate, get_logger, login, create_run_name
 
+_MAX_RAND_INT = 8192
+
 
 def create_loaders(cfg: Configuration):
     """Create train and test loaders."""
@@ -109,7 +111,7 @@ def main(cfg: Configuration) -> None:
     # before we run....
     logger.debug(OmegaConf.to_yaml(cfg))
     job_cfg: JobConfiguration = cfg.job
-    random_state: int = job_cfg.get("random_state", random.randint(0, 8192))
+    random_state: int = job_cfg.get("random_state", random.randint(0, _MAX_RAND_INT))
     run_name = create_run_name(cfg=cfg, random_state=random_state)
     logger.info(f"Run name: '{run_name}'")
     monai.utils.set_determinism(seed=random_state)
