@@ -123,7 +123,9 @@ class DatasetConfiguration:
     """
 
     # preprocessing configuration
-    preprocessing: PreprocessingConfiguration
+    preprocessing: PreprocessingConfiguration = field(
+        default_factory=PreprocessingConfiguration
+    )
     # integer representation of how many times to expand the dataset
     # i.e.: if the dataset has 100 samples and resample_value is 3, then the dataset will be expanded to 300 samples.
     # default is 1, which means no expansion.
@@ -252,7 +254,7 @@ class Configuration:
     postfix: str = ""
     timestamp: str = ""
     datasets: DatasetConfiguration = field(
-        default_factory=DatasetConfiguration(preprocessing=PreprocessingConfiguration())
+        default_factory=DatasetConfiguration()
     )
     job: JobConfiguration = field(default_factory=JobConfiguration())
     models: ModelConfiguration = field(default_factory=ModelConfiguration())

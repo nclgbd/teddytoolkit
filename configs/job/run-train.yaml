@@ -1,6 +1,6 @@
 job: run-train
 
-device: 0
+device: 2
 dry_run: false
 epoch_length: null
 max_epochs: 25

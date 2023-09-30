@@ -5,8 +5,10 @@ import logging
 import matplotlib.pyplot as plt
 import os
 from copy import deepcopy
+from omegaconf import OmegaConf
 import pandas as pd
 from rich import inspect
+from hydra.core.hydra_config import HydraConfig
 
 # experiment managing
 ## azureml
@@ -551,7 +553,82 @@ def create_lr_scheduler(
     return lr_scheduler
 
 
-def _log_metrics_to_mlflow(metrics: dict, split: str, epoch: int):
+def build_report(
+    cfg: Configuration, metrics: dict, epoch: int, split: str = "test", **kwargs
+):
+    """
+    Creates a report for the model.
+    """
+    logger.info("Generating report...")
+    model_cfg: ModelConfiguration = cfg.get(
+        "models", kwargs.get("model_cfg", ModelConfiguration())
+    )
+    report: str = "# Run summary\n\n"
+
+    # classification report
+    cr_report_dict = dict()
+    cr_df: pd.DataFrame = pd.read_csv(
+        os.path.join("artifacts", split, f"classification_report_epoch={epoch}.csv")
+    )
+
+    model_class_name = model_cfg.model._target_.split(".")[-1].lower()
+    model_name = model_cfg.model.get("model_name", model_class_name)
+    test_auc: float = metrics["test_roc_auc"]
+    test_acc: float = metrics["test_accuracy"]
+    test_loss: float = metrics["test_loss"]
+    test_precision: float = cr_df["macro avg"][0]
+    test_recall: float = cr_df["macro avg"][1]
+    test_f1: float = cr_df["macro avg"][2]
+
+    cr_report_dict["model_name"] = model_name
+    cr_report_dict["roc_auc"] = test_auc
+    cr_report_dict["accuracy"] = test_acc
+    cr_report_dict["loss"] = test_loss
+    cr_report_dict["precision"] = test_precision
+    cr_report_dict["recall"] = test_recall
+    cr_report_dict["f1-score"] = test_f1
+    cr_report_df = pd.DataFrame.from_dict(
+        cr_report_dict,
+        orient="index",
+    )
+    cr_report_df = cr_report_df.transpose().set_index("model_name")
+
+    report += f"## Test results\n"
+    report += f"### Evaluation metrics\n{cr_report_df.to_markdown()}\n\n"
+
+    # confusion matrix
+    cfm_df: pd.DataFrame = (
+        pd.read_csv(
+            os.path.join("artifacts", split, f"confusion_matrix_epoch={epoch}.csv")
+        )
+        .set_index("Unnamed: 0")
+        .rename_axis("", axis=0)
+    )
+    report += f"### Confusion matrix\n{cfm_df.to_markdown()}\n\n"
+
+    # configuration
+    cfg_yaml = OmegaConf.to_yaml(cfg, sort_keys=True)
+    config_name = HydraConfig.get().job.config_name
+    report += (
+        f"## `config.yaml`\n```yaml\n# --config-name={config_name}\n\n{cfg_yaml}\n```\n"
+    )
+
+    with open("artifacts/report.md", "w") as f:
+        f.write(report)
+
+    if cfg.job.use_mlflow:
+        mlflow.set_tag("mlflow.note.content", report)
+
+    return report
+
+
+def _log_metrics_to_mlflow(
+    cfg: Configuration,
+    metrics: dict,
+    split: str,
+    epoch: int,
+    generate_report: bool = True,
+):
     """Iterates through the metrics dictionary and logs the metrics to MLflow."""
     split_key = split + "_"
     logged_metrics = {}
@@ -560,6 +637,11 @@ def _log_metrics_to_mlflow(metrics: dict, split: str, epoch: int):
         if isinstance(metric, float):
             key_name = "".join([split_key, key])
             logged_metrics[key_name] = metric
+
+    if generate_report and split == "test":
+        report = build_report(cfg=cfg, metrics=logged_metrics, epoch=epoch, split=split)
+        logger.debug(f"Report:\n{report}")
+
     mlflow.log_metrics(logged_metrics, step=epoch)
 
 
@@ -643,7 +725,7 @@ def prepare_run(cfg: Configuration, loaders: dict, device: torch.device, **kwarg
         metrics["roc_auc"] = roc_auc
 
         if cfg.job.use_mlflow:
-            _log_metrics_to_mlflow(metrics=metrics, split=split, epoch=epoch)
+            _log_metrics_to_mlflow(cfg, metrics=metrics, split=split, epoch=epoch)
 
     @trainer.on(Events.EPOCH_COMPLETED(every=log_interval))
     def log_metrics(trainer):
@@ -813,7 +895,7 @@ def prepare_diffusion_run(
         # metrics["roc_auc"] = roc_auc
 
         if cfg.job.use_mlflow:
-            _log_metrics_to_mlflow(metrics=metrics, split=split, epoch=epoch)
+            _log_metrics_to_mlflow(cfg, metrics=metrics, split=split, epoch=epoch)
 
     # @trainer.on(Events.EPOCH_COMPLETED(every=log_interval))
     # def log_metrics(trainer):
