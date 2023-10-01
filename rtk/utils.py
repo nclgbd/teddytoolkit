@@ -230,7 +230,7 @@ def create_run_name(cfg, random_state: int, **kwargs):
         sample_to_value = preprocessing_cfg.sample_to_value
         run_name += f",sample_to_value={sample_to_value}"
 
-    run_name += f",pretrained={str(job_cfg.use_pretrained_weights).lower()}"
+    run_name += f",pretrained={str(job_cfg.use_pretrained).lower()}"
 
     date = cfg.date
     postfix: str = cfg.get("postfix", "")

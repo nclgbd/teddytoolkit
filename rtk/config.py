@@ -198,7 +198,7 @@ class JobConfiguration:
     # whether to use MLflow
     use_mlflow: bool = False
     # whether to use pretrained weights or not
-    use_pretrained_weights: bool = True
+    use_pretrained: bool = True
     # whether to use transforms or not
     use_transforms: bool = False
 

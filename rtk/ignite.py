@@ -608,9 +608,8 @@ def build_report(
 
     # configuration
     cfg_yaml = OmegaConf.to_yaml(cfg, sort_keys=True)
-    config_name = HydraConfig.get().job.config_name
     report += (
-        f"## `config.yaml`\n```yaml\n# --config-name={config_name}\n\n{cfg_yaml}\n```\n"
+        f"## `config.yaml`\n```yaml\n# --config-name=config\n\n{cfg_yaml}\n```\n"
     )
 
     with open("artifacts/report.md", "w") as f:

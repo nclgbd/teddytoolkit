@@ -2,15 +2,15 @@
 
 device: 3
 dry_run: true
-epoch_length: 32
-max_epochs: 3
+epoch_length: 8
+max_epochs: 2
 perform_validation: true
 random_state: 42
 set_track_meta: false
 use_autocast: true
-use_azureml: false
-use_mlflow: false
-use_pretrained_weights: true
+use_azureml: true
+use_mlflow: true
+use_pretrained: true
 use_transforms: true
 
 # function kwargs

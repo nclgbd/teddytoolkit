@@ -10,7 +10,7 @@ set_track_meta: false
 use_autocast: true
 use_azureml: true
 use_mlflow: true
-use_pretrained_weights: true
+use_pretrained: true
 use_transforms: true
 
 # function kwargs
