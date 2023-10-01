@@ -1,0 +1,12 @@
+# models: coat-model
+
+defaults:
+  - _self_
+  - criterion: cross-entropy
+  - optimizer: adam
+
+model:
+  _target_: timm.create_model
+  model_name: coatnet_rmlp_2_rw_384.sw_in12k_ft_in1k
+  num_classes: 2
+  pretrained: ${job.use_pretrained_weights}

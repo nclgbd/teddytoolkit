@@ -3,7 +3,7 @@
 defaults:
   - _self_
   - criterion: cross-entropy
-  - optimizer: lion
+  - optimizer: adam
 
 model:
   _target_: coca_pytorch.coca_pytorch.CoCa
@@ -12,16 +12,7 @@ model:
   dim: 256 # model dimension
   dim_head: 64 # dimension per attention head
   heads: 8 # number of attention heads
-  # image_dim: 1024 # image embedding dimension if not the same as model dimensions
+  image_dim: 1024 # image embedding dimension if not the same as model dimensions
   multimodal_depth: 6 # depth of the multimodal transformer
   num_tokens: 20000 # number of text tokens
   unimodal_depth: 6 # depth of the unimodal transformer
-
-# criterion:
-#   _target_: torch.nn.CrossEntropyLoss
-
-# optimizer:
-#   _target_: timm.optim.lion.Lion
-#   lr: 1e-4
-#   betas: [0.9, 0.99]
-# # weight_decay: 1e-4

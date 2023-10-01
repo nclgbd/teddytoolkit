@@ -14,4 +14,8 @@ use_pretrained_weights: true
 use_transforms: true
 
 # function kwargs
-prepare_function: prepare_diffusion_run
+train_test_split:
+  shuffle: true
+  test_size: 0.1
+prepare_function:
+  _target_: rtk.ignite.prepare_diffusion_run

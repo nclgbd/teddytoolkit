@@ -18,4 +18,4 @@ train_test_split:
   shuffle: true
   test_size: 0.1
 prepare_function:
-  _target_: ttk.ignite.prepare_run
+  _target_: rtk.ignite.prepare_run
