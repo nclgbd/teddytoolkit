@@ -37,7 +37,8 @@ from rtk.config import (
     ModelConfiguration,
 )
 from rtk.ignite import prepare_run
-from rtk.utils import hydra_instantiate, get_logger, login, create_run_name
+from rtk.mlflow import *
+from rtk.utils import hydra_instantiate, get_logger
 
 _MAX_RAND_INT = 8192
 
@@ -80,30 +81,6 @@ def create_loaders(cfg: Configuration):
         shuffle=True,
     )
     return train_loader, val_loader, test_loader
-
-
-def prepare_mlflow(cfg: Configuration):
-    logger.info("Starting MLflow run...")
-    mlflow_cfg = cfg.mlflow
-    if cfg.job.use_azureml:
-        logger.info("Using AzureML for experiment tracking...")
-        ws = login()
-        tracking_uri = ws.get_mlflow_tracking_uri()
-
-    else:
-        tracking_uri = mlflow_cfg.get("tracking_uri", "~/mlruns/")
-
-    mlflow.set_tracking_uri(tracking_uri)
-    experiment_name = mlflow_cfg.get(
-        "experiment_name", HydraConfig.get().job.config_name
-    )
-    experiment_id = mlflow.create_experiment(
-        experiment_name, artifact_location=tracking_uri
-    )
-    logger.debug(f"MLflow tracking URI: {tracking_uri}")
-    start_run_kwargs: dict = mlflow_cfg.get("start_run", {})
-    start_run_kwargs["experiment_id"] = experiment_id
-    return start_run_kwargs
 
 
 @hydra.main(version_base=None, config_path="", config_name="")
@@ -150,7 +127,7 @@ def main(cfg: Configuration) -> None:
                     mlflow_run.info.run_id, mlflow_run.info.status
                 )
             )
-            mlflow.log_params(cfg.models)
+            log_mlflow_params(cfg)
             state = run_trainer()
             mlflow.log_artifact("./")
     else:

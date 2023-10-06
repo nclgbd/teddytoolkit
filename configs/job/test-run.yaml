@@ -1,6 +1,6 @@
 # job: test-run
 
-device: 3
+device: 1
 dry_run: true
 epoch_length: 8
 max_epochs: 2

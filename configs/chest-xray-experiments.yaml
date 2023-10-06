@@ -1,7 +1,10 @@
-# python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-experiments
+# * python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-experiments
+
+# Sampling modes
 # python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-experiments -m
-# python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-experiments -m models.model.model_name=resnet18,mobilenetv2_100,densenet121
-# python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-experiments -m models.model.model_name=inception_v3,xception
+# * job.use_pretrained=true,false datasets.preprocessing.use_sampling=false job.device=0
+# * job.use_pretrained=true,false datasets.preprocessing.use_sampling=true datasets.preprocessing.sample_to_value=3500 job.device=1
+# * job.use_pretrained=true,false datasets.preprocessing.use_sampling=true datasets.preprocessing.sample_to_value=5000 job.device=2
 
 defaults:
   - _self_

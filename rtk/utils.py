@@ -214,31 +214,11 @@ def yaml_to_namespace(yaml_file: os.PathLike):
         return Namespace(**yaml.safe_load(f))
 
 
-def create_run_name(cfg, random_state: int, **kwargs):
-    """Create a run name."""
-    dataset_cfg = cfg.datasets
-    preprocessing_cfg = dataset_cfg.preprocessing
-    job_cfg = cfg.job
-    model_cfg = cfg.models
-
-    model_name = model_cfg.model._target_.split(".")[-1]
-    run_name: str = model_cfg.model.get("model_name", model_name.lower())
-    optimizer_name: str = model_cfg.optimizer._target_.split(".")[-1].lower()
-    criterion_name: str = model_cfg.criterion._target_.split(".")[-1].lower()
-    run_name += f",optimizer={optimizer_name},criterion={criterion_name}"
-    if preprocessing_cfg.use_sampling:
-        sample_to_value = preprocessing_cfg.sample_to_value
-        run_name += f",sample_to_value={sample_to_value}"
-
-    run_name += f",pretrained={str(job_cfg.use_pretrained).lower()}"
-
-    date = cfg.date
-    postfix: str = cfg.get("postfix", "")
-    timestamp = cfg.timestamp
-    run_name = "".join(
-        [run_name, f",seed={random_state}", f",{date};{timestamp}", f",{postfix}"]
-    )
-    return run_name
+def _strip_target(_dict: dict, lower=False):
+    target_name: str = _dict["_target_"].split(".")[-1]
+    if lower:
+        target_name = target_name.lower()
+    return target_name
 
 
 _console = get_console()

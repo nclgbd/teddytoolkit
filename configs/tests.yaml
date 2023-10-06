@@ -1,10 +1,10 @@
-# python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=tests
+# * python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=tests
 
 defaults:
   - _self_
   - datasets: chest-xray-dataset
   - job: test-run
-  - models: default-model
+  - models: vit-model
   # module configurations
   - ignite: ignite
   - mlflow: local
