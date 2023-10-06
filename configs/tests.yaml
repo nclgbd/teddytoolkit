@@ -2,7 +2,7 @@
 
 defaults:
   - _self_
-  - datasets: chest-xray-dataset
+  - datasets: chest-xray14-dataset
   - job: test-run
   - models: default-model
   # module configurations
@@ -13,6 +13,8 @@ defaults:
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog
 
+index: "Image Index"
+target: "Finding Labels"
 date: ${now:%Y-%m-%d}
 timestamp: ${now:%H-%M-%S}
 

@@ -1,0 +1,23 @@
+# datasets: chest-xray14-dataset
+
+defaults:
+  - _self_
+  - preprocessing: default-preprocessing
+  - transforms: default-transforms
+
+dim: 384
+extension: .png
+labels: ["No Finding", "Pneumonia"]
+patient_data: /home/nicoleg/workspaces/teddytoolkit/.data/Chest_XRay_14_Kaggle/Data_Entry_2017.csv
+scan_data: /home/nicoleg/workspaces/teddytoolkit/.data/Chest_XRay_14_Kaggle/
+encoding:
+  1: "No Finding"
+  7: "Pneumonia"
+
+instantiate:
+  _target_: monai.data.ImageDataset
+
+dataloader:
+  _target_: monai.data.ThreadDataLoader
+  batch_size: 16
+  num_workers: 24

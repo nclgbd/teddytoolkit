@@ -161,6 +161,8 @@ cython_debug/
 
 # teddytoolkit
 .data/
+Untitled-1.yml
 config.json
+kaggle.json
 mlruns/
 outputs/
