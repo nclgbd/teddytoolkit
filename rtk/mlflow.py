@@ -46,22 +46,25 @@ def get_params(cfg: Configuration, **kwargs):
     """
     Get the parameters of this run.
     """
-    dataset_cfg = cfg.datasets
-    model_cfg = cfg.models
-    preprocessing_cfg = dataset_cfg.preprocessing
+    dataset_cfg: DatasetConfiguration = kwargs.get("dataset_cfg", cfg.datasets)
+    job_cfg: JobConfiguration = kwargs.get("job_cfg", cfg.job)
+    model_cfg: ModelConfiguration = kwargs.get("model_cfg", cfg.models)
+    preprocessing_cfg: PreprocessingConfiguration = kwargs.get(
+        "preprocessing_cfg", dataset_cfg.preprocessing
+    )
 
     params = dict()
 
     # TODO: job parameters
     def __collect_job_params():
-        pass
+        params["max_epochs"] = job_cfg.max_epochs
+        params["use_pretrained"] = job_cfg.use_pretrained
+        params["use_transforms"] = job_cfg.use_transforms
 
     __collect_job_params()
 
     # TODO: model parameters
     def __collect_model_params():
-        model_cfg: ModelConfiguration = cfg.models
-        model_cfg = kwargs.get("model_cfg", model_cfg)
         # model parameters
         params["model_name"] = model_cfg.model.get(
             "model_name", _strip_target(model_cfg.model, lower=True)
