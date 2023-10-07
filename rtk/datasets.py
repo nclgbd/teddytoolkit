@@ -303,6 +303,31 @@ def build_chest_xray_metadata_dataframe(cfg: Configuration, split: str):
     return pd.DataFrame(split_metadata, columns=_COLUMN_NAMES)
 
 
+def build_chest_xray14_metadata_dataframe(cfg: Configuration):
+    dataset_cfg: DatasetConfiguration = cfg.datasets
+    index = cfg.index
+    folder_num = 1
+    patient_path = dataset_cfg.patient_data
+    patient_df = pd.read_csv(patient_path).set_index(index)
+    scan_path = dataset_cfg.scan_data
+    label_path = os.path.join(scan_path, f"images_{folder_num:03}", "images")
+
+    filename_matches = {"image_files": [], index: []}
+    for n in range(1, 13):
+        label_path = os.path.join(scan_path, f"images_{n:03}", "images")
+
+        for filename in os.listdir(label_path):
+            filename_matches[index].append(filename)
+            filename_matches["image_files"].append(os.path.join(label_path, filename))
+
+    filename_matches = pd.DataFrame.from_dict(
+        filename_matches, orient="columns"
+    ).set_index(index)
+    patient_df = patient_df.merge(filename_matches, on=index, how="inner")
+
+    return patient_df
+
+
 def load_ixi_dataset(cfg: Configuration, save_metadata=False, **kwargs):
     dataset_cfg: DatasetConfiguration = cfg.datasets
     target_name = cfg.target
@@ -370,6 +395,51 @@ def instantiate_image_dataset(cfg: Configuration, save_metadata=False, **kwargs)
                 )
             )
         return train_dataset, test_dataset
+
+    elif dataset_cfg.extension == ".png":
+        index = cfg.index
+        target = cfg.target
+        scan_path = dataset_cfg.scan_data
+        labels = dataset_cfg.labels
+        # label_encoding = {v: k for k, v in dataset_cfg.encoding.items()}
+
+        metadata = build_chest_xray14_metadata_dataframe(cfg=cfg)
+        metadata = metadata[metadata[target].isin(labels)]
+        metadata[target] = LabelEncoder().fit_transform(metadata[target].values)
+        # train split
+        with open(os.path.join(scan_path, "train_val_list.txt"), "r") as f:
+            train_val_list = [idx.strip() for idx in f.readlines()]
+        train_metadata = metadata[metadata.index.isin(train_val_list)]
+        train_dataset: monai.data.Dataset = instantiate(
+            config=dataset_cfg.instantiate,
+            image_files=train_metadata["image_files"].values,
+            labels=train_metadata[target].values,
+            **kwargs,
+        )
+
+        # test split
+        with open(os.path.join(scan_path, "test_list.txt"), "r") as f:
+            test_list = [idx.strip() for idx in f.readlines()]
+        test_metadata = metadata[metadata.index.isin(test_list)]
+        test_dataset = monai.data.Dataset = instantiate(
+            config=dataset_cfg.instantiate,
+            image_files=test_metadata["image_files"].values,
+            labels=test_metadata[target].values,
+            **kwargs,
+        )
+        if save_metadata:
+            train_metadata.to_csv(
+                os.path.join(
+                    DEFAULT_DATA_PATH, "patients", "chest_xray14_train_metadata.csv"
+                )
+            )
+            test_metadata.to_csv(
+                os.path.join(
+                    DEFAULT_DATA_PATH, "patients", "chest_xray14_test_metadata.csv"
+                )
+            )
+        return train_dataset, test_dataset
+
     elif dataset_cfg.extension == ".nii.gz":
         train_dataset = load_ixi_dataset(cfg, save_metadata=False)
     else:
@@ -379,7 +449,7 @@ def instantiate_image_dataset(cfg: Configuration, save_metadata=False, **kwargs)
 
 
 def instantiate_train_val_test_datasets(
-    cfg: Configuration, dataset: monai.data.Dataset, use_val: bool = True, **kwargs
+    cfg: Configuration, dataset: monai.data.Dataset, **kwargs
 ):
     """
     Create train/test splits for the data.
@@ -396,7 +466,7 @@ def instantiate_train_val_test_datasets(
     train_transforms = create_transforms(cfg, use_transforms=use_transforms)
     eval_transforms = create_transforms(cfg, use_transforms=False)
 
-    if dataset_cfg.extension == ".jpeg":
+    if dataset_cfg.extension == ".jpeg" or ".png":
         logger.info("Creating train/val splits...\n")
         X, y = get_images_and_classes(dataset=dataset)
 
@@ -428,7 +498,7 @@ def instantiate_train_val_test_datasets(
         )
         train_val_test_split_dict["train"] = train_dataset
 
-        if use_val:
+        if cfg.job.perform_validation:
             # val_data = list(
             #     {_IMAGE_KEYNAME: image_file, _LABEL_KEYNAME: label}
             #     for image_file, label in zip(X_val, y_val)

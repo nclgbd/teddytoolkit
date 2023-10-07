@@ -11,8 +11,8 @@ labels: ["No Finding", "Pneumonia"]
 patient_data: /home/nicoleg/workspaces/teddytoolkit/.data/Chest_XRay_14_Kaggle/Data_Entry_2017.csv
 scan_data: /home/nicoleg/workspaces/teddytoolkit/.data/Chest_XRay_14_Kaggle/
 encoding:
-  1: "No Finding"
-  7: "Pneumonia"
+  0: "No Finding"
+  1: "Pneumonia"
 
 instantiate:
   _target_: monai.data.ImageDataset

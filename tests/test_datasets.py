@@ -80,6 +80,8 @@ class TestDatasets:
                 assert len(train_dataset) == _CHEST_XRAY_TRAIN_DATASET_SIZE
 
             assert len(test_dataset) == _CHEST_XRAY_TEST_DATASET_SIZE
+        elif test_cfg.job.perform_validation and dataset_cfg.extension == ".png":
+            pass
 
         # attempt retrieval of sample
         # train_dataset = datasets.transform_image_dataset_to_cache_dataset(train_dataset)
@@ -98,20 +100,19 @@ class TestDatasets:
         transform = datasets.create_transforms(test_cfg)
         dataset = datasets.instantiate_image_dataset(cfg=test_cfg, transform=transform)
         train_dataset = dataset[0]
-        use_val = True
+        use_val = job_cfg.perform_validation
         train_val_test_split_dict = datasets.instantiate_train_val_test_datasets(
             cfg=test_cfg,
             save_metadata=True,
             dataset=train_dataset,
-            use_val=use_val,
         )
         # train_val_test_split_dict["test"] = dataset[1]
 
         assert train_val_test_split_dict is not None
-        if use_val and dataset_cfg.extension == ".jpeg":
-            assert len(set(train_val_test_split_dict.keys())) == 2
-        elif use_val:
+        if use_val and dataset_cfg.extension == ".nii.gz":
             assert len(set(train_val_test_split_dict.keys())) == 3
+        elif use_val:
+            assert len(set(train_val_test_split_dict.keys())) == 2
 
         train_dataset = train_val_test_split_dict["train"]
         assert train_dataset is not None
