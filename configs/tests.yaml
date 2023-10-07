@@ -13,8 +13,6 @@ defaults:
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog
 
-index: "Image Index"
-target: "Finding Labels"
 date: ${now:%Y-%m-%d}
 timestamp: ${now:%H-%M-%S}
 
@@ -25,5 +23,11 @@ hydra:
   sweep:
     dir: outputs/${hydra.job.config_name}/${date}/${timestamp}
     subdir: ${hydra.job.override_dirname}
+  # sweeper:
+  #   params:
+  #     datasets.preprocessing.resample_value: 10000,15000
+  #     datasets.preprocessing.use_sampling: true
+  #     job.use_pretrained: true,false
+  #     models.model.model_name: resnet18,mobilenetv2_100,densenet121,inception_v3,xception
   run:
     dir: outputs/${hydra.job.config_name}/${date}/${timestamp}

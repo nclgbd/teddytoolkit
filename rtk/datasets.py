@@ -58,7 +58,11 @@ def create_transforms(
     """
     logger.info("Creating transforms...\n")
     dataset_cfg = cfg.datasets if dataset_cfg is None else dataset_cfg
-    use_transforms = cfg.job.get("use_transforms", use_transforms is not None)
+    use_transforms = (
+        use_transforms
+        if use_transforms is not None
+        else cfg.job.get("use_transforms", False)
+    )
     transform_dicts: dict = (
         transform_dicts
         if dataset_cfg is None
@@ -218,9 +222,9 @@ def preprocess_dataset(
 def build_ixi_metadata_dataframe(
     cfg: Configuration, image_files: list, labels: list = None
 ):
-    index_name = cfg.index
-    target_name = cfg.target
     dataset_cfg: DatasetConfiguration = cfg.datasets
+    index_name = dataset_cfg.index
+    target_name = dataset_cfg.target
     patient_data = dataset_cfg.patient_data
 
     # create temporary dataset and dataloader to get the metadata
@@ -303,22 +307,30 @@ def build_chest_xray_metadata_dataframe(cfg: Configuration, split: str):
     return pd.DataFrame(split_metadata, columns=_COLUMN_NAMES)
 
 
-def build_chest_xray14_metadata_dataframe(cfg: Configuration):
+def build_chest_xray14_metadata_dataframe(cfg: Configuration, version: float = 2.0):
     dataset_cfg: DatasetConfiguration = cfg.datasets
-    index = cfg.index
-    folder_num = 1
+    index = dataset_cfg.index
     patient_path = dataset_cfg.patient_data
-    patient_df = pd.read_csv(patient_path).set_index(index)
     scan_path = dataset_cfg.scan_data
-    label_path = os.path.join(scan_path, f"images_{folder_num:03}", "images")
 
+    patient_df = pd.read_csv(patient_path).set_index(index)
     filename_matches = {"image_files": [], index: []}
-    for n in range(1, 13):
-        label_path = os.path.join(scan_path, f"images_{n:03}", "images")
+    if version == 1.0:
+        for n in range(1, 13):
+            label_path = os.path.join(scan_path, f"images_{n:03}", "images")
 
-        for filename in os.listdir(label_path):
-            filename_matches[index].append(filename)
-            filename_matches["image_files"].append(os.path.join(label_path, filename))
+            for filename in os.listdir(label_path):
+                filename_matches[index].append(filename)
+                filename_matches["image_files"].append(
+                    os.path.join(label_path, filename)
+                )
+    elif version == 2.0:
+        for filename in os.listdir(scan_path):
+            if filename.endswith(".png"):
+                filename_matches[index].append(filename)
+                filename_matches["image_files"].append(
+                    os.path.join(scan_path, filename)
+                )
 
     filename_matches = pd.DataFrame.from_dict(
         filename_matches, orient="columns"
@@ -330,7 +342,7 @@ def build_chest_xray14_metadata_dataframe(cfg: Configuration):
 
 def load_ixi_dataset(cfg: Configuration, save_metadata=False, **kwargs):
     dataset_cfg: DatasetConfiguration = cfg.datasets
-    target_name = cfg.target
+    target_name = dataset_cfg.target
     scan_data = dataset_cfg.scan_data
     scan_paths = [os.path.join(scan_data, f) for f in os.listdir(scan_data)]
     filtered_scan_paths = _filter_scan_paths(
@@ -397,8 +409,8 @@ def instantiate_image_dataset(cfg: Configuration, save_metadata=False, **kwargs)
         return train_dataset, test_dataset
 
     elif dataset_cfg.extension == ".png":
-        index = cfg.index
-        target = cfg.target
+        index = dataset_cfg.index
+        target = dataset_cfg.target
         scan_path = dataset_cfg.scan_data
         labels = dataset_cfg.labels
         # label_encoding = {v: k for k, v in dataset_cfg.encoding.items()}
@@ -518,7 +530,7 @@ def instantiate_train_val_test_datasets(
         X = np.array(dataset.image_files)
         encoder = LabelEncoder()
         y = encoder.fit_transform(dataset.labels)
-        logger.info(f"Label encoder information for target: '{cfg.target}'")
+        logger.info(f"Label encoder information for target: '{dataset_cfg.target}'")
         inspect(encoder)
         X_train, X_test, y_train, y_test = train_test_split(
             X,

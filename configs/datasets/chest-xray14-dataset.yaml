@@ -5,11 +5,13 @@ defaults:
   - preprocessing: default-preprocessing
   - transforms: default-transforms
 
-dim: 384
+dim: 229
 extension: .png
+index: "Image Index"
 labels: ["No Finding", "Pneumonia"]
-patient_data: /home/nicoleg/workspaces/teddytoolkit/.data/Chest_XRay_14_Kaggle/Data_Entry_2017.csv
-scan_data: /home/nicoleg/workspaces/teddytoolkit/.data/Chest_XRay_14_Kaggle/
+target: "Finding Labels"
+patient_data: /home/nicoleg/workspaces/teddytoolkit/.data/Chest_XRay_14_Kaggle_RGB/Data_Entry_2017.csv
+scan_data: /home/nicoleg/workspaces/teddytoolkit/.data/Chest_XRay_14_Kaggle_RGB/
 encoding:
   0: "No Finding"
   1: "Pneumonia"

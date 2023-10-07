@@ -128,6 +128,10 @@ class DatasetConfiguration:
     )
     # dimension to resize the images to
     dim: int = 224
+    # the name of the index column in the metadata
+    index: str = ""
+    # the name of the target column in the metadata
+    target: str = ""
     # integer representation of how many times to expand the dataset
     # i.e.: if the dataset has 100 samples and resample_value is 3, then the dataset will be expanded to 300 samples.
     # default is 1, which means no expansion.
@@ -250,8 +254,6 @@ class Configuration:
     * `results_path` (`str`): The path to the results directory.
     """
 
-    index: str = ""
-    target: str = ""
     date: str = ""
     postfix: str = ""
     timestamp: str = ""
