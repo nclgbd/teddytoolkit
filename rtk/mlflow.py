@@ -24,7 +24,7 @@ def create_run_name(cfg: Configuration, random_state: int, **kwargs):
     run_name: str = model_cfg.model.get("model_name", model_name.lower())
     optimizer_name: str = model_cfg.optimizer._target_.split(".")[-1].lower()
     lr: float = model_cfg.optimizer.lr
-    weight_decay: float = model_cfg.optimizer.weight_decay
+    weight_decay: float = model_cfg.optimizer.get("weight_decay", 0.0)
     criterion_name: str = model_cfg.criterion._target_.split(".")[-1].lower()
     run_name += f",optimizer={optimizer_name},lr={lr},weight_decay={weight_decay},criterion={criterion_name}"
     if preprocessing_cfg.use_sampling:
@@ -83,11 +83,16 @@ def get_params(cfg: Configuration, **kwargs):
 
     __collect_model_params()
 
-    # TODO: preprocessing parameters
-    def __collect_preprocessing_params():
-        params.update(preprocessing_cfg)
+    # TODO: dataset parameters
+    def __collect_dataset_params():
+        params["dataset_name"] = dataset_cfg.scan_data.split(".")[-1]
 
-    __collect_preprocessing_params()
+        def __collect_preprocessing_params():
+            params.update(preprocessing_cfg)
+
+        __collect_preprocessing_params()
+
+    __collect_dataset_params()
 
     # in case '_target_' somehow wasn't found
     try:

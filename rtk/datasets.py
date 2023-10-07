@@ -579,7 +579,7 @@ def instantiate_train_val_test_datasets(
 
     else:
         raise ValueError(
-            f"Dataset extension '{dataset_cfg.extension}' not supported. Please use '.nii.gz' or '.jpeg'."
+            f"Dataset extension '{dataset_cfg.extension}' not supported. Please use ['.nii.gz','.jpeg','.png']."
         )
 
     return train_val_test_split_dict
