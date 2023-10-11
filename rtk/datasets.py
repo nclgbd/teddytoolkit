@@ -195,6 +195,65 @@ def subset_to_class(cfg: Configuration, data_df: pd.DataFrame, **kwargs):
     return data_df
 
 
+def transform_labels_to_metaclass(df: pd.DataFrame, target_name: str, metaclass: dict):
+    """
+    Transform the labels to the metaclass.
+    """
+    logger.info("Transforming labels to metaclass...")
+    old_target_name = f"old_{target_name}"
+    df[old_target_name] = df[target_name]
+
+    def _transform_to_metaclass(x):
+        """
+        Transform the label to the metaclass.
+        """
+        for new_class, old_classes in metaclass.items():
+            if x in old_classes:
+                return new_class
+        return x
+
+    df[target_name] = df[old_target_name].apply(_transform_to_metaclass)
+    logger.info("Labels transformed.\n")
+    df.drop(columns=[old_target_name], inplace=True)
+    logger.debug(f"Dataframe:\n\n{df.head()}\n")
+    classes = df[target_name].value_counts().to_dict()
+    logger.info(f"Labels transformed. New class counts:\n{classes}.\n")
+
+    return df
+
+
+def transform_labels_to_one_vs_all(
+    df: pd.DataFrame,
+    target_name: str,
+    positive_class: str,
+    negative_class: str = None,
+):
+    """
+    Transform the labels to one vs all.
+    """
+    logger.info("Tranforming labels...")
+    old_target_name = f"old_{target_name}"
+    df[old_target_name] = df[target_name]
+
+    def _transform_to_positive_class(x):
+        """
+        Transform the label to the positive class.
+        """
+        negative_class = (
+            f"non{positive_class}" if negative_class is None else negative_class
+        )
+        return negative_class if x != positive_class else positive_class
+
+    df[target_name] = df[old_target_name].apply(
+        _transform_to_positive_class, args=(positive_class,)
+    )
+    logger.info("Labels transformed.\n")
+    df.drop(columns=[old_target_name], inplace=True)
+    logger.debug(f"Dataframe:\n\n{df.head()}\n")
+
+    return df
+
+
 def preprocess_dataset(
     cfg: Configuration,
     dataset: ImageDataset,
@@ -366,6 +425,53 @@ def load_ixi_dataset(cfg: Configuration, save_metadata=False, **kwargs):
     return dataset
 
 
+def load_chest_xray14_dataset(cfg: Configuration, save_metadata=False, **kwargs):
+    dataset_cfg: DatasetConfiguration = cfg.datasets
+    index = dataset_cfg.index
+    target = dataset_cfg.target
+    scan_path = dataset_cfg.scan_data
+    labels = dataset_cfg.labels
+    # label_encoding = {v: k for k, v in dataset_cfg.encoding.items()}
+
+    metadata = build_chest_xray14_metadata_dataframe(cfg=cfg)
+    # metadata = metadata[metadata[target].isin(labels)]
+    metadata = transform_labels_to_metaclass(metadata, target, dataset_cfg.encoding)
+    metadata[target] = LabelEncoder().fit_transform(metadata[target].values)
+    # train split
+    with open(os.path.join(scan_path, "train_val_list.txt"), "r") as f:
+        train_val_list = [idx.strip() for idx in f.readlines()]
+    train_metadata = metadata[metadata.index.isin(train_val_list)]
+    train_dataset: monai.data.Dataset = instantiate(
+        config=dataset_cfg.instantiate,
+        image_files=train_metadata["image_files"].values,
+        labels=train_metadata[target].values,
+        **kwargs,
+    )
+
+    # test split
+    with open(os.path.join(scan_path, "test_list.txt"), "r") as f:
+        test_list = [idx.strip() for idx in f.readlines()]
+    test_metadata = metadata[metadata.index.isin(test_list)]
+    test_dataset = monai.data.Dataset = instantiate(
+        config=dataset_cfg.instantiate,
+        image_files=test_metadata["image_files"].values,
+        labels=test_metadata[target].values,
+        **kwargs,
+    )
+    if save_metadata:
+        train_metadata.to_csv(
+            os.path.join(
+                DEFAULT_DATA_PATH, "patients", "chest_xray14_train_metadata.csv"
+            )
+        )
+        test_metadata.to_csv(
+            os.path.join(
+                DEFAULT_DATA_PATH, "patients", "chest_xray14_test_metadata.csv"
+            )
+        )
+    return train_dataset, test_dataset
+
+
 def instantiate_image_dataset(cfg: Configuration, save_metadata=False, **kwargs):
     """
     Instantiates a MONAI image dataset given a hydra configuration. This uses the `hydra.utils.instantiate` function to instantiate the dataset from the MONAI python package.
@@ -409,51 +515,12 @@ def instantiate_image_dataset(cfg: Configuration, save_metadata=False, **kwargs)
         return train_dataset, test_dataset
 
     elif dataset_cfg.extension == ".png":
-        index = dataset_cfg.index
-        target = dataset_cfg.target
-        scan_path = dataset_cfg.scan_data
-        labels = dataset_cfg.labels
-        # label_encoding = {v: k for k, v in dataset_cfg.encoding.items()}
-
-        metadata = build_chest_xray14_metadata_dataframe(cfg=cfg)
-        metadata = metadata[metadata[target].isin(labels)]
-        metadata[target] = LabelEncoder().fit_transform(metadata[target].values)
-        # train split
-        with open(os.path.join(scan_path, "train_val_list.txt"), "r") as f:
-            train_val_list = [idx.strip() for idx in f.readlines()]
-        train_metadata = metadata[metadata.index.isin(train_val_list)]
-        train_dataset: monai.data.Dataset = instantiate(
-            config=dataset_cfg.instantiate,
-            image_files=train_metadata["image_files"].values,
-            labels=train_metadata[target].values,
-            **kwargs,
+        train_dataset, test_dataset = load_chest_xray14_dataset(
+            cfg=cfg, save_metadata=save_metadata
         )
-
-        # test split
-        with open(os.path.join(scan_path, "test_list.txt"), "r") as f:
-            test_list = [idx.strip() for idx in f.readlines()]
-        test_metadata = metadata[metadata.index.isin(test_list)]
-        test_dataset = monai.data.Dataset = instantiate(
-            config=dataset_cfg.instantiate,
-            image_files=test_metadata["image_files"].values,
-            labels=test_metadata[target].values,
-            **kwargs,
-        )
-        if save_metadata:
-            train_metadata.to_csv(
-                os.path.join(
-                    DEFAULT_DATA_PATH, "patients", "chest_xray14_train_metadata.csv"
-                )
-            )
-            test_metadata.to_csv(
-                os.path.join(
-                    DEFAULT_DATA_PATH, "patients", "chest_xray14_test_metadata.csv"
-                )
-            )
-        return train_dataset, test_dataset
 
     elif dataset_cfg.extension == ".nii.gz":
-        train_dataset = load_ixi_dataset(cfg, save_metadata=False)
+        train_dataset = load_ixi_dataset(cfg, save_metadata=save_metadata)
     else:
         raise ValueError(
             f"Dataset extension '{dataset_cfg.extension}' not supported. Please use '.nii.gz' or '.jpeg'."
@@ -490,12 +557,22 @@ def instantiate_train_val_test_datasets(
             **train_test_split_kwargs,
         )
         if preprocessing_cfg.get("use_sampling", False):
-            train_metadata = pd.DataFrame.from_dict(
-                {_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train}, orient="columns"
+            # train_metadata = resample_to_value(cfg=cfg, metadata=train_metadata)
+            # X_train = train_metadata[_IMAGE_KEYNAME].values
+            # y_train = train_metadata[_LABEL_KEYNAME].values
+            sampling_strategy = {
+                i: preprocessing_cfg.sampling_method["sample_to_value"]
+                for i, _ in enumerate(sorted(dataset_cfg.labels))
+            }
+            X_train, y_train = hydra_instantiate(
+                cfg=preprocessing_cfg.sampling_method["method"],
+                X=X_train,
+                y=y_train,
+                sampling_strategy=sampling_strategy,
             )
-            train_metadata = resample_to_value(cfg=cfg, metadata=train_metadata)
-            X_train = train_metadata[_IMAGE_KEYNAME].values
-            y_train = train_metadata[_LABEL_KEYNAME].values
+            # train_metadata = pd.DataFrame.from_dict(
+            #     {_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train}, orient="columns"
+            # )
 
         # train_data = list(
         #     {_IMAGE_KEYNAME: image_file, _LABEL_KEYNAME: label}
