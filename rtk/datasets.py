@@ -13,6 +13,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.pipeline import Pipeline
 
+# imblean
+from imblearn.datasets import make_imbalance
+from imblearn.over_sampling import RandomOverSampler
+from imblearn.under_sampling import RandomUnderSampler
+
 # torch
 import torch
 from torch.utils.data import Subset
@@ -199,20 +204,22 @@ def transform_labels_to_metaclass(df: pd.DataFrame, target_name: str, metaclass:
     """
     Transform the labels to the metaclass.
     """
-    logger.info("Transforming labels to metaclass...")
-    old_target_name = f"old_{target_name}"
-    df[old_target_name] = df[target_name]
 
-    def _transform_to_metaclass(x):
+    def _transform_to_metaclass(x, metaclass: dict):
         """
         Transform the label to the metaclass.
         """
         for new_class, old_classes in metaclass.items():
-            if x in old_classes:
+            if new_class in x:
                 return new_class
         return x
 
-    df[target_name] = df[old_target_name].apply(_transform_to_metaclass)
+    logger.info("Transforming labels to metaclass...")
+    old_target_name = f"old_{target_name}"
+    df[old_target_name] = df[target_name]
+    df[target_name] = df[old_target_name].apply(
+        _transform_to_metaclass, args=(metaclass,)
+    )
     logger.info("Labels transformed.\n")
     df.drop(columns=[old_target_name], inplace=True)
     logger.debug(f"Dataframe:\n\n{df.head()}\n")
@@ -435,27 +442,39 @@ def load_chest_xray14_dataset(cfg: Configuration, save_metadata=False, **kwargs)
 
     metadata = build_chest_xray14_metadata_dataframe(cfg=cfg)
     # metadata = metadata[metadata[target].isin(labels)]
+    # metadata = transform_labels_to_metaclass(metadata, target, dataset_cfg.encoding)
+    subset_condition = metadata[target].str.contains(labels[0]) | metadata[
+        target
+    ].str.contains(labels[1])
+    metadata = metadata[subset_condition]
     metadata = transform_labels_to_metaclass(metadata, target, dataset_cfg.encoding)
     metadata[target] = LabelEncoder().fit_transform(metadata[target].values)
+
     # train split
     with open(os.path.join(scan_path, "train_val_list.txt"), "r") as f:
         train_val_list = [idx.strip() for idx in f.readlines()]
+
+    train_transforms = create_transforms(cfg, use_transforms=cfg.job.use_transforms)
     train_metadata = metadata[metadata.index.isin(train_val_list)]
     train_dataset: monai.data.Dataset = instantiate(
         config=dataset_cfg.instantiate,
         image_files=train_metadata["image_files"].values,
         labels=train_metadata[target].values,
+        transform=train_transforms,
         **kwargs,
     )
 
     # test split
     with open(os.path.join(scan_path, "test_list.txt"), "r") as f:
         test_list = [idx.strip() for idx in f.readlines()]
+
+    eval_transforms = create_transforms(cfg, use_transforms=False)
     test_metadata = metadata[metadata.index.isin(test_list)]
     test_dataset = monai.data.Dataset = instantiate(
         config=dataset_cfg.instantiate,
         image_files=test_metadata["image_files"].values,
         labels=test_metadata[target].values,
+        transform=eval_transforms,
         **kwargs,
     )
     if save_metadata:
@@ -512,7 +531,6 @@ def instantiate_image_dataset(cfg: Configuration, save_metadata=False, **kwargs)
                     DEFAULT_DATA_PATH, "patients", "chest_xray_test_metadata.csv"
                 )
             )
-        return train_dataset, test_dataset
 
     elif dataset_cfg.extension == ".png":
         train_dataset, test_dataset = load_chest_xray14_dataset(
@@ -525,6 +543,8 @@ def instantiate_image_dataset(cfg: Configuration, save_metadata=False, **kwargs)
         raise ValueError(
             f"Dataset extension '{dataset_cfg.extension}' not supported. Please use '.nii.gz' or '.jpeg'."
         )
+
+    return train_dataset, test_dataset
 
 
 def instantiate_train_val_test_datasets(
@@ -564,12 +584,22 @@ def instantiate_train_val_test_datasets(
                 i: preprocessing_cfg.sampling_method["sample_to_value"]
                 for i, _ in enumerate(sorted(dataset_cfg.labels))
             }
-            X_train, y_train = hydra_instantiate(
-                cfg=preprocessing_cfg.sampling_method["method"],
+            X_train, y_train = RandomOverSampler(
+                random_state=random_state
+            ).fit_resample(X_train.reshape(-1, 1), y_train)
+            X_train, y_train = make_imbalance(
                 X=X_train,
                 y=y_train,
+                random_state=random_state,
                 sampling_strategy=sampling_strategy,
+                verbose=True,
             )
+            # X_train, y_train = hydra_instantiate(
+            #     cfg=preprocessing_cfg.sampling_method["method"],
+            #     X=X_train,
+            #     y=y_train,
+            #     sampling_strategy=sampling_strategy,
+            # )
             # train_metadata = pd.DataFrame.from_dict(
             #     {_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train}, orient="columns"
             # )

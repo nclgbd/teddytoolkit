@@ -103,8 +103,8 @@ class TestDatasets:
         use_val = job_cfg.perform_validation
         train_val_test_split_dict = datasets.instantiate_train_val_test_datasets(
             cfg=test_cfg,
-            save_metadata=True,
             dataset=train_dataset,
+            save_metadata=True,
         )
         # train_val_test_split_dict["test"] = dataset[1]
 
@@ -119,11 +119,10 @@ class TestDatasets:
 
         # test `rtk.datasets.resample_to_value`
         if dataset_cfg.preprocessing.use_sampling:
-            num_classes = len(dataset_cfg.labels)
-            assert (
-                len(train_dataset)
-                == dataset_cfg.preprocessing.sample_to_value * num_classes
-            )
+            preprocessing_cfg = dataset_cfg.preprocessing
+            assert len(train_dataset) == preprocessing_cfg.sampling_method[
+                "sample_to_value"
+            ] * len(dataset_cfg.labels)
 
     def test_transform_image_dataset_to_cache_dataset(self, test_cfg):
         """Tests the `rtk.datasets.transform_image_dataset_to_cache_dataset` function."""

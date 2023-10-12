@@ -28,7 +28,7 @@ def create_run_name(cfg: Configuration, random_state: int, **kwargs):
     criterion_name: str = model_cfg.criterion._target_.split(".")[-1].lower()
     run_name += f",optimizer={optimizer_name},lr={lr},weight_decay={weight_decay},criterion={criterion_name}"
     if preprocessing_cfg.use_sampling:
-        sample_to_value = preprocessing_cfg.sample_to_value
+        sample_to_value = preprocessing_cfg.sampling_method["sample_to_value"]
         run_name += f",sample_to_value={sample_to_value}"
 
     run_name += f",pretrained={str(job_cfg.use_pretrained).lower()}"

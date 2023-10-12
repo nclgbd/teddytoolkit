@@ -1,10 +1,12 @@
 # preprocessing: default-preprocessing
 
 # sample_to_value: -1
-use_sampling: false
+use_sampling: true
 sampling_method:
-  sample_to_value: -1
+  sample_to_value: 5000
   method:
+    _partial_: true
     _target_: imblearn.datasets.make_imbalance
+    verbose: true
 # subset: [0]
 # use_subset: true
