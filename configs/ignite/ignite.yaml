@@ -1,6 +1,6 @@
 # ignite: ignite
 
-# log_interval: 5
+log_interval: 5
 score_name: loss
 use_checkpoint: true
 use_early_stopping: true
@@ -21,6 +21,6 @@ checkpoint:
 
 early_stopping:
   _target_: ignite.handlers.early_stopping.EarlyStopping
-  patience: 5
+  patience: 3
 
 lr_scheduler:

@@ -11,7 +11,7 @@ import hydra
 from argparse import Namespace
 from colorlog import ColoredFormatter
 from logging import Logger
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from rich.console import Console
 from rich.logging import RichHandler
 
@@ -212,6 +212,13 @@ def yaml_to_namespace(yaml_file: os.PathLike):
     """
     with open(yaml_file, "r") as f:
         return Namespace(**yaml.safe_load(f))
+
+
+def yaml_to_configuration(file_path: str):
+    cfg = OmegaConf.load(file_path)
+    del cfg["defaults"]
+    cfg = DictConfig(cfg)
+    return cfg
 
 
 def _strip_target(_dict: dict, lower=False):

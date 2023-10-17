@@ -9,7 +9,7 @@ setup(
     description="Toolkit for working with medical imaging data.",
     long_description="",
     long_description_content_type="text/markdown",
-    packages=find_packages(exclude=["tests", ".github"]),
+    packages=find_packages(),
     requires=[
         "azureml-core",
         "azureml-dataset-runtime",

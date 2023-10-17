@@ -157,6 +157,9 @@ class DatasetConfiguration:
     # preprocessing: PreprocessingConfiguration = field(
     #     default_factory=PreprocessingConfiguration()
     # )
+    additional_datasets: DictConfig = field(
+        default_factory=lambda: DictConfig({"dataset_configs": []})
+    )
     # transforms
     transforms: DictConfig = field(
         default_factory=lambda: DictConfig({"load": [], "train": []})

@@ -1,6 +1,9 @@
 # imports
+from random import randint
+from matplotlib import pyplot as plt
 import numpy as np
 import os
+from omegaconf import DictConfig
 import pandas as pd
 import sys
 from copy import deepcopy
@@ -20,7 +23,7 @@ from imblearn.under_sampling import RandomUnderSampler
 
 # torch
 import torch
-from torch.utils.data import Subset
+from torch.utils.data import Subset, DataLoader
 
 # monai
 import monai
@@ -30,7 +33,7 @@ from monai.data import ImageDataset, ThreadDataLoader, CacheDataset, PersistentD
 # rtk
 from rtk import DEFAULT_CACHE_DIR, DEFAULT_DATA_PATH
 from rtk.config import Configuration, JobConfiguration, DatasetConfiguration
-from rtk.utils import get_logger, hydra_instantiate
+from rtk.utils import get_logger, hydra_instantiate, yaml_to_configuration
 
 logger = get_logger(__name__)
 
@@ -38,14 +41,39 @@ _CHEST_XRAY_TRAIN_DATASET_SIZE = 5232
 _CHEST_XRAY_TEST_DATASET_SIZE = 624
 _IXI_MRI_DATASET_SIZE = 538
 
-_IMAGE_KEYNAME = "image"
-_LABEL_KEYNAME = "label"
+_IMAGE_KEYNAME = "image_files"
+_LABEL_KEYNAME = "labels"
 _COLUMN_NAMES = [_IMAGE_KEYNAME, _LABEL_KEYNAME]
 _CACHE_DIR = os.path.join(DEFAULT_CACHE_DIR, "tmp")
 
 
+def visualize_scan(
+    iterator: iter = None,
+    index: int = None,
+    scan: torch.Tensor = None,
+    label: torch.Tensor = None,
+):
+    """"""
+
+    if scan is None or label is None:
+        scan, label = next(iterator)
+        index = randint(0, len(scan) - 1) if index is None else index
+        scan = scan[index]
+        label = label[index]
+
+    _filename = scan._meta["filename_or_obj"].split("/")[-1]
+    patient_id = _filename.split(".")[0]
+
+    plt.title(f"Patient ID: {patient_id}")
+    display_scan = scan.numpy()
+    display_scan = np.transpose(display_scan, (1, 2, 0))
+    plt.imshow(display_scan, cmap="bone")
+
+    return scan, label
+
+
 def create_transforms(
-    cfg: Configuration,
+    cfg: Configuration = None,
     dataset_cfg: DatasetConfiguration = None,
     use_transforms: bool = None,
     transform_dicts: dict = None,
@@ -62,7 +90,7 @@ def create_transforms(
     object.
     """
     logger.info("Creating transforms...\n")
-    dataset_cfg = cfg.datasets if dataset_cfg is None else dataset_cfg
+    dataset_cfg = cfg.datasets if cfg is not None else dataset_cfg
     use_transforms = (
         use_transforms
         if use_transforms is not None
@@ -340,11 +368,16 @@ def build_ixi_metadata_dataframe(
     return metadata
 
 
-def build_chest_xray_metadata_dataframe(cfg: Configuration, split: str):
+def build_chest_xray_metadata_dataframe(
+    cfg: Configuration = None, split: str = "", **kwargs
+):
     logger.info(f"Building chest x-ray metadata dataframe for split: '{split}'...\n")
-    resample_value: int = cfg.datasets.get("resample_value", 1)
+    dataset_cfg: DatasetConfiguration = kwargs.get(
+        "dataset_cfg", cfg.datasets if cfg is not None else None
+    )
+    resample_value: int = dataset_cfg.get("resample_value", 1)
     IGNORE = ".DS_Store"
-    scan_data = cfg.datasets.scan_data
+    scan_data = dataset_cfg.scan_data
     split_dir = os.path.join(scan_data, split)
     split_metadata = []
     classes = sorted(os.listdir(split_dir))
@@ -432,7 +465,54 @@ def load_ixi_dataset(cfg: Configuration, save_metadata=False, **kwargs):
     return dataset
 
 
-def load_chest_xray14_dataset(cfg: Configuration, save_metadata=False, **kwargs):
+def load_chest_xray_dataset(
+    cfg: Configuration = None, save_metadata=False, return_metadata=False, **kwargs
+):
+    dataset_cfg: DatasetConfiguration = kwargs.get(
+        "dataset_cfg", cfg.datasets if cfg is not None else None
+    )
+    use_transforms = kwargs.get(
+        "use_transforms", cfg.job if cfg is not None else {"use_transforms": True}
+    )
+
+    train_transforms = create_transforms(cfg, use_transforms=use_transforms)
+    test_transforms = create_transforms(cfg, use_transforms=False)
+    train_metadata = build_chest_xray_metadata_dataframe(
+        cfg=cfg, split="train", **kwargs
+    )
+    test_metadata = build_chest_xray_metadata_dataframe(cfg=cfg, split="test", **kwargs)
+    train_dataset = monai.data.Dataset = instantiate(
+        config=dataset_cfg.instantiate,
+        image_files=train_metadata[_IMAGE_KEYNAME].values,
+        labels=train_metadata[_LABEL_KEYNAME].values,
+        transform=train_transforms,
+    )
+    # train_dataset: monai.data.Dataset = convert_image_dataset(train_dataset)
+    test_dataset = monai.data.Dataset = instantiate(
+        config=dataset_cfg.instantiate,
+        image_files=test_metadata[_IMAGE_KEYNAME].values,
+        labels=test_metadata[_LABEL_KEYNAME].values,
+        transform=test_transforms,
+    )
+    # test_dataset: monai.data.Dataset = convert_image_dataset(test_dataset)
+    if save_metadata:
+        train_metadata.to_csv(
+            os.path.join(DEFAULT_DATA_PATH, "patients", "chest_xray_train_metadata.csv")
+        )
+        test_metadata.to_csv(
+            os.path.join(DEFAULT_DATA_PATH, "patients", "chest_xray_test_metadata.csv")
+        )
+
+    return (
+        (train_dataset, test_dataset, train_metadata, test_metadata)
+        if return_metadata
+        else (train_dataset, test_dataset)
+    )
+
+
+def load_chest_xray14_dataset(
+    cfg: Configuration, save_metadata=False, return_metadata=False, **kwargs
+):
     dataset_cfg: DatasetConfiguration = cfg.datasets
     index = dataset_cfg.index
     target = dataset_cfg.target
@@ -488,10 +568,17 @@ def load_chest_xray14_dataset(cfg: Configuration, save_metadata=False, **kwargs)
                 DEFAULT_DATA_PATH, "patients", "chest_xray14_test_metadata.csv"
             )
         )
-    return train_dataset, test_dataset
+
+    return (
+        (train_dataset, test_dataset, train_metadata, test_metadata)
+        if return_metadata
+        else (train_dataset, test_dataset)
+    )
 
 
-def instantiate_image_dataset(cfg: Configuration, save_metadata=False, **kwargs):
+def instantiate_image_dataset(
+    cfg: Configuration = None, save_metadata=False, return_metadata=False, **kwargs
+):
     """
     Instantiates a MONAI image dataset given a hydra configuration. This uses the `hydra.utils.instantiate` function to instantiate the dataset from the MONAI python package.
 
@@ -501,36 +588,16 @@ def instantiate_image_dataset(cfg: Configuration, save_metadata=False, **kwargs)
     * `monai.data.Dataset`: The instantiated dataset.
     """
     logger.info("Instantiating image dataset...\n")
-    dataset_cfg: DatasetConfiguration = cfg.datasets
+    dataset_cfg: DatasetConfiguration = kwargs.get(
+        "dataset_cfg", cfg.datasets if cfg is not None else None
+    )
 
     if dataset_cfg.extension == ".jpeg":
-        train_metadata = build_chest_xray_metadata_dataframe(cfg=cfg, split="train")
-        test_metadata = build_chest_xray_metadata_dataframe(cfg=cfg, split="test")
-        train_dataset = monai.data.Dataset = instantiate(
-            config=dataset_cfg.instantiate,
-            image_files=train_metadata[_IMAGE_KEYNAME].values,
-            labels=train_metadata[_LABEL_KEYNAME].values,
-            **kwargs,
+        train_dataset, test_dataset = load_chest_xray_dataset(
+            cfg=cfg,
+            save_metadata=save_metadata,
+            return_metadata=return_metadata,
         )
-        # train_dataset: monai.data.Dataset = convert_image_dataset(train_dataset)
-        test_dataset = monai.data.Dataset = instantiate(
-            config=dataset_cfg.instantiate,
-            image_files=test_metadata[_IMAGE_KEYNAME].values,
-            labels=test_metadata[_LABEL_KEYNAME].values,
-            **kwargs,
-        )
-        # test_dataset: monai.data.Dataset = convert_image_dataset(test_dataset)
-        if save_metadata:
-            train_metadata.to_csv(
-                os.path.join(
-                    DEFAULT_DATA_PATH, "patients", "chest_xray_train_metadata.csv"
-                )
-            )
-            test_metadata.to_csv(
-                os.path.join(
-                    DEFAULT_DATA_PATH, "patients", "chest_xray_test_metadata.csv"
-                )
-            )
 
     elif dataset_cfg.extension == ".png":
         train_dataset, test_dataset = load_chest_xray14_dataset(
@@ -692,6 +759,51 @@ def instantiate_train_val_test_datasets(
     return train_val_test_split_dict
 
 
+def create_loaders(cfg: Configuration = None, **kwargs):
+    """Create train and test loaders."""
+    dataset_cfg: DatasetConfiguration = kwargs.get(
+        "dataset_cfg", cfg.datasets if cfg else None
+    )
+    job_cfg: JobConfiguration = kwargs.get(
+        "job_cfg",
+        cfg.get("job", {"use_transforms": kwargs.get("use_transforms", True)}),
+    )
+    use_transforms = job_cfg["use_transforms"]
+    train_transform = create_transforms(cfg, use_transforms=use_transforms)
+    eval_transform = create_transforms(cfg, use_transforms=False)
+    dataset = instantiate_image_dataset(cfg=cfg, transform=train_transform)
+    train_dataset, test_dataset = dataset[0], dataset[1]
+    train_val_test_split_dict = instantiate_train_val_test_datasets(
+        cfg=cfg, dataset=train_dataset
+    )
+    train_dataset, val_dataset = (
+        train_val_test_split_dict["train"],
+        train_val_test_split_dict["val"],
+    )
+    train_dataset.transform = train_transform
+    test_dataset.transform = eval_transform
+
+    train_loader: DataLoader = hydra_instantiate(
+        cfg=dataset_cfg.dataloader,
+        dataset=train_dataset,
+        pin_memory=torch.cuda.is_available() if torch.cuda.is_available() else False,
+        shuffle=True,
+    )
+    val_loader: DataLoader = hydra_instantiate(
+        cfg=dataset_cfg.dataloader,
+        dataset=val_dataset,
+        pin_memory=torch.cuda.is_available(),
+        shuffle=True,
+    )
+    test_loader: DataLoader = hydra_instantiate(
+        cfg=dataset_cfg.dataloader,
+        dataset=test_dataset,
+        pin_memory=torch.cuda.is_available(),
+        shuffle=True,
+    )
+    return train_loader, val_loader, test_loader
+
+
 def convert_image_dataset(
     dataset: ImageDataset,
     transform: monai.transforms.Compose = None,
@@ -717,3 +829,123 @@ def convert_image_dataset(
         **kwargs,
     )
     return new_dataset
+
+
+def combine_datasets(
+    train_dataset: monai.data.Dataset,
+    test_dataset: monai.data.Dataset,
+    cfg: Configuration = None,
+    dataset_cfg: DatasetConfiguration = None,
+    dataset_configs: list = [],
+    # transform: monai.transforms.Compose = None,
+    **kwargs,
+):
+    """
+    Combine a list of datasets.
+    """
+    if cfg is None:
+        dataset_cfg: DatasetConfiguration = dataset_cfg
+    else:
+        dataset_cfg: DatasetConfiguration = cfg.datasets
+
+    additional_datasets: dict = dataset_cfg.get(
+        "additional_datasets", {"dataset_configs": []}
+    )
+    dataset_configs = (
+        dataset_configs
+        if any(dataset_configs)
+        else additional_datasets.get("dataset_configs", [])
+    )
+    c_train_dataset = deepcopy(train_dataset)
+    c_test_dataset = deepcopy(test_dataset)
+
+    # def _combine_datasets(
+    #     orig_dataset: monai.data.Dataset,
+    #     add_dataset: monai.data.Dataset,
+    #     transform: monai.transforms.Compose = None,
+    #     **kwargs,
+    # ):
+    #     """
+    #     Combine two image datasets.
+    #     """
+    #     combined_image_files = np.hstack(
+    #         (orig_dataset.image_files, add_dataset.image_files)
+    #     )
+    #     combined_labels = np.hstack((orig_dataset.labels, add_dataset.labels))
+
+    #     combined_dataset = hydra_instantiate(
+    #         cfg=dataset_cfg.instantiate,
+    #         image_files=combined_image_files,
+    #         labels=combined_labels,
+    #         transform=transform,
+    #     )
+
+    #     return combined_dataset
+
+    for additional_dataset in dataset_configs:
+        filepath: os.PathLike = additional_dataset["filepath"]
+        marshaller: callable = globals()[additional_dataset["loader"]]
+        _dataset_cfg: DatasetConfiguration = yaml_to_configuration(filepath)
+        additional_dataset_splits = marshaller(
+            dataset_cfg=_dataset_cfg,
+            return_metadata=True,
+        )
+        # add_train_dataset, add_test_dataset = (
+        #     additional_dataset_splits[0],
+        #     additional_dataset_splits[1],
+        # )
+        add_train_metadata, add_test_metadata = (
+            additional_dataset_splits[2],
+            additional_dataset_splits[3],
+        )
+
+        # metadata preprocessing
+        train_metadata_subset = add_train_metadata[add_train_metadata["labels"] == 1]
+        test_metadata_subset = add_test_metadata[add_test_metadata["labels"] == 1]
+
+        train_image_files = np.hstack(
+            (
+                c_train_dataset.image_files,
+                train_metadata_subset["image_files"],
+            )
+        )
+        test_image_files = np.hstack(
+            (
+                c_test_dataset.image_files,
+                test_metadata_subset["image_files"],
+            )
+        )
+        train_labels = np.hstack(
+            (c_train_dataset.labels, train_metadata_subset["labels"])
+        )
+        test_labels = np.hstack((c_test_dataset.labels, test_metadata_subset["labels"]))
+
+        c_train_dataset = hydra_instantiate(
+            cfg=dataset_cfg.instantiate,
+            image_files=train_image_files,
+            labels=train_labels,
+            transform=c_train_dataset.transform,
+        )
+        c_test_dataset = hydra_instantiate(
+            cfg=dataset_cfg.instantiate,
+            image_files=test_image_files,
+            labels=test_labels,
+            transform=c_test_dataset.transform,
+        )
+
+        # c_train_dataset = _combine_datasets(
+        #     orig_dataset=c_train_dataset,
+        #     add_dataset=orig_train_dataset,
+        #     cfg=cfg,
+        #     transform=c_train_dataset.transform,
+        #     **kwargs,
+        # )
+        # c_test_dataset = _combine_datasets(
+        #     orig_dataset=c_test_dataset,
+        #     add_dataset=orig_test_dataset,
+        #     cfg=cfg,
+        #     transform=c_test_dataset.transform,
+        #     **kwargs,
+        # )
+
+    return c_train_dataset, c_test_dataset
