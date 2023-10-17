@@ -55,7 +55,7 @@ def get_params(cfg: Configuration, **kwargs):
 
     params = dict()
 
-    # TODO: job parameters
+    # NOTE: job parameters
     def __collect_job_params():
         params["max_epochs"] = job_cfg.max_epochs
         params["use_pretrained"] = job_cfg.use_pretrained
@@ -63,7 +63,7 @@ def get_params(cfg: Configuration, **kwargs):
 
     __collect_job_params()
 
-    # TODO: model parameters
+    # NOTE: model parameters
     def __collect_model_params():
         # model parameters
         params["model_name"] = model_cfg.model.get(
@@ -83,7 +83,7 @@ def get_params(cfg: Configuration, **kwargs):
 
     __collect_model_params()
 
-    # TODO: dataset parameters
+    # NOTE: dataset parameters
     def __collect_dataset_params():
         params["dataset_name"] = dataset_cfg.scan_data.split(".")[-1]
 
@@ -107,15 +107,19 @@ def log_mlflow_params(cfg: Configuration, **kwargs):
     """
     Log the parameters to MLFlow.
     """
+    tags = cfg.get("tags", {})
     params = get_params(cfg, **kwargs)
+    logger.info("Logged parameters:\n{}".format(OmegaConf.to_yaml(params)))
     mlflow.log_params(params)
+    if any(tags):
+        mlflow.set_tags(tags)
 
 
 def prepare_mlflow(cfg: Configuration):
     logger.info("Starting MLflow run...")
     mlflow_cfg = cfg.mlflow
     if cfg.job.use_azureml:
-        logger.info("Using AzureML for experiment tracking...")
+        logger.debug("Using AzureML for experiment tracking...")
         ws = login()
         tracking_uri = ws.get_mlflow_tracking_uri()
 

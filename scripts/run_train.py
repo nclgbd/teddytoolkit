@@ -50,15 +50,15 @@ def main(cfg: Configuration) -> None:
     job_cfg: JobConfiguration = cfg.job
     random_state: int = job_cfg.get("random_state", random.randint(0, _MAX_RAND_INT))
     run_name = create_run_name(cfg=cfg, random_state=random_state)
-    logger.info(f"Run name: '{run_name}'")
+    logger.info(f"Run name:\t'{run_name}'")
     monai.utils.set_determinism(seed=random_state)
-    logger.info(f"Using seed: {random_state}")
+    logger.info(f"Using seed:\t{random_state}")
 
     device = torch.device(job_cfg.device)
-    logger.info(f"Using device: {job_cfg.device}")
+    logger.info(f"Using device:\t{job_cfg.device}")
 
     # prepare data
-    loaders = datasets.create_loaders(cfg)
+    loaders = datasets.prepare_data(cfg)
     train_loader = loaders[0]
 
     def run_trainer():

@@ -1,6 +1,5 @@
 # preprocessing: default-preprocessing
 
-# sample_to_value: -1
 use_sampling: true
 sampling_method:
   sample_to_value: 5000

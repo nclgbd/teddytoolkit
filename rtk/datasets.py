@@ -1,29 +1,27 @@
 # imports
-from random import randint
-from matplotlib import pyplot as plt
 import numpy as np
 import os
-from omegaconf import DictConfig
 import pandas as pd
-import sys
+from collections import Counter
 from copy import deepcopy
 from hydra.utils import instantiate
+from matplotlib import pyplot as plt
+from omegaconf import OmegaConf
+from random import randint
 from rich import inspect
 from tqdm import tqdm
 
 # sklearn
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-from sklearn.pipeline import Pipeline
 
 # imblean
 from imblearn.datasets import make_imbalance
 from imblearn.over_sampling import RandomOverSampler
-from imblearn.under_sampling import RandomUnderSampler
 
 # torch
 import torch
-from torch.utils.data import Subset, DataLoader
+from torch.utils.data import DataLoader
 
 # monai
 import monai
@@ -89,13 +87,17 @@ def create_transforms(
     * `torchvision.transforms.Compose`: The transforms for the model in the form of a `torchvision.transforms.Compose`
     object.
     """
-    logger.info("Creating transforms...\n")
     dataset_cfg = cfg.datasets if cfg is not None else dataset_cfg
     use_transforms = (
         use_transforms
         if use_transforms is not None
         else cfg.job.get("use_transforms", False)
     )
+    if use_transforms:
+        logger.info("Creating 'train' transforms...")
+    else:
+        logger.info("Creating 'eval' transforms...")
+
     transform_dicts: dict = (
         transform_dicts
         if dataset_cfg is None
@@ -413,21 +415,21 @@ def build_chest_xray14_metadata_dataframe(cfg: Configuration, version: float = 2
     scan_path = dataset_cfg.scan_data
 
     patient_df = pd.read_csv(patient_path).set_index(index)
-    filename_matches = {"image_files": [], index: []}
+    filename_matches = {_IMAGE_KEYNAME: [], index: []}
     if version == 1.0:
         for n in range(1, 13):
             label_path = os.path.join(scan_path, f"images_{n:03}", "images")
 
             for filename in os.listdir(label_path):
                 filename_matches[index].append(filename)
-                filename_matches["image_files"].append(
+                filename_matches[_IMAGE_KEYNAME].append(
                     os.path.join(label_path, filename)
                 )
     elif version == 2.0:
         for filename in os.listdir(scan_path):
             if filename.endswith(".png"):
                 filename_matches[index].append(filename)
-                filename_matches["image_files"].append(
+                filename_matches[_IMAGE_KEYNAME].append(
                     os.path.join(scan_path, filename)
                 )
 
@@ -538,7 +540,7 @@ def load_chest_xray14_dataset(
     train_metadata = metadata[metadata.index.isin(train_val_list)]
     train_dataset: monai.data.Dataset = instantiate(
         config=dataset_cfg.instantiate,
-        image_files=train_metadata["image_files"].values,
+        image_files=train_metadata[_IMAGE_KEYNAME].values,
         labels=train_metadata[target].values,
         transform=train_transforms,
         **kwargs,
@@ -552,7 +554,7 @@ def load_chest_xray14_dataset(
     test_metadata = metadata[metadata.index.isin(test_list)]
     test_dataset = monai.data.Dataset = instantiate(
         config=dataset_cfg.instantiate,
-        image_files=test_metadata["image_files"].values,
+        image_files=test_metadata[_IMAGE_KEYNAME].values,
         labels=test_metadata[target].values,
         transform=eval_transforms,
         **kwargs,
@@ -587,7 +589,7 @@ def instantiate_image_dataset(
     ## Returns
     * `monai.data.Dataset`: The instantiated dataset.
     """
-    logger.info("Instantiating image dataset...\n")
+    logger.info("Instantiating image dataset...")
     dataset_cfg: DatasetConfiguration = kwargs.get(
         "dataset_cfg", cfg.datasets if cfg is not None else None
     )
@@ -611,6 +613,7 @@ def instantiate_image_dataset(
             f"Dataset extension '{dataset_cfg.extension}' not supported. Please use '.nii.gz' or '.jpeg'."
         )
 
+    logger.info("Image dataset instantiated.\n")
     return train_dataset, test_dataset
 
 
@@ -633,7 +636,7 @@ def instantiate_train_val_test_datasets(
     eval_transforms = create_transforms(cfg, use_transforms=False)
 
     if dataset_cfg.extension == ".jpeg" or ".png":
-        logger.info("Creating train/val splits...\n")
+        logger.info("Creating 'validation' split...")
         X, y = get_images_and_classes(dataset=dataset)
 
         X_train, X_val, y_train, y_val = train_test_split(
@@ -699,7 +702,7 @@ def instantiate_train_val_test_datasets(
             train_val_test_split_dict["val"] = val_dataset
 
     elif dataset_cfg.extension == ".nii.gz":
-        logger.info("Creating train/val/test splits...\n")
+        logger.info("Creating train/val/test splits...")
 
         X = np.array(dataset.image_files)
         encoder = LabelEncoder()
@@ -756,11 +759,17 @@ def instantiate_train_val_test_datasets(
             f"Dataset extension '{dataset_cfg.extension}' not supported. Please use ['.nii.gz','.jpeg','.png']."
         )
 
+    logger.info("Train/val/test splits created.")
+    logger.info("Train dataset:\t{}".format(Counter(train_dataset.labels)))
+    logger.info("Val dataset:\t{}".format(Counter(val_dataset.labels)))
+    # logger.info("Test dataset:\t{}\n\n".format(Counter(test_dataset.labels)))
+
     return train_val_test_split_dict
 
 
-def create_loaders(cfg: Configuration = None, **kwargs):
-    """Create train and test loaders."""
+def prepare_data(cfg: Configuration = None, **kwargs):
+    """Prepare the data by creating the train/val/test splits."""
+    logger.info("Preparing data...")
     dataset_cfg: DatasetConfiguration = kwargs.get(
         "dataset_cfg", cfg.datasets if cfg else None
     )
@@ -773,6 +782,11 @@ def create_loaders(cfg: Configuration = None, **kwargs):
     eval_transform = create_transforms(cfg, use_transforms=False)
     dataset = instantiate_image_dataset(cfg=cfg, transform=train_transform)
     train_dataset, test_dataset = dataset[0], dataset[1]
+
+    # NOTE: combined datasets here
+    train_dataset, test_dataset = combine_datasets(train_dataset, test_dataset, cfg=cfg)
+
+    # split the dataset into train/val/test
     train_val_test_split_dict = instantiate_train_val_test_datasets(
         cfg=cfg, dataset=train_dataset
     )
@@ -801,6 +815,8 @@ def create_loaders(cfg: Configuration = None, **kwargs):
         pin_memory=torch.cuda.is_available(),
         shuffle=True,
     )
+
+    logger.info("Data prepared.\n\n")
     return train_loader, val_loader, test_loader
 
 
@@ -843,6 +859,7 @@ def combine_datasets(
     """
     Combine a list of datasets.
     """
+    logger.info("Adding addtional datasets...")
     if cfg is None:
         dataset_cfg: DatasetConfiguration = dataset_cfg
     else:
@@ -859,30 +876,11 @@ def combine_datasets(
     c_train_dataset = deepcopy(train_dataset)
     c_test_dataset = deepcopy(test_dataset)
 
-    # def _combine_datasets(
-    #     orig_dataset: monai.data.Dataset,
-    #     add_dataset: monai.data.Dataset,
-    #     transform: monai.transforms.Compose = None,
-    #     **kwargs,
-    # ):
-    #     """
-    #     Combine two image datasets.
-    #     """
-    #     combined_image_files = np.hstack(
-    #         (orig_dataset.image_files, add_dataset.image_files)
-    #     )
-    #     combined_labels = np.hstack((orig_dataset.labels, add_dataset.labels))
-
-    #     combined_dataset = hydra_instantiate(
-    #         cfg=dataset_cfg.instantiate,
-    #         image_files=combined_image_files,
-    #         labels=combined_labels,
-    #         transform=transform,
-    #     )
-
-    #     return combined_dataset
-
     for additional_dataset in dataset_configs:
+        additional_dataset_name = os.path.splitext(
+            additional_dataset["filepath"].split("/")[-1]
+        )[0]
+        logger.info(f"Adding additional dataset: '{additional_dataset_name}'...")
         filepath: os.PathLike = additional_dataset["filepath"]
         marshaller: callable = globals()[additional_dataset["loader"]]
         _dataset_cfg: DatasetConfiguration = yaml_to_configuration(filepath)
@@ -890,35 +888,35 @@ def combine_datasets(
             dataset_cfg=_dataset_cfg,
             return_metadata=True,
         )
-        # add_train_dataset, add_test_dataset = (
-        #     additional_dataset_splits[0],
-        #     additional_dataset_splits[1],
-        # )
         add_train_metadata, add_test_metadata = (
             additional_dataset_splits[2],
             additional_dataset_splits[3],
         )
 
         # metadata preprocessing
-        train_metadata_subset = add_train_metadata[add_train_metadata["labels"] == 1]
-        test_metadata_subset = add_test_metadata[add_test_metadata["labels"] == 1]
+        train_metadata_subset = add_train_metadata[
+            add_train_metadata[_LABEL_KEYNAME] == 1
+        ]
+        test_metadata_subset = add_test_metadata[add_test_metadata[_LABEL_KEYNAME] == 1]
 
         train_image_files = np.hstack(
             (
                 c_train_dataset.image_files,
-                train_metadata_subset["image_files"],
+                train_metadata_subset[_IMAGE_KEYNAME],
             )
         )
         test_image_files = np.hstack(
             (
                 c_test_dataset.image_files,
-                test_metadata_subset["image_files"],
+                test_metadata_subset[_IMAGE_KEYNAME],
             )
         )
         train_labels = np.hstack(
-            (c_train_dataset.labels, train_metadata_subset["labels"])
+            (c_train_dataset.labels, train_metadata_subset[_LABEL_KEYNAME])
         )
-        test_labels = np.hstack((c_test_dataset.labels, test_metadata_subset["labels"]))
+        test_labels = np.hstack(
+            (c_test_dataset.labels, test_metadata_subset[_LABEL_KEYNAME])
+        )
 
         c_train_dataset = hydra_instantiate(
             cfg=dataset_cfg.instantiate,
@@ -932,20 +930,8 @@ def combine_datasets(
             labels=test_labels,
             transform=c_test_dataset.transform,
         )
-
-        # c_train_dataset = _combine_datasets(
-        #     orig_dataset=c_train_dataset,
-        #     add_dataset=orig_train_dataset,
-        #     cfg=cfg,
-        #     transform=c_train_dataset.transform,
-        #     **kwargs,
-        # )
-        # c_test_dataset = _combine_datasets(
-        #     orig_dataset=c_test_dataset,
-        #     add_dataset=orig_test_dataset,
-        #     cfg=cfg,
-        #     transform=c_test_dataset.transform,
-        #     **kwargs,
-        # )
+    logger.info("Additional datasets added.")
+    logger.info(f"Train dataset:\t{Counter(c_train_dataset.labels)}")
+    logger.info(f"Test dataset:\t{Counter(c_test_dataset.labels)}\n")
 
     return c_train_dataset, c_test_dataset

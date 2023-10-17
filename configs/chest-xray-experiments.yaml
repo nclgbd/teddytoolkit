@@ -1,7 +1,7 @@
 # * python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-experiments
-
-# Sampling modes
 # * python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-experiments -m
+
+# Different multi-run commands:
 # * job.use_pretrained=true datasets.preprocessing.use_sampling=false job.device=0
 # * job.use_pretrained=true datasets.preprocessing.use_sampling=true datasets.preprocessing.sampling_method.sample_to_value=3500,5000 job.device=1
 # * models.model.model_name=resnet50,xception
