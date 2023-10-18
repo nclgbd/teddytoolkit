@@ -2,7 +2,7 @@
 
 defaults:
   - _self_
-  - preprocessing: default-preprocessing
+  # - preprocessing: default-preprocessing
   - transforms: default-transforms
 
 dim: 229
@@ -28,3 +28,13 @@ additional_datasets:
   dataset_configs:
     - filepath: /home/nicoleg/workspaces/teddytoolkit/configs/datasets/chest-xray-dataset.yaml
       loader: load_chest_xray_dataset
+
+preprocessing:
+  subset: ["Atelectasis", "Edema", "Effusion", "Consolidation", "Pneumonia"]
+  use_sampling: true
+  sampling_method:
+    sample_to_value: 5000
+    method:
+      _partial_: true
+      _target_: imblearn.datasets.make_imbalance
+      verbose: true

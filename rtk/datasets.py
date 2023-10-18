@@ -62,7 +62,7 @@ def visualize_scan(
     _filename = scan._meta["filename_or_obj"].split("/")[-1]
     patient_id = _filename.split(".")[0]
 
-    plt.title(f"Patient ID: {patient_id}")
+    plt.title(f"Patient ID: {patient_id}; Label: {label}")
     display_scan = scan.numpy()
     display_scan = np.transpose(display_scan, (1, 2, 0))
     plt.imshow(display_scan, cmap="bone")
@@ -529,6 +529,34 @@ def load_chest_xray14_dataset(
         target
     ].str.contains(labels[1])
     metadata = metadata[subset_condition]
+
+    def _subset_chest14_labels(x):
+        _ALL_LABELS = [
+            "Atelectasis",
+            "Cardiomegaly",
+            "Effusion",
+            "Infiltration",
+            "Mass",
+            "Nodule",
+            "Pneumonia",
+            "Pneumothorax",
+            "Consolidation",
+            "Edema",
+            "Emphysema",
+            "Fibrosis",
+            "Pleural_Thickening",
+            "Hernia",
+        ]
+        # subset = ["Atelectasis", "Edema", "Effusion", "Consolidation", "Pneumonia"]
+        subset = dataset_cfg.preprocessing.get("subset", [])
+        unaccepted_labels = list(set(_ALL_LABELS) - set(subset))
+        multiclass_labels = x.split("|")
+        for label in multiclass_labels:
+            if label in unaccepted_labels:
+                return False
+        return True
+
+    metadata = metadata[metadata[target].apply(_subset_chest14_labels)]
     metadata = transform_labels_to_metaclass(metadata, target, dataset_cfg.encoding)
     metadata[target] = LabelEncoder().fit_transform(metadata[target].values)
 
@@ -538,6 +566,9 @@ def load_chest_xray14_dataset(
 
     train_transforms = create_transforms(cfg, use_transforms=cfg.job.use_transforms)
     train_metadata = metadata[metadata.index.isin(train_val_list)]
+    # train_metadata = train_metadata[
+    #     train_metadata[target].apply(_subset_chest14_labels)
+    # ]
     train_dataset: monai.data.Dataset = instantiate(
         config=dataset_cfg.instantiate,
         image_files=train_metadata[_IMAGE_KEYNAME].values,
@@ -552,6 +583,7 @@ def load_chest_xray14_dataset(
 
     eval_transforms = create_transforms(cfg, use_transforms=False)
     test_metadata = metadata[metadata.index.isin(test_list)]
+    # test_metadata = test_metadata[test_metadata[target].apply(_subset_chest14_labels)]
     test_dataset = monai.data.Dataset = instantiate(
         config=dataset_cfg.instantiate,
         image_files=test_metadata[_IMAGE_KEYNAME].values,
