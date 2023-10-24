@@ -1,5 +1,5 @@
-# * python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-experiments
-# * python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-experiments -m
+# * python scripts/run_job.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-experiments
+# * python scripts/run_job.py --config-dir=$(pwd)/configs/ --config-name=chest-xray-experiments -m
 
 # Different multi-run commands:
 # * job.use_pretrained=true datasets.preprocessing.use_sampling=false job.device=0
@@ -11,7 +11,7 @@
 defaults:
   - _self_
   - datasets: chest-xray14-dataset
-  - job: run-train
+  - job: run-eval
   - models: default-model
   # module configurations
   - ignite: ignite

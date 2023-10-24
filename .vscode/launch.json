@@ -5,10 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug run_train.py: tests conf",
+            "name": "Debug run_job.py: tests conf",
             "type": "python",
             "request": "launch",
-            "program": "scripts/run_train.py",
+            "program": "scripts/run_job.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
@@ -23,10 +23,10 @@
             ]
         },
         {
-            "name": "Debug run_train.py: chest-xray-experiments conf",
+            "name": "Debug run_job.py: chest-xray-experiments conf",
             "type": "python",
             "request": "launch",
-            "program": "scripts/run_train.py",
+            "program": "scripts/run_job.py",
             "console": "integratedTerminal",
             "justMyCode": false,
             "args": [

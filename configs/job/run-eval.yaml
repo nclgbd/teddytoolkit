@@ -1,18 +1,18 @@
-# job: test-run
+# job: run-eval
 
 device: 1
 dry_run: true
-epoch_length: 8
-max_epochs: 2
-mode: train
+epoch_length: null
+max_epochs: 1
+mode: evaluate
 perform_validation: true
-random_state: 42
-set_track_meta: false
+random_state: 101
+set_track_meta: true
 use_autocast: true
 use_azureml: true
 use_mlflow: true
 use_pretrained: true
-use_transforms: true
+use_transforms: false
 
 # function kwargs
 train_test_split:
