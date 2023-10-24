@@ -6,7 +6,7 @@
 # * job.use_pretrained=true datasets.preprocessing.use_sampling=true datasets.preprocessing.sampling_method.sample_to_value=3500,5000 job.device=1
 # * models.model.model_name=resnet50,xception
 # * models.model.model_name=vit_base_patch16_clip_384
-# * models.optimizer.lr=0.0001,0.00001 +models.optimizer.weight_decay=0.001,0.01,0.1
+# * models.optimizer.lr=0.0001,0.00001 +models.optimizer.weight_decay=0.001
 
 defaults:
   - _self_

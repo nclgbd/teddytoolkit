@@ -21,6 +21,6 @@ checkpoint:
 
 early_stopping:
   _target_: ignite.handlers.early_stopping.EarlyStopping
-  patience: 3
+  patience: 5
 
 lr_scheduler:
