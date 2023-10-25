@@ -95,7 +95,7 @@ def create_default_trainer_args(
 
     # Prepare model, optimizer, loss function, and criterion
     model: nn.Module = models.instantiate_model(cfg, device=device)
-    model.train()
+    # model.train()
     trainer_kwargs["model"] = model
     criterion = models.instantiate_criterion(cfg, device=device)
     trainer_kwargs["loss_fn"] = criterion
@@ -573,9 +573,9 @@ def build_report(
 
     model_class_name = model_cfg.model._target_.split(".")[-1].lower()
     model_name = model_cfg.model.get("model_name", model_class_name)
-    test_auc: float = metrics["test_roc_auc"]
-    test_acc: float = metrics["test_accuracy"]
-    test_loss: float = metrics["test_loss"]
+    test_auc: float = metrics[f"{split}_roc_auc"]
+    test_acc: float = metrics[f"{split}_accuracy"]
+    test_loss: float = metrics[f"{split}_loss"]
     test_precision: float = cr_df["macro avg"][0]
     test_recall: float = cr_df["macro avg"][1]
     test_f1: float = cr_df["macro avg"][2]

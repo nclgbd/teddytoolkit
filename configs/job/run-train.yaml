@@ -4,6 +4,7 @@ device: 0
 dry_run: false
 epoch_length: null
 max_epochs: 100
+mode: train
 perform_validation: true
 random_state: 101
 set_track_meta: false
@@ -19,3 +20,6 @@ train_test_split:
   test_size: 0.1
 prepare_function:
   _target_: rtk.ignite.prepare_run
+
+tags:
+  type: train

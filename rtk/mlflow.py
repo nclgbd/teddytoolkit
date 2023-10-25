@@ -18,20 +18,27 @@ def create_run_name(cfg: Configuration, random_state: int, **kwargs):
     dataset_cfg = cfg.datasets
     preprocessing_cfg = dataset_cfg.preprocessing
     job_cfg = cfg.job
+    tags = job_cfg.get("tags", {})
     model_cfg = cfg.models
 
     model_name = model_cfg.model._target_.split(".")[-1]
     run_name: str = model_cfg.model.get("model_name", model_name.lower())
-    optimizer_name: str = model_cfg.optimizer._target_.split(".")[-1].lower()
-    lr: float = model_cfg.optimizer.lr
-    weight_decay: float = model_cfg.optimizer.get("weight_decay", 0.0)
-    criterion_name: str = model_cfg.criterion._target_.split(".")[-1].lower()
-    run_name += f",optimizer={optimizer_name},lr={lr},weight_decay={weight_decay},criterion={criterion_name}"
-    if preprocessing_cfg.use_sampling:
-        sample_to_value = preprocessing_cfg.sampling_method["sample_to_value"]
-        run_name += f",sample_to_value={sample_to_value}"
 
-    run_name += f",pretrained={str(job_cfg.use_pretrained).lower()}"
+    if tags.get("type", "train") == "train" or job_cfg.mode == "train":
+        optimizer_name: str = model_cfg.optimizer._target_.split(".")[-1].lower()
+        lr: float = model_cfg.optimizer.lr
+        weight_decay: float = model_cfg.optimizer.get("weight_decay", 0.0)
+        criterion_name: str = model_cfg.criterion._target_.split(".")[-1].lower()
+        run_name += f",optimizer={optimizer_name},lr={lr},weight_decay={weight_decay},criterion={criterion_name}"
+        if preprocessing_cfg.use_sampling:
+            sample_to_value = preprocessing_cfg.sampling_method["sample_to_value"]
+            run_name += f",sample_to_value={sample_to_value}"
+
+        run_name += f",pretrained={str(job_cfg.use_pretrained).lower()}"
+
+    elif tags.get("type", "train") == "eval" or job_cfg.mode == "evaluate":
+        loaded_model_name = model_cfg.get("load_model", {}).get("name", "")
+        run_name += f",loaded_model={loaded_model_name}"
 
     date = cfg.date
     postfix: str = cfg.get("postfix", "")
@@ -107,7 +114,7 @@ def log_mlflow_params(cfg: Configuration, **kwargs):
     """
     Log the parameters to MLFlow.
     """
-    tags = cfg.get("tags", {})
+    tags = cfg.job.get("tags", {})
     params = get_params(cfg, **kwargs)
     logger.info("Logged parameters:\n{}".format(OmegaConf.to_yaml(params)))
     mlflow.log_params(params)

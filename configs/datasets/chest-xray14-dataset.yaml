@@ -24,11 +24,6 @@ dataloader:
   batch_size: 16
   num_workers: 24
 
-# additional_datasets:
-#   dataset_configs:
-#     - filepath: /home/nicoleg/workspaces/teddytoolkit/configs/datasets/chest-xray-dataset.yaml
-#       loader: load_chest_xray_dataset
-
 preprocessing:
   subset: ["Atelectasis", "Edema", "Effusion", "Consolidation", "Pneumonia"]
   use_sampling: true
@@ -38,3 +33,7 @@ preprocessing:
       _partial_: true
       _target_: imblearn.datasets.make_imbalance
       verbose: true
+# additional_datasets:
+#   dataset_configs:
+#     - filepath: /home/nicoleg/workspaces/teddytoolkit/configs/datasets/chest-xray-dataset.yaml
+#       loader: load_chest_xray_dataset

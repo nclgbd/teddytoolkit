@@ -5,7 +5,7 @@ defaults:
   - preprocessing: default-preprocessing
   - transforms: default-transforms
 
-dim: 384
+dim: 229
 extension: .jpeg
 labels: [NORMAL, PNEUMONIA]
 patient_data: null

@@ -682,20 +682,37 @@ def instantiate_train_val_test_datasets(
             # train_metadata = resample_to_value(cfg=cfg, metadata=train_metadata)
             # X_train = train_metadata[_IMAGE_KEYNAME].values
             # y_train = train_metadata[_LABEL_KEYNAME].values
-            sampling_strategy = {
-                i: preprocessing_cfg.sampling_method["sample_to_value"]
-                for i, _ in enumerate(sorted(dataset_cfg.labels))
-            }
             X_train, y_train = RandomOverSampler(
                 random_state=random_state
             ).fit_resample(X_train.reshape(-1, 1), y_train)
-            X_train, y_train = make_imbalance(
-                X=X_train,
-                y=y_train,
-                random_state=random_state,
-                sampling_strategy=sampling_strategy,
-                verbose=True,
-            )
+            try:
+                sampling_strategy = {
+                    i: preprocessing_cfg.sampling_method["sample_to_value"]
+                    for i, _ in enumerate(sorted(dataset_cfg.labels))
+                }
+                X_train, y_train = make_imbalance(
+                    X=X_train,
+                    y=y_train,
+                    random_state=random_state,
+                    sampling_strategy=sampling_strategy,
+                    verbose=True,
+                )
+            except ValueError:
+                # Oversampling of majority class is also needed, so we use alternative oversampling method
+                sample_to_value: int = preprocessing_cfg.sampling_method[
+                    "sample_to_value"
+                ]
+
+                X_train = X_train.reshape(-1)
+                _train_df = pd.DataFrame(
+                    {_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train}
+                )
+                _train_df = _train_df.groupby(_LABEL_KEYNAME).apply(
+                    lambda x: x.sample(sample_to_value, replace=True)
+                )
+                X_train = _train_df[_IMAGE_KEYNAME].values
+                y_train = _train_df[_LABEL_KEYNAME].values
+
             # X_train, y_train = hydra_instantiate(
             #     cfg=preprocessing_cfg.sampling_method["method"],
             #     X=X_train,

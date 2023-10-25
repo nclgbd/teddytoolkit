@@ -82,6 +82,7 @@ def main(cfg: Configuration) -> None:
     train_loader = loaders[0]
     test_loader = loaders[-1]
 
+    os.makedirs("artifacts", exist_ok=True)
     # run trainer
     if mode == "train":
         if cfg.job.use_mlflow:
