@@ -21,6 +21,8 @@ timestamp: ${now:%H-%M-%S}
 hydra:
   job:
     chdir: true
+  searchpath:
+    - file:///home/nicoleg/workspaces/dissertation/configs
   sweep:
     dir: outputs/${hydra.job.config_name}/${date}/${timestamp}
     subdir: ${hydra.job.override_dirname}

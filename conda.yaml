@@ -1,10 +1,12 @@
 name: rtk-env
 channels:
+  - pytorch
   - defaults
+  - nvidia
   - conda-forge
 dependencies:
-  - ipykernel
-  - jupyterlab
+  - ipywidgets
+  - jupyter_core
   - pip
   - pip:
       - -r requirements.txt
