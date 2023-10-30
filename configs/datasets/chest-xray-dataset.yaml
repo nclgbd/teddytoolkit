@@ -2,55 +2,22 @@
 
 defaults:
   - _self_
-  - transforms: diffusion-transforms
+  - preprocessing: default-preprocessing
+  - transforms: default-transforms
 
+dim: 229
 extension: .jpeg
+labels: [NORMAL, PNEUMONIA]
 patient_data: null
 scan_data: /home/nicoleg/workspaces/teddytoolkit/.data/Chest_XRay_Images_RGB/
-labels: [NORMAL, PNEUMONIA]
 encoding:
-  NORMAL: 0
-  PNEUMONIA: 1
-
-preprocessing:
-  resample_value: 1
-  sample_to_value: -1
-  subset: [NORMAL]
-  use_sampling: false
-  use_subset: true
+  0: NORMAL
+  1: PNEUMONIA
 
 instantiate:
   _target_: monai.data.ImageDataset
 
 dataloader:
   _target_: monai.data.ThreadDataLoader
-  batch_size: 1
+  batch_size: 16
   num_workers: 24
-
-transforms:
-  load:
-    - _target_: monai.transforms.ScaleIntensity
-
-    - _target_: monai.transforms.EnsureChannelFirst
-      # channel_dim: no_channel
-
-    - _target_: monai.transforms.EnsureType
-      track_meta: true
-
-    - _target_: monai.transforms.Resize
-      spatial_size: [229, 229]
-
-    # - _target_: monai.transforms.Transpose
-    #   # indices: [2, 0, 1]
-    #   indices: [0, 3, 1, 2]
-
-  train:
-    - _target_: torchvision.transforms.RandomAffine
-      degrees: 45
-      shear: 16
-      translate: [0.15, 0.2]
-
-    - _target_: torchvision.transforms.RandomResizedCrop
-      scale: [0.75, 1.25]
-      size: [229, 229]
-      antialias: true

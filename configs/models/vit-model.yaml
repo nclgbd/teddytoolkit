@@ -1,4 +1,4 @@
-# models: resnet-model
+# models: vit-model
 
 defaults:
   - _self_
@@ -7,11 +7,10 @@ defaults:
 
 model:
   _target_: timm.create_model
-  model_name: resnet50
+  model_name: vit_base_patch16_clip_384
   num_classes: 2
   pretrained: ${job.use_pretrained}
 
 load_model:
-  name: resnet50_PEDIATRICS_CHESTXRAY14
+  name: vit_base_patch16_clip_384_PEDIATRICS_CHESTXRAY14
   version: 1
-

@@ -1,0 +1,10 @@
+name: rtk-env
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - ipykernel
+  - jupyterlab
+  - pip
+  - pip:
+      - -r requirements.txt

@@ -1,9 +1,9 @@
 # ignite: ignite
 
-# log_interval: 1
+log_interval: 5
 score_name: loss
 use_checkpoint: true
-use_early_stopping: false
+use_early_stopping: true
 use_lr_scheduler: false
 use_multi_gpu: false
 

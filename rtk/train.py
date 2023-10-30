@@ -13,5 +13,5 @@ import mlflow
 from monai.config import print_config
 from monai.utils import set_determinism
 
-# ttk
-from ttk import DEFAULT_DATA_PATH, datasets, models
+# rtk
+from rtk import DEFAULT_DATA_PATH, datasets, models

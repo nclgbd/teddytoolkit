@@ -3,7 +3,7 @@ For quick debugging and testing.
 """
 from rich import pretty, traceback
 
-from ttk.utils import get_console
+from rtk.utils import get_console
 
 
 def install(

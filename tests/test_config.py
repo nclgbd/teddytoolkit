@@ -1,7 +1,7 @@
 """
-Tests for the `ttk.config` module.
+Tests for the `rtk.config` module.
 """
-from ttk.config import Configuration
+from rtk.config import Configuration
 
 
 class TestConfig:

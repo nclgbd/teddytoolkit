@@ -1,12 +1,12 @@
-# python scripts/run_train.py --config-dir=$(pwd)/configs/ --config-name=tests
+# * python scripts/run_job.py --config-dir=$(pwd)/configs/ --config-name=tests
 
 defaults:
   - _self_
   - datasets: chest-xray-dataset
-  - job: train-diffusion
-  - models: ddpm-model
+  - job: run-eval
+  - models: default-model
   # module configurations
-  - ignite: diffusion-ignite
+  - ignite: ignite
   - mlflow: local
   - sklearn: classifier
   # overrides:
@@ -14,6 +14,7 @@ defaults:
   - override hydra/hydra_logging: colorlog
 
 date: ${now:%Y-%m-%d}
+postfix: ""
 timestamp: ${now:%H-%M-%S}
 
 # hydra settings

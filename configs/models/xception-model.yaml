@@ -2,18 +2,16 @@
 
 defaults:
   - _self_
+  - criterion: cross-entropy
+  - optimizer: adam
 
 model:
   _target_: timm.create_model
   model_name: xception
   num_classes: 2
-  pretrained: true
+  pretrained: ${job.use_pretrained}
 
-criterion:
-  _target_: torch.nn.CrossEntropyLoss
+load_model:
+  name: xception_PEDIATRICS_CHESTXRAY14
+  version: 1
 
-optimizer:
-  _target_: torch.optim.SGD
-  lr: 1e-3
-  momentum: 0.9
-  weight_decay: 1e-4

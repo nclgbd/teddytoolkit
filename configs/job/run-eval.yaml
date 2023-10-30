@@ -1,18 +1,18 @@
-# job: run-train
+# job: run-eval
 
-device: 0
-dry_run: false
+device: 1
+dry_run: true
 epoch_length: null
-max_epochs: 100
-mode: train
+max_epochs: 0
+mode: evaluate
 perform_validation: true
 random_state: 101
-set_track_meta: false
+set_track_meta: true
 use_autocast: true
 use_azureml: true
 use_mlflow: true
 use_pretrained: true
-use_transforms: true
+use_transforms: false
 
 # function kwargs
 train_test_split:
@@ -22,4 +22,4 @@ prepare_function:
   _target_: rtk.ignite.prepare_run
 
 tags:
-  type: train
+  type: eval

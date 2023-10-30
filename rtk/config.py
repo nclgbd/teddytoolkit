@@ -1,5 +1,5 @@
 """
-Basic hydra template configurations for the `ttk` package.
+Basic hydra template configurations for the `rtk` package.
 """
 import os
 import random
@@ -10,8 +10,8 @@ from omegaconf import OmegaConf, DictConfig, ListConfig
 from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 
-# ttk
-from ttk.utils import get_logger
+# rtk
+from rtk.utils import get_logger
 
 logger = get_logger(__name__)
 
@@ -92,13 +92,21 @@ class SklearnConfiguration:
 
 @dataclass
 class PreprocessingConfiguration:
-    """ """
+    """Preprocessing configuration class.
+
+    ## Attributes:
+    * `resample_value` (`int`): Integer representation of how many times to expand the dataset.
+    * `sample_to_value` (`int`): Integer representation of how many samples to use from the dataset.
+    * `subset` (`list`): The subset of the dataset to use.
+    * `use_sampling` (`bool`): Whether to use sampling or not.
+    * `use_subset` (`bool`): Whether to use a subset or not.
+    """
 
     resample_value: int = 1
     sample_to_value: int = -1
     subset: list = field(default_factory=lambda: [])
     use_sampling: bool = False
-    use_subset: bool = True
+    use_subset: bool = False
 
 
 @dataclass
@@ -114,6 +122,16 @@ class DatasetConfiguration:
     * `instantiate` (`DictConfig`, optional): The kind of dataset to instantiate. Defaults to `DictConfig({"_target_": "monai.data.ImageDataset"})`.
     """
 
+    # preprocessing configuration
+    preprocessing: PreprocessingConfiguration = field(
+        default_factory=PreprocessingConfiguration
+    )
+    # dimension to resize the images to
+    dim: int = 224
+    # the name of the index column in the metadata
+    index: str = ""
+    # the name of the target column in the metadata
+    target: str = ""
     # integer representation of how many times to expand the dataset
     # i.e.: if the dataset has 100 samples and resample_value is 3, then the dataset will be expanded to 300 samples.
     # default is 1, which means no expansion.
@@ -123,15 +141,11 @@ class DatasetConfiguration:
     # the path to the scan of the dataset
     scan_data: os.PathLike = ""
     # the extension of the scan files
-    extension: str = ".nii.gz"
+    extension: str = ".jpeg"
     # the names for each label in alphabetical order
     labels: list = field(default_factory=lambda: [])
     # encoding
     encoding: dict = field(default_factory=lambda: {})
-    # preprocessing configuration
-    preprocessing: PreprocessingConfiguration = field(
-        default_factory=lambda: PreprocessingConfiguration()
-    )
     # the kind of dataset to instantiate
     instantiate: DictConfig = field(
         default_factory=lambda: DictConfig({"_target_": "monai.data.ImageDataset"})
@@ -139,6 +153,16 @@ class DatasetConfiguration:
     #
     dataloader: DictConfig = field(
         default_factory=lambda: DictConfig({"_target_": "torch.utils.data.DataLoader"})
+    )
+    # preprocessing: PreprocessingConfiguration = field(
+    #     default_factory=PreprocessingConfiguration()
+    # )
+    additional_datasets: DictConfig = field(
+        default_factory=lambda: DictConfig({"dataset_configs": []})
+    )
+    # transforms
+    transforms: DictConfig = field(
+        default_factory=lambda: DictConfig({"load": [], "train": []})
     )
 
 
@@ -183,7 +207,7 @@ class JobConfiguration:
     # whether to use MLflow
     use_mlflow: bool = False
     # whether to use pretrained weights or not
-    use_pretrained_weights: bool = True
+    use_pretrained: bool = True
     # whether to use transforms or not
     use_transforms: bool = False
 
@@ -233,17 +257,12 @@ class Configuration:
     * `results_path` (`str`): The path to the results directory.
     """
 
-    index: str = ""
-    target: str = ""
     date: str = ""
     postfix: str = ""
     timestamp: str = ""
     datasets: DatasetConfiguration = field(default_factory=DatasetConfiguration())
     job: JobConfiguration = field(default_factory=JobConfiguration())
     models: ModelConfiguration = field(default_factory=ModelConfiguration())
-    preprocessing: PreprocessingConfiguration = field(
-        default_factory=PreprocessingConfiguration()
-    )
 
     # module specific configurations
     ignite: IgniteConfiguration = field(default_factory=IgniteConfiguration())

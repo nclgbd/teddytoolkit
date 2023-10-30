@@ -5,10 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug run_train.py: tests conf",
+            "name": "Debug run_job.py: tests conf",
             "type": "python",
             "request": "launch",
-            "program": "scripts/run_train.py",
+            "program": "scripts/run_job.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
@@ -16,15 +16,17 @@
                 "tests",
                 "--config-path",
                 "../configs/",
-                "job.epoch_length=128",
-                "job.max_epochs=3",
+                "job.epoch_length=8",
+                "job.max_epochs=2",
+                "datasets.preprocessing.use_sampling=true",
+                "+mlflow.experiment_name=tests",
             ]
         },
         {
-            "name": "Debug run_train.py: chest-xray-experiments conf",
+            "name": "Debug run_job.py: chest-xray-experiments conf",
             "type": "python",
             "request": "launch",
-            "program": "scripts/run_train.py",
+            "program": "scripts/run_job.py",
             "console": "integratedTerminal",
             "justMyCode": false,
             "args": [
@@ -33,8 +35,9 @@
                 "--config-path",
                 "../configs/",
                 "job.dry_run=true",
-                "job.epoch_length=128",
+                "job.epoch_length=8",
                 "job.max_epochs=2",
+                "+mlflow.experiment_name=tests",
             ]
         }
     ]

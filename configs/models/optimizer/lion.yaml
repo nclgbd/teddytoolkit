@@ -1,0 +1,6 @@
+# optimizer: lion
+
+_target_: timm.optim.lion.Lion
+lr: 1e-4
+betas: [0.9, 0.99]
+# weight_decay: 1e-4

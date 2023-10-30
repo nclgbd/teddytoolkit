@@ -5,8 +5,10 @@ import logging
 import matplotlib.pyplot as plt
 import os
 from copy import deepcopy
+from omegaconf import OmegaConf
 import pandas as pd
 from rich import inspect
+from hydra.core.hydra_config import HydraConfig
 
 # experiment managing
 ## azureml
@@ -62,9 +64,9 @@ from generative.engines import DiffusionPrepareBatch
 from generative.inferers import DiffusionInferer
 from generative.networks.schedulers import Scheduler
 
-# ttk
-from ttk import models
-from ttk.config import (
+# rtk
+from rtk import models
+from rtk.config import (
     Configuration,
     DatasetConfiguration,
     DiffusionModelConfiguration,
@@ -72,7 +74,7 @@ from ttk.config import (
     JobConfiguration,
     ModelConfiguration,
 )
-from ttk.utils import get_logger, login, hydra_instantiate
+from rtk.utils import get_logger, login, hydra_instantiate
 
 logger = get_logger(__name__)
 
@@ -92,14 +94,12 @@ def create_default_trainer_args(
     trainer_kwargs["device"] = device
 
     # Prepare model, optimizer, loss function, and criterion
-    model: nn.Module = models.instantiate_model(model_cfg, device=device)
-    model.train()
+    model: nn.Module = models.instantiate_model(cfg, device=device)
+    # model.train()
     trainer_kwargs["model"] = model
-    criterion = models.instantiate_criterion(model_cfg, device=device)
+    criterion = models.instantiate_criterion(cfg, device=device)
     trainer_kwargs["loss_fn"] = criterion
-    optimizer: torch.optim.Optimizer = models.instantiate_optimizer(
-        model_cfg, model=model
-    )
+    optimizer: torch.optim.Optimizer = models.instantiate_optimizer(cfg, model=model)
     trainer_kwargs["optimizer"] = optimizer
 
     return trainer_kwargs
@@ -553,7 +553,134 @@ def create_lr_scheduler(
     return lr_scheduler
 
 
-def _log_metrics_to_mlflow(metrics: dict, split: str, epoch: int):
+def build_report(
+    cfg: Configuration, metrics: dict, epoch: int, split: str = "test", **kwargs
+):
+    """
+    Creates a report for the model.
+    """
+    logger.info("Generating report...")
+    model_cfg: ModelConfiguration = cfg.get(
+        "models", kwargs.get("model_cfg", ModelConfiguration())
+    )
+    report: str = "# Run summary\n\n"
+
+    # classification report
+    cr_report_dict = dict()
+    cr_df: pd.DataFrame = pd.read_csv(
+        os.path.join("artifacts", split, f"classification_report_epoch={epoch}.csv")
+    )
+
+    model_class_name = model_cfg.model._target_.split(".")[-1].lower()
+    model_name = model_cfg.model.get("model_name", model_class_name)
+    test_auc: float = metrics[f"{split}_roc_auc"]
+    test_acc: float = metrics[f"{split}_accuracy"]
+    test_loss: float = metrics[f"{split}_loss"]
+    test_precision: float = cr_df["macro avg"][0]
+    test_recall: float = cr_df["macro avg"][1]
+    test_f1: float = cr_df["macro avg"][2]
+
+    cr_report_dict["model_name"] = model_name
+    cr_report_dict["roc_auc"] = test_auc
+    cr_report_dict["accuracy"] = test_acc
+    cr_report_dict["loss"] = test_loss
+    cr_report_dict["precision"] = test_precision
+    cr_report_dict["recall"] = test_recall
+    cr_report_dict["f1-score"] = test_f1
+    cr_report_df = pd.DataFrame.from_dict(
+        cr_report_dict,
+        orient="index",
+    )
+    cr_report_df = cr_report_df.transpose().set_index("model_name")
+
+    report += f"## Test results\n"
+    report += f"### Evaluation metrics\n{cr_report_df.to_markdown()}\n\n"
+
+    # confusion matrix
+    cfm_df: pd.DataFrame = (
+        pd.read_csv(
+            os.path.join("artifacts", split, f"confusion_matrix_epoch={epoch}.csv")
+        )
+        .set_index("Unnamed: 0")
+        .rename_axis("", axis=0)
+    )
+    report += f"### Confusion matrix\n{cfm_df.to_markdown()}\n\n"
+
+    # configuration
+    cfg_yaml = OmegaConf.to_yaml(cfg, sort_keys=True)
+    report += f"## `config.yaml`\n```yaml\n# --config-name=config\n\n{cfg_yaml}\n```\n"
+
+    with open("artifacts/report.md", "w") as f:
+        f.write(report)
+
+    if cfg.job.use_mlflow:
+        mlflow.set_tag("mlflow.note.content", report)
+
+    return report
+
+
+def _log_metrics(
+    cfg: Configuration,
+    trainer: Engine,
+    evaluator: Engine,
+    loader: DataLoader,
+    split: str,
+    **kwargs,
+):
+    ignite_cfg: IgniteConfiguration = cfg.ignite
+    evaluator.run(loader)
+    metrics = evaluator.state.metrics
+    epoch = trainer.state.epoch
+
+    logger.info(
+        f"epoch: {epoch}, {split} {ignite_cfg.score_name}: {metrics[ignite_cfg.score_name]}"
+    )
+    y_true = metrics["y_true"]
+    y_pred = metrics["y_preds"]
+    labels = cfg.datasets.labels
+
+    # classification report
+    cr_str = classification_report(
+        y_true=y_true,
+        y_pred=y_pred,
+        target_names=labels,
+        zero_division=0.0,
+    )
+    logger.info(f"{split} classification report:\n{cr_str}")
+    cr = classification_report(
+        y_true=y_true,
+        y_pred=y_pred,
+        target_names=labels,
+        output_dict=True,
+        zero_division=0.0,
+    )
+    cr_df = pd.DataFrame.from_dict(cr)
+    cr_df.to_csv(f"artifacts/{split}/classification_report_epoch={epoch}.csv")
+    # confusion matrix
+    cfm = confusion_matrix(y_true=y_true, y_pred=y_pred)
+    cfm_df = pd.DataFrame(cfm, index=labels, columns=labels)
+    logger.info(f"{split} confusion matrix:\n{cfm_df}")
+    cfm_df.to_csv(f"artifacts/{split}/confusion_matrix_epoch={epoch}.csv")
+
+    # roc_auc
+    roc_auc = roc_auc_score(y_true=y_true, y_score=y_pred)
+    metrics["roc_auc"] = roc_auc
+
+    if cfg.job.use_mlflow:
+        override = kwargs.get("override", False)
+        _log_metrics_to_mlflow(
+            cfg, metrics=metrics, split=split, epoch=epoch, override=override
+        )
+
+
+def _log_metrics_to_mlflow(
+    cfg: Configuration,
+    metrics: dict,
+    split: str,
+    epoch: int,
+    generate_report: bool = True,
+    override: bool = False,
+):
     """Iterates through the metrics dictionary and logs the metrics to MLflow."""
     split_key = split + "_"
     logged_metrics = {}
@@ -562,39 +689,39 @@ def _log_metrics_to_mlflow(metrics: dict, split: str, epoch: int):
         if isinstance(metric, float):
             key_name = "".join([split_key, key])
             logged_metrics[key_name] = metric
+
+    if (generate_report and split == "test") or override:
+        report = build_report(cfg=cfg, metrics=logged_metrics, epoch=epoch, split=split)
+        logger.debug(f"Report:\n{report}")
+
     mlflow.log_metrics(logged_metrics, step=epoch)
 
 
-def prepare_run(cfg: Configuration, loaders: dict, device: torch.device, **kwargs):
-    logger.info("Preparing ignite run...")
-    ignite_cfg: IgniteConfiguration = cfg.ignite
-
-    ## prepare run
-    trainer_args = create_default_trainer_args(cfg)
-    trainer = create_supervised_trainer(**trainer_args)
-    ProgressBar().attach(trainer)
-
-    metrics = create_metrics(cfg, criterion=trainer_args["loss_fn"], device=device)
+def train(
+    cfg: Configuration,
+    trainer: Engine,
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    loaders: list,
+    metrics: dict,
+    device: torch.device,
+    **kwargs,
+):
+    ignite_cfg = cfg.ignite
     ## create evaluators
-    train_evaluator = create_supervised_evaluator(
-        trainer_args["model"], metrics=metrics, device=device
-    )
+    train_evaluator = create_supervised_evaluator(model, metrics=metrics, device=device)
     ProgressBar().attach(train_evaluator)
-    val_evaluator = create_supervised_evaluator(
-        trainer_args["model"], metrics=metrics, device=device
-    )
+    val_evaluator = create_supervised_evaluator(model, metrics=metrics, device=device)
     ProgressBar().attach(val_evaluator)
-    test_evaluator = create_supervised_evaluator(
-        trainer_args["model"], metrics=metrics, device=device
-    )
+    test_evaluator = create_supervised_evaluator(model, metrics=metrics, device=device)
     ProgressBar().attach(test_evaluator)
 
     # add additional handlers
     _ = add_handlers(
         ignite_cfg,
         trainer=trainer,
-        model=trainer_args["model"],
-        optimizer=trainer_args["optimizer"],
+        model=model,
+        optimizer=optimizer,
         val_evaluator=val_evaluator,
     )
 
@@ -604,70 +731,94 @@ def prepare_run(cfg: Configuration, loaders: dict, device: torch.device, **kwarg
     os.makedirs("artifacts/val/", exist_ok=True)
     os.makedirs("artifacts/test/", exist_ok=True)
 
-    def _log_metrics(evaluator: Engine, loader: DataLoader, split: str):
-        evaluator.run(loader)
-        metrics = evaluator.state.metrics
-        epoch = trainer.state.epoch
-
-        logger.info(
-            f"epoch: {epoch}, {split} {ignite_cfg.score_name}: {metrics[ignite_cfg.score_name]}"
-        )
-        y_true = metrics["y_true"]
-        y_pred = metrics["y_preds"]
-        labels = cfg.datasets.labels
-
-        # classification report
-        cr_str = classification_report(
-            y_true=y_true,
-            y_pred=y_pred,
-            target_names=labels,
-            zero_division=0.0,
-        )
-        logger.info(f"{split} classification report:\n{cr_str}")
-        cr = classification_report(
-            y_true=y_true,
-            y_pred=y_pred,
-            target_names=labels,
-            output_dict=True,
-            zero_division=0.0,
-        )
-        cr_df = pd.DataFrame.from_dict(cr)
-        cr_df.to_csv(f"artifacts/{split}/classification_report_epoch={epoch}.csv")
-        # confusion matrix
-        cfm = confusion_matrix(y_true=y_true, y_pred=y_pred)
-        cfm_df = pd.DataFrame(cfm, index=labels, columns=labels)
-        logger.info(f"{split} confusion matrix:\n{cfm_df}")
-        cfm_df.to_csv(f"artifacts/{split}/confusion_matrix_epoch={epoch}.csv")
-
-        # roc_auc
-        roc_auc = roc_auc_score(y_true=y_true, y_score=y_pred)
-        metrics["roc_auc"] = roc_auc
-
-        if cfg.job.use_mlflow:
-            _log_metrics_to_mlflow(metrics=metrics, split=split, epoch=epoch)
-
     @trainer.on(Events.EPOCH_COMPLETED(every=log_interval))
     def log_metrics(trainer):
         logger.info("Logging metrics...")
         train_loader, val_loader = loaders[0], loaders[1]
         if not cfg.job.dry_run:
-            _log_metrics(train_evaluator, train_loader, "train")
+            _log_metrics(cfg, trainer, train_evaluator, train_loader, "train")
         else:
             logger.debug("Dry run, skipping train evaluation.")
 
-        _log_metrics(val_evaluator, val_loader, "val")
+        _log_metrics(cfg, trainer, val_evaluator, val_loader, "val")
 
     @trainer.on(Events.COMPLETED)
     def log_test_metrics(trainer):
         logger.info("Logging test metrics...")
         test_loader = loaders[2]
-        _log_metrics(test_evaluator, test_loader, "test")
+        _log_metrics(cfg, trainer, test_evaluator, test_loader, "test")
 
     @trainer.on(Events.EXCEPTION_RAISED)
     def handle_exception_raised(error: Exception):
         mlflow.end_run()
 
-    return trainer, (train_evaluator, val_evaluator, test_evaluator)
+    return trainer, [train_evaluator, val_evaluator, test_evaluator]
+
+
+def evaluate(
+    cfg: Configuration,
+    trainer: Engine,
+    model: nn.Module,
+    loader: DataLoader,  # {"test": test_loader}
+    metrics: dict,
+    device: torch.device,
+    **kwargs,
+):
+    evaluator = create_supervised_evaluator(model, metrics=metrics, device=device)
+    ProgressBar().attach(evaluator)
+    _log_metrics(cfg, trainer, evaluator, loader, "", override=True)
+
+
+def prepare_run(
+    cfg: Configuration,
+    loaders: list,
+    device: torch.device,
+    mode: str = "train",
+    **kwargs,
+):
+    logger.info("Preparing ignite run...")
+    ignite_cfg: IgniteConfiguration = cfg.ignite
+
+    ## prepare run
+    trainer_args = create_default_trainer_args(cfg)
+    trainer = create_supervised_trainer(**trainer_args)
+    ProgressBar().attach(trainer)
+
+    metrics = create_metrics(cfg, criterion=trainer_args["loss_fn"], device=device)
+
+    trainer: Engine
+    evaluators: list
+    model: nn.Module = trainer_args["model"]
+    # TODO: make the engines from monai.engines
+    if mode == "train":
+        trainer, evaluators = train(
+            cfg=cfg,
+            trainer=trainer,
+            model=model,
+            optimizer=trainer_args["optimizer"],
+            loaders=loaders,
+            metrics=metrics,
+            device=device,
+        )
+    elif mode == "evaluate":
+        # load weights
+        model.eval()
+        evaluate(
+            cfg=cfg,
+            trainer=trainer,
+            model=model,
+            loader=loaders[-1],
+            metrics=metrics,
+            device=device,
+        )
+        return
+
+    else:
+        raise ValueError(
+            f"Invalid mode '{mode}'. Valid modes are 'train' and 'evaluate'."
+        )
+
+    return trainer, evaluators
 
 
 def create_diffusion_model_engines(
@@ -814,7 +965,7 @@ def prepare_diffusion_run(
         # metrics["roc_auc"] = roc_auc
 
         if cfg.job.use_mlflow:
-            _log_metrics_to_mlflow(metrics=metrics, split=split, epoch=epoch)
+            _log_metrics_to_mlflow(cfg, metrics=metrics, split=split, epoch=epoch)
 
     # @trainer.on(Events.EPOCH_COMPLETED(every=log_interval))
     # def log_metrics(trainer):

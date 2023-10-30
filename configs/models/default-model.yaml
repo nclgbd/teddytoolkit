@@ -1,12 +1,16 @@
-# models: mobilenet-model
+# models: default-model
 
 defaults:
   - _self_
   - criterion: cross-entropy
-  - optimizer: sgd
+  - optimizer: adam
 
 model:
   _target_: timm.create_model
-  model_name: mobilenetv2_100
+  model_name: resnet50
   num_classes: 2
   pretrained: ${job.use_pretrained}
+
+load_model:
+  name: resnet50_PEDIATRICS_CHESTXRAY14
+  version: 1

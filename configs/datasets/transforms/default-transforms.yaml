@@ -1,0 +1,31 @@
+# transforms: default-transforms
+
+load:
+  - _target_: monai.transforms.ScaleIntensity
+    # keys: image
+
+  - _target_: monai.transforms.EnsureChannelFirst
+    # keys: image
+    # channel_dim: no_channel
+
+  - _target_: monai.transforms.EnsureType
+    track_meta: true
+
+  - _target_: monai.transforms.Resize
+    # keys: image
+    spatial_size:
+      - ${datasets.dim}
+      - ${datasets.dim}
+
+train:
+  - _target_: torchvision.transforms.RandomResizedCrop
+    scale: [0.75, 1.25]
+    size:
+      - ${datasets.dim}
+      - ${datasets.dim}
+    antialias: true
+
+  - _target_: torchvision.transforms.RandomAffine
+    degrees: 45
+    shear: 16
+    translate: [0.15, 0.2]

@@ -1,16 +1,17 @@
 # job: test-run
 
-device: 2
+device: 1
 dry_run: true
-epoch_length: null
-max_epochs: 10
+epoch_length: 8
+max_epochs: 2
+mode: train
 perform_validation: true
 random_state: 42
 set_track_meta: false
 use_autocast: true
-use_azureml: false
+use_azureml: true
 use_mlflow: true
-use_pretrained_weights: true
+use_pretrained: true
 use_transforms: true
 
 # function kwargs
@@ -18,4 +19,7 @@ train_test_split:
   shuffle: true
   test_size: 0.1
 prepare_function:
-  _target_: ttk.ignite.prepare_run
+  _target_: rtk.ignite.prepare_run
+
+tags:
+  type: test

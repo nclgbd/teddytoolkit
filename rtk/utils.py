@@ -11,7 +11,7 @@ import hydra
 from argparse import Namespace
 from colorlog import ColoredFormatter
 from logging import Logger
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from rich.console import Console
 from rich.logging import RichHandler
 
@@ -19,8 +19,8 @@ from rich.logging import RichHandler
 from azureml.core import Workspace
 from azureml.core.dataset import Dataset
 
-# ttk
-from ttk import DEFAULT_DATA_PATH
+# rtk
+from rtk import DEFAULT_DATA_PATH
 
 __all__ = [
     "_console",
@@ -214,24 +214,18 @@ def yaml_to_namespace(yaml_file: os.PathLike):
         return Namespace(**yaml.safe_load(f))
 
 
-def create_run_name(cfg, random_state: int, **kwargs):
-    """Create a run name."""
-    dataset_cfg = cfg.datasets
-    job_cfg = cfg.job
-    model_cfg = cfg.models
+def yaml_to_configuration(file_path: str):
+    cfg = OmegaConf.load(file_path)
+    del cfg["defaults"]
+    cfg = DictConfig(cfg)
+    return cfg
 
-    run_name: str = model_cfg.model.model_name
-    if dataset_cfg.use_sampling:
-        sample_to_value = dataset_cfg.sample_to_value
-        run_name += f",sample_to_value={sample_to_value}"
 
-    date = cfg.date
-    postfix: str = cfg.get("postfix", "")
-    timestamp = cfg.timestamp
-    run_name = "".join(
-        [run_name, f",seed={random_state}", f",{date};{timestamp}", f",{postfix}"]
-    )
-    return run_name
+def _strip_target(_dict: dict, lower=False):
+    target_name: str = _dict["_target_"].split(".")[-1]
+    if lower:
+        target_name = target_name.lower()
+    return target_name
 
 
 _console = get_console()
