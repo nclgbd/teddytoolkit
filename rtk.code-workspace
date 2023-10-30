@@ -25,7 +25,7 @@
 			"__pycache__",
 			".pytest_cache",
 			".vscode/__pycache__",
-			"ttk/__pycache__",
+			"rtk/__pycache__",
 			"tests/__pycache__"
 		]
 	}
