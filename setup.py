@@ -2,36 +2,24 @@
 from setuptools import setup, find_packages
 from rtk import __version__
 
+
+def get_requirements():
+    """Reads requirements.txt and returns packages and git repos separately."""
+    with open("requirements.txt") as f:
+        requirements = f.read().splitlines()
+    packages = [r for r in requirements if not r.startswith("git+")]
+    # git_repos = [r.replace("git+", "") for r in requirements if r.startswith("git+")]
+    return packages  # , git_repos
+
+
+requirements = get_requirements()
 setup(
-    name="researchtoolkit",
+    name="rtk",
     version=__version__,
-    author="nclgbd",
-    description="Toolkit for working with medical imaging data.",
+    author="teddygu",
+    description="General purpose toolkit for working with medical imaging data. Contains experiment management with Mlflow, Hydra, and AzureML.",
     long_description="",
     long_description_content_type="text/markdown",
     packages=find_packages(),
-    requires=[
-        "azureml-core",
-        "azureml-dataset-runtime",
-        "einops",
-        "hydra-colorlog",
-        "hydra-core",
-        "itk",
-        "matplotlib",
-        "mlflow",
-        "monai",
-        "nibabel",
-        "numpy",
-        "omegaconf",
-        "pandas",
-        "pydicom",
-        "pytorch-ignite",
-        "rich",
-        "scikit-image",
-        "scikit-learn",
-        "torch",
-        "torchvision",
-        "tqdm",
-        "xlrd",
-    ],
+    # requires=requirements,
 )

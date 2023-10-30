@@ -7,10 +7,6 @@ import pandas as pd
 import sys
 from omegaconf import OmegaConf, DictConfig
 
-# sys path append
-CWD = os.getcwd()
-sys.path.append(os.path.abspath(os.path.join(CWD)))
-
 # rtk
 from rtk.utils import get_logger
 

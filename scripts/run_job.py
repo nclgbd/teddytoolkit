@@ -24,10 +24,6 @@ from torch.utils.data import DataLoader
 # monai
 import monai
 
-# sys path append
-CWD = os.getcwd()
-sys.path.append(os.path.abspath(os.path.join(CWD)))
-
 # rtk
 from rtk import datasets, repl
 from rtk.config import (
