@@ -31,7 +31,6 @@
 			".vscode/__pycache__",
 			"rtk/**/__pycache__",
 			"tests/__pycache__",
-			"/home/nicoleg/workspaces/dissertation/.archive"
 		]
 	}
 }

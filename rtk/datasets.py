@@ -230,28 +230,39 @@ def subset_to_class(cfg: Configuration, data_df: pd.DataFrame, **kwargs):
     return data_df
 
 
-def transform_labels_to_metaclass(df: pd.DataFrame, target_name: str, metaclass: dict):
+def transform_labels_to_metaclass(
+    df: pd.DataFrame,
+    target_name: str,
+    positive_class: str,
+    negative_class: str = None,
+    drop: bool = True,
+):
     """
     Transform the labels to the metaclass.
     """
 
-    def _transform_to_metaclass(x, metaclass: dict):
+    def _transform_to_metaclass(x, positive_class: str, negative_class: str):
         """
         Transform the label to the metaclass.
         """
-        for new_class, old_classes in metaclass.items():
-            if new_class in x:
-                return new_class
-        return x
+        if negative_class is None:
+            negative_class = f"non-{positive_class}"
+        if positive_class in x:
+            return positive_class
+        return negative_class
 
     logger.info("Transforming labels to metaclass...")
     old_target_name = f"old_{target_name}"
     df[old_target_name] = df[target_name]
     df[target_name] = df[old_target_name].apply(
-        _transform_to_metaclass, args=(metaclass,)
+        _transform_to_metaclass,
+        positive_class=positive_class,
+        negative_class=negative_class,
     )
     logger.info("Labels transformed.\n")
-    df.drop(columns=[old_target_name], inplace=True)
+    if drop:
+        df.drop(columns=[old_target_name], inplace=True)
+
     logger.debug(f"Dataframe:\n\n{df.head()}\n")
     classes = df[target_name].value_counts().to_dict()
     logger.info(f"Labels transformed. New class counts:\n{classes}.\n")
@@ -259,36 +270,38 @@ def transform_labels_to_metaclass(df: pd.DataFrame, target_name: str, metaclass:
     return df
 
 
-def transform_labels_to_one_vs_all(
-    df: pd.DataFrame,
-    target_name: str,
-    positive_class: str,
-    negative_class: str = None,
-):
-    """
-    Transform the labels to one vs all.
-    """
-    logger.info("Tranforming labels...")
-    old_target_name = f"old_{target_name}"
-    df[old_target_name] = df[target_name]
+# def transform_labels_to_one_vs_all(
+#     df: pd.DataFrame,
+#     target_name: str,
+#     positive_class: str,
+#     negative_class: str = None,
+# ):
+#     """
+#     Transform the labels to one vs all.
+#     """
+#     logger.info("Tranforming labels...")
+#     old_target_name = f"old_{target_name}"
+#     df[old_target_name] = df[target_name]
+#     negative_class = (
+#         f"non-{positive_class}" if negative_class is None else negative_class
+#     )
 
-    def _transform_to_positive_class(x):
-        """
-        Transform the label to the positive class.
-        """
-        negative_class = (
-            f"non{positive_class}" if negative_class is None else negative_class
-        )
-        return negative_class if x != positive_class else positive_class
+#     def _transform_to_positive_class(x, positive_class: str, negative_class: str):
+#         """
+#         Transform the label to the positive class.
+#         """
+#         return negative_class if x != positive_class else positive_class
 
-    df[target_name] = df[old_target_name].apply(
-        _transform_to_positive_class, args=(positive_class,)
-    )
-    logger.info("Labels transformed.\n")
-    df.drop(columns=[old_target_name], inplace=True)
-    logger.debug(f"Dataframe:\n\n{df.head()}\n")
+#     df[target_name] = df[old_target_name].apply(
+#         _transform_to_positive_class,
+#         positive_class=positive_class,
+#         negative_class=negative_class,
+#     )
+#     logger.info("Labels transformed.\n")
+#     df.drop(columns=[old_target_name], inplace=True)
+#     logger.debug(f"Dataframe:\n\n{df.head()}\n")
 
-    return df
+#     return df
 
 
 def preprocess_dataset(
@@ -441,6 +454,15 @@ def build_chest_xray14_metadata_dataframe(cfg: Configuration, version: float = 2
     return patient_df
 
 
+def create_subset(df: pd.DataFrame, target: str, labels: list = []) -> pd.DataFrame:
+    """"""
+
+    if not any(labels):
+        return df
+    subset_condition = df[target].apply(lambda x: any(label in x for label in labels))
+    return df[subset_condition]
+
+
 def load_ixi_dataset(cfg: Configuration, save_metadata=False, **kwargs):
     dataset_cfg: DatasetConfiguration = cfg.datasets
     target_name = dataset_cfg.target
@@ -516,6 +538,7 @@ def load_chest_xray14_dataset(
     cfg: Configuration, save_metadata=False, return_metadata=False, **kwargs
 ):
     dataset_cfg: DatasetConfiguration = cfg.datasets
+    preprocessing_cfg = dataset_cfg.preprocessing
     index = dataset_cfg.index
     target = dataset_cfg.target
     scan_path = dataset_cfg.scan_data
@@ -525,10 +548,12 @@ def load_chest_xray14_dataset(
     metadata = build_chest_xray14_metadata_dataframe(cfg=cfg)
     # metadata = metadata[metadata[target].isin(labels)]
     # metadata = transform_labels_to_metaclass(metadata, target, dataset_cfg.encoding)
-    subset_condition = metadata[target].str.contains(labels[0]) | metadata[
-        target
-    ].str.contains(labels[1])
-    metadata = metadata[subset_condition]
+    # subset_condition = metadata[target].str.contains(labels[0]) | metadata[
+    #     target
+    # ].str.contains(labels[1])
+
+    subset = dataset_cfg.preprocessing.get("subset", [])
+    metadata = create_subset(metadata, target, subset)
 
     def _subset_chest14_labels(x):
         _ALL_LABELS = [
@@ -548,7 +573,6 @@ def load_chest_xray14_dataset(
             "Hernia",
         ]
         # subset = ["Atelectasis", "Edema", "Effusion", "Consolidation", "Pneumonia"]
-        subset = dataset_cfg.preprocessing.get("subset", [])
         unaccepted_labels = list(set(_ALL_LABELS) - set(subset))
         multiclass_labels = x.split("|")
         for label in multiclass_labels:
@@ -557,7 +581,14 @@ def load_chest_xray14_dataset(
         return True
 
     metadata = metadata[metadata[target].apply(_subset_chest14_labels)]
-    metadata = transform_labels_to_metaclass(metadata, target, dataset_cfg.encoding)
+    if preprocessing_cfg.get("positive_class", "") != "":
+        positive_class: str = preprocessing_cfg.positive_class
+        metadata = transform_labels_to_metaclass(
+            metadata,
+            target,
+            positive_class,
+        )
+    # metadata = transform_labels_to_metaclass(metadata, target, dataset_cfg.encoding)
     metadata[target] = LabelEncoder().fit_transform(metadata[target].values)
 
     # train split

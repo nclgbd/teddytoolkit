@@ -144,8 +144,8 @@ class DatasetConfiguration:
     extension: str = ".jpeg"
     # the names for each label in alphabetical order
     labels: list = field(default_factory=lambda: [])
-    # encoding
-    encoding: dict = field(default_factory=lambda: {})
+    # # encoding
+    # encoding: dict = field(default_factory=lambda: {})
     # the kind of dataset to instantiate
     instantiate: DictConfig = field(
         default_factory=lambda: DictConfig({"_target_": "monai.data.ImageDataset"})

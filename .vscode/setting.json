@@ -1,1 +1,18 @@
-
+{
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestPath": ".",
+  "python.testing.pytestArgs": [
+    "-v",
+    "--log-level=DEBUG",
+    "-m",
+    "not diffusion"
+  ],
+  "hide-files.files": [
+    "__pycache__",
+    ".pytest_cache",
+    ".vscode/__pycache__",
+    "rtk/**/__pycache__",
+    "tests/__pycache__",
+    "/home/nicoleg/workspaces/dissertation/.archive"
+  ]
+}
