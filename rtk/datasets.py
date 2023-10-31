@@ -246,7 +246,7 @@ def transform_labels_to_metaclass(
         Transform the label to the metaclass.
         """
         if negative_class is None:
-            negative_class = f"non-{positive_class}"
+            negative_class = f"Non-{positive_class}"
         if positive_class in x:
             return positive_class
         return negative_class
@@ -454,6 +454,10 @@ def build_chest_xray14_metadata_dataframe(cfg: Configuration, version: float = 2
     return patient_df
 
 
+def chest_xray14_get_target_counts(df: pd.DataFrame, target: str = ""):
+    return Counter(",".join(df[target]).replace("|", ",").split(","))
+
+
 def create_subset(df: pd.DataFrame, target: str, labels: list = []) -> pd.DataFrame:
     """"""
 
@@ -581,6 +585,10 @@ def load_chest_xray14_dataset(
         return True
 
     metadata = metadata[metadata[target].apply(_subset_chest14_labels)]
+    counts = chest_xray14_get_target_counts(metadata, target=target)
+    logger.info(
+        f"Full dataset target counts:\n{counts}",
+    )
     if preprocessing_cfg.get("positive_class", "") != "":
         positive_class: str = preprocessing_cfg.positive_class
         metadata = transform_labels_to_metaclass(
@@ -589,7 +597,7 @@ def load_chest_xray14_dataset(
             positive_class,
         )
     # metadata = transform_labels_to_metaclass(metadata, target, dataset_cfg.encoding)
-    metadata[target] = LabelEncoder().fit_transform(metadata[target].values)
+    metadata[target] = metadata[target].apply(lambda x: dataset_cfg.encoding[x])
 
     # train split
     with open(os.path.join(scan_path, "train_val_list.txt"), "r") as f:
@@ -710,54 +718,33 @@ def instantiate_train_val_test_datasets(
             **train_test_split_kwargs,
         )
         if preprocessing_cfg.get("use_sampling", False):
-            # train_metadata = resample_to_value(cfg=cfg, metadata=train_metadata)
-            # X_train = train_metadata[_IMAGE_KEYNAME].values
-            # y_train = train_metadata[_LABEL_KEYNAME].values
-            X_train, y_train = RandomOverSampler(
-                random_state=random_state
-            ).fit_resample(X_train.reshape(-1, 1), y_train)
-            try:
-                sampling_strategy = {
-                    i: preprocessing_cfg.sampling_method["sample_to_value"]
-                    for i, _ in enumerate(sorted(dataset_cfg.labels))
-                }
-                X_train, y_train = make_imbalance(
-                    X=X_train,
-                    y=y_train,
-                    random_state=random_state,
-                    sampling_strategy=sampling_strategy,
-                    verbose=True,
-                )
-            except ValueError:
-                # Oversampling of majority class is also needed, so we use alternative oversampling method
-                sample_to_value: int = preprocessing_cfg.sampling_method[
-                    "sample_to_value"
-                ]
+            # X_train, y_train = RandomOverSampler(
+            #     random_state=random_state
+            # ).fit_resample(X_train.reshape(-1, 1), y_train)
+            # try:
+            #     sampling_strategy = {
+            #         i: preprocessing_cfg.sampling_method["sample_to_value"]
+            #         for i, _ in enumerate(sorted(dataset_cfg.labels))
+            #     }
+            #     X_train, y_train = make_imbalance(
+            #         X=X_train,
+            #         y=y_train,
+            #         random_state=random_state,
+            #         sampling_strategy=sampling_strategy,
+            #         verbose=True,
+            #     )
+            # except ValueError:
+            # Oversampling of majority class is also needed, so we use alternative oversampling method
+            sample_to_value: int = preprocessing_cfg.sampling_method["sample_to_value"]
 
-                X_train = X_train.reshape(-1)
-                _train_df = pd.DataFrame(
-                    {_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train}
-                )
-                _train_df = _train_df.groupby(_LABEL_KEYNAME).apply(
-                    lambda x: x.sample(sample_to_value, replace=True)
-                )
-                X_train = _train_df[_IMAGE_KEYNAME].values
-                y_train = _train_df[_LABEL_KEYNAME].values
+            X_train = X_train.reshape(-1)
+            _train_df = pd.DataFrame({_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train})
+            _train_df = _train_df.groupby(_LABEL_KEYNAME).apply(
+                lambda x: x.sample(sample_to_value, replace=True)
+            )
+            X_train = _train_df[_IMAGE_KEYNAME].values
+            y_train = _train_df[_LABEL_KEYNAME].values
 
-            # X_train, y_train = hydra_instantiate(
-            #     cfg=preprocessing_cfg.sampling_method["method"],
-            #     X=X_train,
-            #     y=y_train,
-            #     sampling_strategy=sampling_strategy,
-            # )
-            # train_metadata = pd.DataFrame.from_dict(
-            #     {_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train}, orient="columns"
-            # )
-
-        # train_data = list(
-        #     {_IMAGE_KEYNAME: image_file, _LABEL_KEYNAME: label}
-        #     for image_file, label in zip(X_train, y_train)
-        # )
         train_dataset: monai.data.Dataset = instantiate(
             config=dataset_cfg.instantiate,
             image_files=X_train,
@@ -768,10 +755,6 @@ def instantiate_train_val_test_datasets(
         train_val_test_split_dict["train"] = train_dataset
 
         if cfg.job.perform_validation:
-            # val_data = list(
-            #     {_IMAGE_KEYNAME: image_file, _LABEL_KEYNAME: label}
-            #     for image_file, label in zip(X_val, y_val)
-            # )
             val_dataset: monai.data.Dataset = instantiate(
                 config=dataset_cfg.instantiate,
                 image_files=X_val,
@@ -903,7 +886,7 @@ def prepare_data(cfg: Configuration = None, **kwargs):
 def convert_image_dataset(
     dataset: ImageDataset,
     transform: monai.transforms.Compose = None,
-    cache_dir: str = _CACHE_DIR,
+    Dataset: monai.data.Dataset = PersistentDataset,
     **kwargs,
 ):
     """
@@ -918,10 +901,12 @@ def convert_image_dataset(
         # dataset_list.append((image_file, label))
 
     transform = dataset.transform if transform is None else transform
-    new_dataset: monai.data.Dataset = PersistentDataset(
+
+    if Dataset is PersistentDataset:
+        kwargs["cache_dir"] = _CACHE_DIR
+    new_dataset: monai.data.Dataset = Dataset(
         data=dataset_list,
         transform=transform,
-        cache_dir=cache_dir,
         **kwargs,
     )
     return new_dataset
@@ -939,11 +924,13 @@ def combine_datasets(
     """
     Combine a list of datasets.
     """
-    logger.info("Adding addtional datasets...")
+    logger.info("Adding additional datasets...")
     if cfg is None:
         dataset_cfg: DatasetConfiguration = dataset_cfg
     else:
         dataset_cfg: DatasetConfiguration = cfg.datasets
+
+    preprocessing_cfg = dataset_cfg.preprocessing
 
     additional_datasets: dict = dataset_cfg.get(
         "additional_datasets", {"dataset_configs": []}
@@ -955,6 +942,15 @@ def combine_datasets(
     )
     c_train_dataset = deepcopy(train_dataset)
     c_test_dataset = deepcopy(test_dataset)
+
+    encoding: int = dataset_cfg.encoding[preprocessing_cfg["positive_class"]]
+    X_train, y_train = get_images_and_classes(c_train_dataset)
+    # X_test, y_test = get_images_and_classes(c_test_dataset)
+    train_metadata = pd.DataFrame({_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train})
+    orig_size = len(train_metadata[train_metadata[_LABEL_KEYNAME] == encoding])
+    logger.info(f"Original class size: {orig_size}\n")
+
+    # num_add_datasets = len(dataset_configs)
 
     for additional_dataset in dataset_configs:
         additional_dataset_name = os.path.splitext(
@@ -975,9 +971,16 @@ def combine_datasets(
 
         # metadata preprocessing
         train_metadata_subset = add_train_metadata[
-            add_train_metadata[_LABEL_KEYNAME] == 1
+            add_train_metadata[_LABEL_KEYNAME] == encoding
         ]
-        test_metadata_subset = add_test_metadata[add_test_metadata[_LABEL_KEYNAME] == 1]
+        if preprocessing_cfg.get("use_sampling", False):
+            train_metadata_subset = train_metadata_subset.groupby(_LABEL_KEYNAME).apply(
+                lambda x: x.sample(orig_size, replace=True)
+            )
+
+        test_metadata_subset = add_test_metadata[
+            add_test_metadata[_LABEL_KEYNAME] == encoding
+        ]
 
         train_image_files = np.hstack(
             (
