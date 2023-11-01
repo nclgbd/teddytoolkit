@@ -23,7 +23,7 @@ setup(
     name="rtk",
     entry_points={
         "console_scripts": [
-            f"'rtk-job'=scripts.run_job:main",
+            f"rtk-job=scripts.run_job:main",
         ],
     },
     long_description="",

@@ -847,7 +847,10 @@ def prepare_data(cfg: Configuration = None, **kwargs):
     train_dataset, test_dataset = dataset[0], dataset[1]
 
     # NOTE: combined datasets here
-    train_dataset, test_dataset = combine_datasets(train_dataset, test_dataset, cfg=cfg)
+    if len(dataset_cfg.get("additional_datasets", [])) > 0:
+        train_dataset, test_dataset = combine_datasets(
+            train_dataset, test_dataset, cfg=cfg
+        )
 
     # split the dataset into train/val/test
     train_val_test_split_dict = instantiate_train_val_test_datasets(
