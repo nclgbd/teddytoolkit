@@ -18,8 +18,7 @@
                 "../configs/",
                 "job.epoch_length=8",
                 "job.max_epochs=2",
-                "datasets.preprocessing.use_sampling=true",
-                "+mlflow.experiment_name=tests",
+                "++mlflow.experiment_name=tests",
             ]
         },
         // {

@@ -26,3 +26,14 @@ def install(
         pretty.install(max_depth=max_depth, max_length=max_length, console=_console)
     if _traceback:
         traceback.install(show_locals=show_locals, console=_console)
+
+
+def prepare_console(**kwargs):
+    from rtk.utils import login
+
+    install()
+    ws = login()
+    console = get_console(**kwargs)
+    console.clear()
+
+    return ws, console

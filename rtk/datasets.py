@@ -938,11 +938,12 @@ def combine_datasets(
     additional_datasets: dict = dataset_cfg.get(
         "additional_datasets", {"dataset_configs": []}
     )
-    dataset_configs = (
+    dataset_configs: list = (
         dataset_configs
         if any(dataset_configs)
-        else additional_datasets.get("dataset_configs", [])
+        else additional_datasets["dataset_configs"]
     )
+
     c_train_dataset = deepcopy(train_dataset)
     c_test_dataset = deepcopy(test_dataset)
 

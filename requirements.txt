@@ -1,5 +1,6 @@
 azureml-core
 azureml-dataset-runtime
+bitstring
 einops
 hydra-colorlog
 hydra-core

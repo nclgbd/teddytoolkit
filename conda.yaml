@@ -1,4 +1,4 @@
-name: rtk-env
+name: rtk
 channels:
   - pytorch
   - defaults
@@ -9,4 +9,5 @@ dependencies:
   - jupyter_core
   - pip
   - pip:
+      - rich-cli
       - -r requirements.txt
