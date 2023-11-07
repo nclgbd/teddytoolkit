@@ -547,15 +547,8 @@ def load_chest_xray14_dataset(
     target = dataset_cfg.target
     scan_path = dataset_cfg.scan_data
     labels = dataset_cfg.labels
-    # label_encoding = {v: k for k, v in dataset_cfg.encoding.items()}
 
     metadata = build_chest_xray14_metadata_dataframe(cfg=cfg)
-    # metadata = metadata[metadata[target].isin(labels)]
-    # metadata = transform_labels_to_metaclass(metadata, target, dataset_cfg.encoding)
-    # subset_condition = metadata[target].str.contains(labels[0]) | metadata[
-    #     target
-    # ].str.contains(labels[1])
-
     subset = dataset_cfg.preprocessing.get("subset", [])
     metadata = create_subset(metadata, target, subset)
 
