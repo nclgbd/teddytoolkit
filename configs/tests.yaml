@@ -1,4 +1,4 @@
-# * python scripts/run_job.py --config-dir=$(pwd)/configs/ --config-name=tests
+# * rtk-job --config-dir=$(pwd)/configs/ --config-name=tests
 
 defaults:
   - _self_

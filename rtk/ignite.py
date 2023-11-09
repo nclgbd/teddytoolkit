@@ -929,9 +929,6 @@ def prepare_diffusion_run(
         metrics = evaluator.state.metrics
         epoch = trainer.state.epoch
 
-        # logger.info(
-        #     f"epoch: {epoch}, {split} {ignite_cfg.score_name}: {metrics[ignite_cfg.score_name]}"
-        # )
         logger.info(f"epoch: {epoch}\n{metrics}")
         # y_true = metrics["y_true"]
         # y_pred = metrics["y_preds"]
