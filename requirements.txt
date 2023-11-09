@@ -12,7 +12,7 @@ monai
 nibabel
 omegaconf
 pydicom
-pytorch-ignite
+pytorch-ignite==0.4.12
 rich
 scikit-image
 scikit-learn
