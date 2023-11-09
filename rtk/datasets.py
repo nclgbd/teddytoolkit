@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 # sklearn
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, MultiLabelBinarizer
 
 # imblean
 from imblearn.datasets import make_imbalance
@@ -542,69 +542,85 @@ def load_chest_xray14_dataset(
     cfg: Configuration, save_metadata=False, return_metadata=False, **kwargs
 ):
     dataset_cfg: DatasetConfiguration = cfg.datasets
-    preprocessing_cfg = dataset_cfg.preprocessing
     index = dataset_cfg.index
     target = dataset_cfg.target
     scan_path = dataset_cfg.scan_data
     labels = dataset_cfg.labels
+    preprocessing_cfg = dataset_cfg.preprocessing
+    positive_class = preprocessing_cfg.get("positive_class", "Pneumonia")
+    version = preprocessing_cfg.get("version", 1.0)
 
     metadata = build_chest_xray14_metadata_dataframe(cfg=cfg)
-    subset = dataset_cfg.preprocessing.get("subset", [])
-    metadata = create_subset(metadata, target, subset)
 
-    def _subset_chest14_labels(x):
-        _ALL_LABELS = [
-            "Atelectasis",
-            "Cardiomegaly",
-            "Effusion",
-            "Infiltration",
-            "Mass",
-            "Nodule",
-            "Pneumonia",
-            "Pneumothorax",
-            "Consolidation",
-            "Edema",
-            "Emphysema",
-            "Fibrosis",
-            "Pleural_Thickening",
-            "Hernia",
-        ]
-        # subset = ["Atelectasis", "Edema", "Effusion", "Consolidation", "Pneumonia"]
-        unaccepted_labels = list(set(_ALL_LABELS) - set(subset))
-        multiclass_labels = x.split("|")
-        for label in multiclass_labels:
-            if label in unaccepted_labels:
-                return False
-        return True
+    def build_multiclass_dataframe(cfg: Configuration, df: pd.DataFrame, **kwargs):
+        """"""
+        dataset_cfg = kwargs.get("dataset_cfg", cfg.datasets)
 
-    metadata = metadata[metadata[target].apply(_subset_chest14_labels)]
-    counts = chest_xray14_get_target_counts(metadata, target=target)
-    logger.info(
-        f"Full dataset target counts:\n{counts}",
-    )
-    if preprocessing_cfg.get("positive_class", "") != "":
-        positive_class: str = preprocessing_cfg.positive_class
-        metadata = transform_labels_to_metaclass(
-            metadata,
-            target,
-            positive_class,
+        mlb = MultiLabelBinarizer()
+        labels = dataset_cfg.labels
+        positive_class = dataset_cfg.preprocessing["positive_class"]
+        logger.info(f"Positive class: '{positive_class}'")
+        logger.info(f"New labels:\n{labels}")
+        logger.debug(f"{Counter(df[target])}")
+
+        multi_target = f"multi_{target}"
+        metadata[multi_target] = metadata[target].apply(lambda x: x.split("|"))
+        mlb.fit(df[multi_target])
+        class_encoding = {label: i for i, label in enumerate(mlb.classes_)}
+        logger.info(f"Dataset class encoding:\n{class_encoding}")
+
+        logger.info(f"Transforming labels to multiclass. This may take a while...")
+        _transforms = df[multi_target].apply(lambda x: mlb.transform([x])[0])
+        multiclass_df = pd.DataFrame.from_records(
+            _transforms, index=df.index, columns=mlb.classes_
         )
-    # metadata = transform_labels_to_metaclass(metadata, target, dataset_cfg.encoding)
-    metadata[target] = metadata[target].apply(lambda x: dataset_cfg.encoding[x])
+
+        return multiclass_df, class_encoding
+
+    multiclass_df, class_encoding = build_multiclass_dataframe(cfg, metadata)
+    target = f"multi_{target}"
+    pneumonia_df = multiclass_df[multiclass_df[positive_class] == 1]
+    pneumonia_df[_LABEL_KEYNAME] = pd.Series(
+        np.ones(len(pneumonia_df), dtype=int), index=pneumonia_df.index
+    )
+    non_pneumonia_df = multiclass_df.drop(pneumonia_df.index)
+    non_pneumonia_df[_LABEL_KEYNAME] = pd.Series(
+        np.zeros(len(non_pneumonia_df), dtype=int), index=non_pneumonia_df.index
+    )
+
+    if version == 2.0:
+        non_pneumonia_columns = list(set(multiclass_df.columns) - set(["Pneumonia"]))
+        _drop_indices = []
+
+        for column in non_pneumonia_columns:
+            _drop_indices.extend(list(pneumonia_df[pneumonia_df[column] == 1].index))
+
+        drop_indices = pd.Index(_drop_indices)
+        pneumonia_df = pneumonia_df.drop(index=drop_indices)
+
+    logger.info(
+        f"Number of pneumonia cases: {len(pneumonia_df)}, {len(pneumonia_df) / len(multiclass_df) * 100:.4f}%"
+    )
+    logger.info(
+        f"Number of non-pneumonia cases: {len(non_pneumonia_df)}, {len(non_pneumonia_df) / len(multiclass_df) * 100:.4f}%"
+    )
+
+    multiclass_df = pd.concat([pneumonia_df, non_pneumonia_df])
+    assert len(multiclass_df) == len(pneumonia_df) + len(non_pneumonia_df)
 
     # train split
     with open(os.path.join(scan_path, "train_val_list.txt"), "r") as f:
         train_val_list = [idx.strip() for idx in f.readlines()]
 
+    patient_df = metadata.loc[multiclass_df.index]
+    patient_df = pd.concat([patient_df, multiclass_df[_LABEL_KEYNAME]], axis=1)
+
+    train_metadata = patient_df[patient_df.index.isin(train_val_list)]
     train_transforms = create_transforms(cfg, use_transforms=cfg.job.use_transforms)
-    train_metadata = metadata[metadata.index.isin(train_val_list)]
-    # train_metadata = train_metadata[
-    #     train_metadata[target].apply(_subset_chest14_labels)
-    # ]
     train_dataset: monai.data.Dataset = instantiate(
         config=dataset_cfg.instantiate,
         image_files=train_metadata[_IMAGE_KEYNAME].values,
-        labels=train_metadata[target].values,
+        labels=train_metadata[_LABEL_KEYNAME].values,
         transform=train_transforms,
         **kwargs,
     )
@@ -614,12 +630,41 @@ def load_chest_xray14_dataset(
         test_list = [idx.strip() for idx in f.readlines()]
 
     eval_transforms = create_transforms(cfg, use_transforms=False)
-    test_metadata = metadata[metadata.index.isin(test_list)]
-    # test_metadata = test_metadata[test_metadata[target].apply(_subset_chest14_labels)]
+    test_metadata = patient_df[patient_df.index.isin(test_list)]
+
+    if preprocessing_cfg.get("name", "") == "icu-preprocessing":
+        logger.info("Subsetting test set to 'ICU' configuration...")
+        subset = preprocessing_cfg["subset"]
+        dropped_labels = list(set(class_encoding.keys()) - set(subset))
+        logger.info(f"Dropping labels:\n{dropped_labels}")
+
+        test_multiclass_df = multiclass_df.loc[test_metadata.index]
+        _icu_query = [test_multiclass_df[column] == 1 for column in dropped_labels]
+
+        icu_query = pd.Series(
+            np.zeros(len(test_multiclass_df), dtype=bool),
+            index=test_multiclass_df.index,
+        )
+
+        for query in _icu_query:
+            icu_query = icu_query | query
+
+        icu_test_metadata = test_multiclass_df.drop(
+            index=icu_query[icu_query == True].index
+        )
+        test_metadata = test_metadata.loc[icu_test_metadata.index]
+
+        logger.info(
+            f"Number in ICU test cases: {len(icu_test_metadata)}, {len(icu_test_metadata) / len(test_metadata) * 100:.4f}%"
+        )
+        logger.info(
+            f"Number of occurrences for 'Pneumonia' class: \n{Counter(icu_test_metadata[_LABEL_KEYNAME])}"
+        )
+
     test_dataset = monai.data.Dataset = instantiate(
         config=dataset_cfg.instantiate,
         image_files=test_metadata[_IMAGE_KEYNAME].values,
-        labels=test_metadata[target].values,
+        labels=test_metadata[_LABEL_KEYNAME].values,
         transform=eval_transforms,
         **kwargs,
     )
@@ -682,7 +727,11 @@ def instantiate_image_dataset(
 
 
 def instantiate_train_val_test_datasets(
-    cfg: Configuration, dataset: monai.data.Dataset, **kwargs
+    cfg: Configuration,
+    dataset: monai.data.Dataset,
+    train_transforms: monai.transforms.Compose,
+    eval_transforms: monai.transforms.Compose,
+    **kwargs,
 ):
     """
     Create train/test splits for the data.
@@ -691,13 +740,10 @@ def instantiate_train_val_test_datasets(
     preprocessing_cfg = dataset_cfg.preprocessing
     job_cfg: JobConfiguration = cfg.job
     random_state = job_cfg.get("random_state", kwargs.get("random_state", 0))
-    use_transforms = job_cfg.use_transforms
     sklearn_cfg = cfg.sklearn
 
     train_val_test_split_dict = {}
     train_test_split_kwargs: dict = sklearn_cfg.model_selection.train_test_split
-    train_transforms = create_transforms(cfg, use_transforms=use_transforms)
-    eval_transforms = create_transforms(cfg, use_transforms=False)
 
     if dataset_cfg.extension == ".jpeg" or ".png":
         logger.info("Creating 'validation' split...")
@@ -711,23 +757,6 @@ def instantiate_train_val_test_datasets(
             **train_test_split_kwargs,
         )
         if preprocessing_cfg.get("use_sampling", False):
-            # X_train, y_train = RandomOverSampler(
-            #     random_state=random_state
-            # ).fit_resample(X_train.reshape(-1, 1), y_train)
-            # try:
-            #     sampling_strategy = {
-            #         i: preprocessing_cfg.sampling_method["sample_to_value"]
-            #         for i, _ in enumerate(sorted(dataset_cfg.labels))
-            #     }
-            #     X_train, y_train = make_imbalance(
-            #         X=X_train,
-            #         y=y_train,
-            #         random_state=random_state,
-            #         sampling_strategy=sampling_strategy,
-            #         verbose=True,
-            #     )
-            # except ValueError:
-            # Oversampling of majority class is also needed, so we use alternative oversampling method
             sample_to_value: int = preprocessing_cfg.sampling_method["sample_to_value"]
 
             X_train = X_train.reshape(-1)
@@ -847,7 +876,10 @@ def prepare_data(cfg: Configuration = None, **kwargs):
 
     # split the dataset into train/val/test
     train_val_test_split_dict = instantiate_train_val_test_datasets(
-        cfg=cfg, dataset=train_dataset
+        cfg=cfg,
+        dataset=train_dataset,
+        train_transforms=train_transform,
+        eval_transforms=eval_transform,
     )
     train_dataset, val_dataset = (
         train_val_test_split_dict["train"],
@@ -894,12 +926,12 @@ def convert_image_dataset(
 
     for image_file, label in items:
         dataset_list.append({_IMAGE_KEYNAME: image_file, _LABEL_KEYNAME: label})
-        # dataset_list.append((image_file, label))
 
     transform = dataset.transform if transform is None else transform
 
-    if Dataset is PersistentDataset:
+    if isinstance(Dataset, PersistentDataset):
         kwargs["cache_dir"] = _CACHE_DIR
+
     new_dataset: monai.data.Dataset = Dataset(
         data=dataset_list,
         transform=transform,

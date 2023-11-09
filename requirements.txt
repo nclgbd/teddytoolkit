@@ -16,7 +16,9 @@ pytorch-ignite
 rich
 scikit-image
 scikit-learn
+timm
 torch
 torchvision
 tqdm
 xlrd
+git+https://github.com/nclgbd/GenerativeModels.git

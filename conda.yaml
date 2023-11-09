@@ -9,5 +9,6 @@ dependencies:
   - jupyter_core
   - pip
   - pip:
+      - pytest
       - rich-cli
       - -r requirements.txt

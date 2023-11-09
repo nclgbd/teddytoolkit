@@ -44,15 +44,18 @@ class TestIgnite:
         """Fixture for the train loader."""
         dataset_cfg: DatasetConfiguration = test_cfg.datasets
         job_cfg: JobConfiguration = test_cfg.job
-        transform = datasets.create_transforms(
-            test_cfg, use_transforms=job_cfg.use_transforms
-        )
+        use_transforms = job_cfg.use_transforms
+        transform = datasets.create_transforms(test_cfg, use_transforms=use_transforms)
+        val_transform = datasets.create_transforms(test_cfg, use_transforms=False)
         _datasets = datasets.instantiate_image_dataset(
             cfg=test_cfg, transform=transform
         )
         _train_dataset = _datasets[0]
         train_val_test_split_dict = datasets.instantiate_train_val_test_datasets(
-            cfg=test_cfg, dataset=_train_dataset
+            cfg=test_cfg,
+            dataset=_train_dataset,
+            train_transforms=transform,
+            eval_transforms=val_transform,
         )
         train_dataset = train_val_test_split_dict["train"]
         train_loader: DataLoader = hydra_instantiate(

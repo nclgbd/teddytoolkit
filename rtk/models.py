@@ -13,32 +13,12 @@ import torch.nn as nn
 from generative.inferers import DiffusionInferer
 from generative.networks.schedulers import Scheduler
 
-# research libraries
-from coca_pytorch.coca_pytorch import CoCa
-from vit_pytorch.extractor import Extractor
-from vit_pytorch.simple_vit_with_patch_dropout import SimpleViT
-
 # rtk
 from rtk import DEFAULT_MODEL_PATH
 from rtk.config import Configuration, ModelConfiguration, DiffusionModelConfiguration
 from rtk.utils import get_logger, hydra_instantiate
 
 logger = get_logger(__name__)
-
-
-def get_vit_extractor(cfg: Configuration):
-    image_size = cfg.datasets.dim
-    vit = SimpleViT(
-        depth=6,
-        dim=1024,
-        heads=16,
-        image_size=image_size,
-        mlp_dim=2048,
-        num_classes=2,
-        patch_size=32,  # https://arxiv.org/abs/2212.00794
-    )
-    vit = Extractor(vit, return_embeddings_only=True, detach=False)
-    return vit
 
 
 def download_model_weights(
@@ -80,10 +60,6 @@ def instantiate_model(
     logger.info("Instantiating model...")
     model_cfg: ModelConfiguration = cfg.models
     model_name: str = model_cfg.model._target_.split(".")[-1]
-
-    if model_name == "CoCa":
-        vit = get_vit_extractor(cfg=cfg)
-        kwargs["img_encoder"] = vit
     model: nn.Module = hydra_instantiate(cfg=model_cfg.model, **kwargs)
 
     load_model = model_cfg.get("load_model", None)
