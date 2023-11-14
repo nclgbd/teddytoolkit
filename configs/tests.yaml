@@ -14,7 +14,7 @@ defaults:
   - override hydra/hydra_logging: colorlog
 
 date: ${now:%Y-%m-%d}
-postfix: ""
+postfix: "test"
 timestamp: ${now:%H-%M-%S}
 
 # hydra settings

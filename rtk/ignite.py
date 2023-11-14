@@ -1,4 +1,5 @@
 # imports
+from collections import Counter
 from typing import Callable, Union
 import hydra
 import logging
@@ -45,6 +46,8 @@ from ignite.utils import setup_logger
 ## ignite.contrib
 from ignite.contrib import metrics as c_ignite_metrics_module
 from ignite.contrib.handlers import ProgressBar
+
+from rtk.datasets import _LABEL_KEYNAME
 
 IGNITE_METRICS_MODULE = [ignite_metrics_module, c_ignite_metrics_module]
 
@@ -97,7 +100,8 @@ def create_default_trainer_args(
     model: nn.Module = models.instantiate_model(cfg, device=device)
     # model.train()
     trainer_kwargs["model"] = model
-    criterion = models.instantiate_criterion(cfg, device=device)
+    criterion_kwargs = kwargs.get("criterion_kwargs", {})
+    criterion = models.instantiate_criterion(cfg, device=device, **criterion_kwargs)
     trainer_kwargs["loss_fn"] = criterion
     optimizer: torch.optim.Optimizer = models.instantiate_optimizer(cfg, model=model)
     trainer_kwargs["optimizer"] = optimizer
@@ -780,7 +784,11 @@ def prepare_run(
     ignite_cfg: IgniteConfiguration = cfg.ignite
 
     ## prepare run
-    trainer_args = create_default_trainer_args(cfg)
+    train_dataset = loaders[0].dataset
+    samples_per_class = list(Counter(vars(train_dataset)[_LABEL_KEYNAME]).values())
+    trainer_args = create_default_trainer_args(
+        cfg, criterion_kwargs={"samples_per_class": samples_per_class}
+    )
     trainer = create_supervised_trainer(**trainer_args)
     ProgressBar().attach(trainer)
 
