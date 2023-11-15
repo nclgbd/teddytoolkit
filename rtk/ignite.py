@@ -784,11 +784,15 @@ def prepare_run(
     ignite_cfg: IgniteConfiguration = cfg.ignite
 
     ## prepare run
-    train_dataset = loaders[0].dataset
-    samples_per_class = list(Counter(vars(train_dataset)[_LABEL_KEYNAME]).values())
-    trainer_args = create_default_trainer_args(
-        cfg, criterion_kwargs={"samples_per_class": samples_per_class}
-    )
+    default_trainer_kwargs = {}
+
+    if cfg.datasets.preprocessing.use_sampling == False:
+        train_dataset = loaders[0].dataset
+        samples_per_class = list(Counter(vars(train_dataset)[_LABEL_KEYNAME]).values())
+        criterion_kwargs = {"samples_per_class": samples_per_class}
+        default_trainer_kwargs["criterion_kwargs"] = criterion_kwargs
+
+    trainer_args = create_default_trainer_args(cfg, **default_trainer_kwargs)
     trainer = create_supervised_trainer(**trainer_args)
     ProgressBar().attach(trainer)
 

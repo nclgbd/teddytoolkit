@@ -126,6 +126,8 @@ class DatasetConfiguration:
     preprocessing: PreprocessingConfiguration = field(
         default_factory=PreprocessingConfiguration
     )
+    # name of the dataset
+    name: str = ""
     # dimension to resize the images to
     dim: int = 224
     # the name of the index column in the metadata

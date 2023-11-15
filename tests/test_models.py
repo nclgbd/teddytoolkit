@@ -28,7 +28,6 @@ class TestModels:
     @pytest.fixture
     def samples_per_class(self, test_cfg: Configuration):
         """Fixture for the train loader."""
-        dataset_cfg = test_cfg.datasets
         job_cfg = test_cfg.job
         use_transforms = job_cfg.use_transforms
         transform = create_transforms(test_cfg, use_transforms=use_transforms)

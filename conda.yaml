@@ -9,6 +9,7 @@ dependencies:
   - jupyter_core
   - pip
   - pip:
+      - opencv-python
       - pytest
       - rich-cli
       - -r requirements.txt

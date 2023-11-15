@@ -2,8 +2,7 @@
 
 defaults:
   - _self_
-  # - criterion: cross-entropy
-  - criterion: balanced-loss
+  - criterion: cross-entropy
   - optimizer: adam
 
 model:
@@ -11,6 +10,3 @@ model:
   model_name: resnet50
   num_classes: 2
   pretrained: ${job.use_pretrained}
-# load_model:
-#   name: resnet50_PEDIATRICS_CHESTXRAY14
-#   version: 1

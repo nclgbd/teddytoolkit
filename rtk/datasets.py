@@ -421,7 +421,7 @@ def build_chest_xray_metadata_dataframe(
     return pd.DataFrame(split_metadata, columns=_COLUMN_NAMES)
 
 
-def build_chest_xray14_metadata_dataframe(cfg: Configuration, version: float = 2.0):
+def build_cxr14_metadata_dataframe(cfg: Configuration, version: float = 2.0):
     dataset_cfg: DatasetConfiguration = cfg.datasets
     index = dataset_cfg.index
     patient_path = dataset_cfg.patient_data
@@ -493,7 +493,7 @@ def load_ixi_dataset(cfg: Configuration, save_metadata=False, **kwargs):
     return dataset
 
 
-def load_chest_xray_dataset(
+def load_pediatrics_dataset(
     cfg: Configuration = None, save_metadata=False, return_metadata=False, **kwargs
 ):
     dataset_cfg: DatasetConfiguration = kwargs.get(
@@ -538,19 +538,17 @@ def load_chest_xray_dataset(
     )
 
 
-def load_chest_xray14_dataset(
+def load_cxr14_dataset(
     cfg: Configuration, save_metadata=False, return_metadata=False, **kwargs
 ):
     dataset_cfg: DatasetConfiguration = cfg.datasets
-    index = dataset_cfg.index
     target = dataset_cfg.target
     scan_path = dataset_cfg.scan_data
-    labels = dataset_cfg.labels
     preprocessing_cfg = dataset_cfg.preprocessing
     positive_class = preprocessing_cfg.get("positive_class", "Pneumonia")
     version = preprocessing_cfg.get("version", 1.0)
 
-    metadata = build_chest_xray14_metadata_dataframe(cfg=cfg)
+    metadata = build_cxr14_metadata_dataframe(cfg=cfg)
 
     def build_multiclass_dataframe(cfg: Configuration, df: pd.DataFrame, **kwargs):
         """"""
@@ -579,34 +577,34 @@ def load_chest_xray14_dataset(
 
     multiclass_df, class_encoding = build_multiclass_dataframe(cfg, metadata)
     target = f"multi_{target}"
-    pneumonia_df = multiclass_df[multiclass_df[positive_class] == 1]
-    pneumonia_df[_LABEL_KEYNAME] = pd.Series(
-        np.ones(len(pneumonia_df), dtype=int), index=pneumonia_df.index
+    positive_df = multiclass_df[multiclass_df[positive_class] == 1]
+    positive_df[_LABEL_KEYNAME] = pd.Series(
+        np.ones(len(positive_df), dtype=int), index=positive_df.index
     )
-    non_pneumonia_df = multiclass_df.drop(pneumonia_df.index)
-    non_pneumonia_df[_LABEL_KEYNAME] = pd.Series(
-        np.zeros(len(non_pneumonia_df), dtype=int), index=non_pneumonia_df.index
+    negative_df = multiclass_df.drop(positive_df.index)
+    negative_df[_LABEL_KEYNAME] = pd.Series(
+        np.zeros(len(negative_df), dtype=int), index=negative_df.index
     )
 
     if version == 2.0:
-        non_pneumonia_columns = list(set(multiclass_df.columns) - set(["Pneumonia"]))
+        negative_columns = list(set(multiclass_df.columns) - set([positive_class]))
         _drop_indices = []
 
-        for column in non_pneumonia_columns:
-            _drop_indices.extend(list(pneumonia_df[pneumonia_df[column] == 1].index))
+        for column in negative_columns:
+            _drop_indices.extend(list(positive_df[positive_df[column] == 1].index))
 
         drop_indices = pd.Index(_drop_indices)
-        pneumonia_df = pneumonia_df.drop(index=drop_indices)
+        positive_df = positive_df.drop(index=drop_indices)
 
     logger.info(
-        f"Number of pneumonia cases: {len(pneumonia_df)}, {len(pneumonia_df) / len(multiclass_df) * 100:.4f}%"
+        f"Number of '{positive_class.lower()}' cases: {len(positive_df)}, {len(positive_df) / len(multiclass_df) * 100:.4f}%"
     )
     logger.info(
-        f"Number of non-pneumonia cases: {len(non_pneumonia_df)}, {len(non_pneumonia_df) / len(multiclass_df) * 100:.4f}%"
+        f"Number of 'non-{positive_class.lower()}' cases: {len(negative_df)}, {len(negative_df) / len(multiclass_df) * 100:.4f}%"
     )
 
-    multiclass_df = pd.concat([pneumonia_df, non_pneumonia_df])
-    assert len(multiclass_df) == len(pneumonia_df) + len(non_pneumonia_df)
+    multiclass_df = pd.concat([positive_df, negative_df])
+    assert len(multiclass_df) == len(positive_df) + len(negative_df)
 
     # train split
     with open(os.path.join(scan_path, "train_val_list.txt"), "r") as f:
@@ -670,14 +668,10 @@ def load_chest_xray14_dataset(
     )
     if save_metadata:
         train_metadata.to_csv(
-            os.path.join(
-                DEFAULT_DATA_PATH, "patients", "chest_xray14_train_metadata.csv"
-            )
+            os.path.join(DEFAULT_DATA_PATH, "patients", "cxr14_train_metadata.csv")
         )
         test_metadata.to_csv(
-            os.path.join(
-                DEFAULT_DATA_PATH, "patients", "chest_xray14_test_metadata.csv"
-            )
+            os.path.join(DEFAULT_DATA_PATH, "patients", "cxr14_test_metadata.csv")
         )
 
     return (
@@ -703,23 +697,24 @@ def instantiate_image_dataset(
         "dataset_cfg", cfg.datasets if cfg is not None else None
     )
 
-    if dataset_cfg.extension == ".jpeg":
-        train_dataset, test_dataset = load_chest_xray_dataset(
+    dataset_name = dataset_cfg.name
+    if dataset_name == "pediatrics":
+        train_dataset, test_dataset = load_pediatrics_dataset(
             cfg=cfg,
             save_metadata=save_metadata,
             return_metadata=return_metadata,
         )
 
-    elif dataset_cfg.extension == ".png":
-        train_dataset, test_dataset = load_chest_xray14_dataset(
+    elif dataset_name == "cxr14":
+        train_dataset, test_dataset = load_cxr14_dataset(
             cfg=cfg, save_metadata=save_metadata
         )
 
-    elif dataset_cfg.extension == ".nii.gz":
+    elif dataset_name == "ixi":
         train_dataset = load_ixi_dataset(cfg, save_metadata=save_metadata)
     else:
         raise ValueError(
-            f"Dataset extension '{dataset_cfg.extension}' not supported. Please use '.nii.gz' or '.jpeg'."
+            f"Dataset '{dataset_name}' is not recognized not supported. Please use ['cxr14'|'pediatrics'|'ixi']."
         )
 
     logger.info("Image dataset instantiated.\n")

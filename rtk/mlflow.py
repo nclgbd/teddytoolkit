@@ -92,7 +92,7 @@ def get_params(cfg: Configuration, **kwargs):
 
     # NOTE: dataset parameters
     def __collect_dataset_params():
-        params["dataset_name"] = dataset_cfg.scan_data.split(".")[-1]
+        params["dataset_name"] = dataset_cfg.name
 
         def __collect_preprocessing_params():
             params.update(preprocessing_cfg)
