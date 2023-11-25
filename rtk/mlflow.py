@@ -25,26 +25,30 @@ def create_run_name(cfg: Configuration, random_state: int, **kwargs):
     run_name: str = model_cfg.model.get("model_name", model_name.lower())
 
     if tags.get("type", "train") == "train" or job_cfg.mode == "train":
-        optimizer_name: str = model_cfg.optimizer._target_.split(".")[-1].lower()
-        lr: float = model_cfg.optimizer.lr
-        weight_decay: float = model_cfg.optimizer.get("weight_decay", 0.0)
         criterion_name: str = model_cfg.criterion._target_.split(".")[-1].lower()
-        run_name += f",optimizer={optimizer_name},lr={lr},weight_decay={weight_decay},criterion={criterion_name}"
+        lr: float = model_cfg.optimizer.lr
+        optimizer_name: str = model_cfg.optimizer._target_.split(".")[-1].lower()
+        weight_decay: float = model_cfg.optimizer.get("weight_decay", 0.0)
+        run_name += f";optimizer={optimizer_name};lr={lr};weight_decay={weight_decay};criterion={criterion_name}"
+
         if preprocessing_cfg.use_sampling:
             sample_to_value = preprocessing_cfg.sampling_method["sample_to_value"]
-            run_name += f",sample_to_value={sample_to_value}"
+            run_name += f";sample_to_value={sample_to_value}"
 
-        run_name += f",pretrained={str(job_cfg.use_pretrained).lower()}"
+        run_name += f";pretrained={str(job_cfg.use_pretrained).lower()}"
 
     elif tags.get("type", "train") == "eval" or job_cfg.mode == "evaluate":
-        loaded_model_name = model_cfg.get("load_model", {}).get("name", "")
-        run_name += f",loaded_model={loaded_model_name}"
+        pretrained_model = model_cfg.get("load_model", {}).get("name", "")
+        run_name += f";pretrained_model={pretrained_model}"
+
+    elif tags.get("type", "train") == "diff" or job_cfg.mode == "diffusion":
+        raise NotImplementedError("Diffusion not implemented yet.")
 
     date = cfg.date
     postfix: str = cfg.get("postfix", "")
     timestamp = cfg.timestamp
     run_name = "".join(
-        [run_name, f",seed={random_state}", f",{date};{timestamp}", f",{postfix}"]
+        [run_name, f";seed={random_state}", f";{date}-{timestamp}", f";{postfix}"]
     )
     return run_name
 
@@ -93,11 +97,7 @@ def get_params(cfg: Configuration, **kwargs):
     # NOTE: dataset parameters
     def __collect_dataset_params():
         params["dataset_name"] = dataset_cfg.name
-
-        def __collect_preprocessing_params():
-            params.update(preprocessing_cfg)
-
-        __collect_preprocessing_params()
+        params.update(preprocessing_cfg)
 
     __collect_dataset_params()
 

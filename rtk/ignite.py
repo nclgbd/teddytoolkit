@@ -369,7 +369,7 @@ def sample_from_diffusion_model(
 def add_handlers(
     ignite_cfg: IgniteConfiguration,
     trainer: Engine,
-    val_evaluator: Engine,
+    val_evaluator: Engine = None,
     optimizer: torch.optim.Optimizer = None,
     model: nn.Module = None,
 ):
@@ -377,7 +377,7 @@ def add_handlers(
     score_name = ignite_cfg.score_name
     score_sign = -1.0 if score_name == "loss" else 1.0
     score_fn: callable = Checkpoint.get_default_score_fn(score_name, score_sign)
-    handlers = {}
+    handlers = []
 
     if ignite_cfg.use_checkpoint:
         logger.info("Adding checkpoint for model...")
@@ -392,11 +392,13 @@ def add_handlers(
             to_save=to_save,
             **checkpoint_kwargs,
         )
-        val_evaluator.add_event_handler(
-            Events.COMPLETED,
-            handler=checkpoint_handler,
-        )
-        handlers["checkpoint"] = checkpoint_handler
+        if isinstance(val_evaluator, Engine):
+            val_evaluator.add_event_handler(
+                Events.COMPLETED,
+                handler=checkpoint_handler,
+            )
+
+        handlers.append(checkpoint_handler)
 
     if ignite_cfg.use_early_stopping:
         logger.info("Adding early stopping...")
@@ -407,11 +409,12 @@ def add_handlers(
             trainer=trainer,
             **early_stopping_kwargs,
         )
-        val_evaluator.add_event_handler(
-            Events.EPOCH_COMPLETED,
-            handler=early_stopping_handler,
-        )
-        handlers["early_stopping"] = early_stopping_handler
+        if isinstance(val_evaluator, Engine):
+            val_evaluator.add_event_handler(
+                Events.EPOCH_COMPLETED,
+                handler=early_stopping_handler,
+            )
+        handlers.append(early_stopping_handler)
 
     if ignite_cfg.use_lr_scheduler:
         logger.info("Adding learning rate scheduler...")
@@ -420,8 +423,12 @@ def add_handlers(
             optimizer, ignite_config=ignite_cfg, **lr_scheduler_kwargs
         )
         lr_scheduler_handler = LRScheduler(lr_scheduler)
-        val_evaluator.add_event_handler(Events.EPOCH_COMPLETED, lr_scheduler_handler)
-        handlers["lr_scheduler"] = lr_scheduler_handler
+        if isinstance(val_evaluator, Engine):
+            val_evaluator.add_event_handler(
+                Events.EPOCH_COMPLETED, lr_scheduler_handler
+            )
+
+        handlers.append(lr_scheduler_handler)
 
     logger.info("Additional handlers added.\n")
     return handlers
@@ -841,22 +848,25 @@ def create_diffusion_model_engines(
     **kwargs,
 ):
     job_cfg: JobConfiguration = cfg.job
+    mode = "diffusion"
     epoch_length: int = job_cfg.epoch_length
     max_epochs = job_cfg.max_epochs
     ignite_cfg: IgniteConfiguration = cfg.ignite
     val_interval: int = ignite_cfg.get("log_interval", max(job_cfg.max_epochs // 10, 1))
     model_cfg: DiffusionModelConfiguration = cfg.models
     num_train_timesteps: int = model_cfg.scheduler.num_train_timesteps
-    val_handlers = [StatsHandler(name="train_log", output_transform=lambda x: None)]
 
     train_loader, val_loader = loaders[0], loaders[1]
     model = trainer_args["model"]
     optimizer = trainer_args["optimizer"]
     scheduler = models.instantiate_diffusion_scheduler(model_cfg)
     inferer = models.instantiate_diffusion_inferer(model_cfg, scheduler=scheduler)
-    condition_name = "class"
+    condition_name = _LABEL_KEYNAME
 
     # TODO: Add validation metrics, particularly FID and SSIM
+    val_handlers = []
+    val_handlers = add_handlers(ignite_cfg=ignite_cfg, trainer=trainer, model=model)
+    val_handlers.append(StatsHandler(name="train_log", output_transform=lambda x: None))
     evaluator = SupervisedEvaluator(
         device=device,
         epoch_length=epoch_length,
@@ -874,7 +884,6 @@ def create_diffusion_model_engines(
             )
         },
     )
-    ProgressBar().attach(evaluator)
 
     train_handlers = [
         ValidationHandler(validator=evaluator, interval=val_interval, epoch_level=True),
@@ -900,7 +909,6 @@ def create_diffusion_model_engines(
             )
         },
     )
-    ProgressBar().attach(trainer)
 
     return trainer, evaluator
 
@@ -942,59 +950,8 @@ def prepare_diffusion_run(
         epoch = trainer.state.epoch
 
         logger.info(f"epoch: {epoch}\n{metrics}")
-        # y_true = metrics["y_true"]
-        # y_pred = metrics["y_preds"]
-        # labels = cfg.datasets.labels
-
-        # # classification report
-        # cr_str = classification_report(
-        #     y_true=y_true,
-        #     y_pred=y_pred,
-        #     target_names=labels,
-        #     zero_division=0.0,
-        # )
-        # logger.info(f"{split} classification report:\n{cr_str}")
-        # cr = classification_report(
-        #     y_true=y_true,
-        #     y_pred=y_pred,
-        #     target_names=labels,
-        #     output_dict=True,
-        #     zero_division=0.0,
-        # )
-        # cr_df = pd.DataFrame.from_dict(cr)
-        # cr_df.to_csv(f"artifacts/{split}/classification_report_epoch={epoch}.csv")
-        # # confusion matrix
-        # cfm = confusion_matrix(y_true=y_true, y_pred=y_pred)
-        # cfm_df = pd.DataFrame(cfm, index=labels, columns=labels)
-        # logger.info(f"{split} confusion matrix:\n{cfm_df}")
-        # cfm_df.to_csv(f"artifacts/{split}/confusion_matrix_epoch={epoch}.csv")
-
-        # # roc_auc
-        # roc_auc = roc_auc_score(y_true=y_true, y_score=y_pred)
-        # metrics["roc_auc"] = roc_auc
 
         if cfg.job.use_mlflow:
             _log_metrics_to_mlflow(cfg, metrics=metrics, split=split, epoch=epoch)
-
-    # @trainer.on(Events.EPOCH_COMPLETED(every=log_interval))
-    # def log_metrics(trainer):
-    #     logger.info("Logging metrics...")
-    #     train_loader, val_loader = loaders[0], loaders[1]
-    #     if not cfg.job.dry_run:
-    #         _log_metrics(train_evaluator, train_loader, "train")
-    #     else:
-    #         logger.debug("Dry run, skipping train evaluation.")
-
-    #     _log_metrics(val_evaluator, val_loader, "val")
-
-    # @trainer.on(Events.EPOCH_COMPLETED(every=log_interval))
-    # def log_metrics(trainer):
-    #     logger.info("Logging metrics...")
-    #     if not cfg.job.dry_run:
-    #         _log_metrics(train_evaluator, train_loader, "train")
-    #     else:
-    #         logger.debug("Dry run, skipping train evaluation.")
-
-    #     _log_metrics(val_evaluator, val_loader, "val")
 
     return trainer, evaluator

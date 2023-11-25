@@ -80,9 +80,11 @@ def create_transforms(
     """
     Get transforms for the model based on the model configuration.
     ## Args
-    * `model_config` (`TorchModelConfiguration`, optional): The model configuration. Defaults to `None`.
+    * `cfg` (`Configuration`, optional): The configuration. Defaults to `None`.
+    * `dataset_cfg` (`DatasetConfiguration`, optional): The dataset configuration. Defaults to `None`.
     * `use_transforms` (`bool`, optional): Whether or not to use the transforms. Defaults to `False`.
     * `transform_dicts` (`dict`, optional): The dictionary of transforms to use. Defaults to `None`.
+    * `mode` (`str`, optional): The mode to use. Add in kwargs.
     ## Returns
     * `torchvision.transforms.Compose`: The transforms for the model in the form of a `torchvision.transforms.Compose`
     object.
@@ -909,7 +911,6 @@ def prepare_data(cfg: Configuration = None, **kwargs):
 def convert_image_dataset(
     dataset: ImageDataset,
     transform: monai.transforms.Compose = None,
-    Dataset: monai.data.Dataset = PersistentDataset,
     **kwargs,
 ):
     """
@@ -924,12 +925,10 @@ def convert_image_dataset(
 
     transform = dataset.transform if transform is None else transform
 
-    if isinstance(Dataset, PersistentDataset):
-        kwargs["cache_dir"] = _CACHE_DIR
-
-    new_dataset: monai.data.Dataset = Dataset(
+    new_dataset: monai.data.Dataset = PersistentDataset(
         data=dataset_list,
         transform=transform,
+        cache_dir=_CACHE_DIR,
         **kwargs,
     )
     return new_dataset

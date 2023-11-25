@@ -21,6 +21,8 @@ from rtk.datasets import (
     _CHEST_XRAY_TRAIN_DATASET_SIZE,
     _CHEST_XRAY_TEST_DATASET_SIZE,
     _IXI_MRI_DATASET_SIZE,
+    _IMAGE_KEYNAME,
+    _LABEL_KEYNAME,
 )
 from rtk.config import Configuration, DatasetConfiguration, JobConfiguration
 
@@ -129,8 +131,19 @@ class TestDatasets:
     def test_transform_image_dataset_to_cache_dataset(self, test_cfg):
         """Tests the `rtk.datasets.transform_image_dataset_to_cache_dataset` function."""
         dataset_cfg: DatasetConfiguration = test_cfg.datasets
+        transform_cfg = dataset_cfg.transforms
         transform = datasets.create_transforms(test_cfg)
-        dataset = datasets.instantiate_image_dataset(cfg=test_cfg, transform=transform)
-        train_dataset = dataset[0]
-        train_dataset_dict = datasets.convert_image_dataset(train_dataset)
-        assert train_dataset_dict is not None
+        _datasets = datasets.instantiate_image_dataset(
+            cfg=test_cfg, transform=transform
+        )
+        train_dataset = _datasets[0]
+        train_dataset = datasets.convert_image_dataset(train_dataset)
+        assert train_dataset is not None
+
+        check_data = first(train_dataset)
+        scan, label = check_data[_IMAGE_KEYNAME], check_data[_LABEL_KEYNAME]
+        assert isinstance(scan, torch.Tensor)
+        assert type(label) == np.int64 or type(label) == int
+        # check shape of sample
+        scan_shape = scan.shape[1:]
+        assert scan_shape == torch.Size([dataset_cfg.dim, dataset_cfg.dim])

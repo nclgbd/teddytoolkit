@@ -80,15 +80,10 @@ class TestIgnite:
         )
         return train_loader, val_loader, test_loader
 
-    def test_create_default_trainer_args(self, test_cfg: Configuration, loaders: tuple):
+    def test_create_default_trainer_args(self, test_cfg: Configuration):
         """Test the `rtk.ignite.create_default_trainer_args` function."""
         trainer_args = create_default_trainer_args(test_cfg)
         trainer = create_supervised_trainer(**trainer_args)
-        # ProgressBar().attach(trainer)
-
-        # # run trainer
-        # train_loader = loaders[0]
-        # state = trainer.run(data=train_loader, **TRAINER_RUN_KWARGS)
         assert trainer is not None
 
     def test_create_metrics(self, test_cfg: Configuration):
