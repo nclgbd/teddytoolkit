@@ -846,6 +846,13 @@ def instantiate_train_val_test_datasets(
     logger.info("Val dataset:\t{}".format(Counter(val_dataset.labels)))
     # logger.info("Test dataset:\t{}\n\n".format(Counter(test_dataset.labels)))
 
+    if job_cfg.mode == "diffusion":
+        for split, dataset in train_val_test_split_dict.items():
+            logger.info(
+                "Converting '{}' dataset for 'diffusion' mode...".format(split)
+            )
+            train_val_test_split_dict[split] = convert_image_dataset(dataset)
+
     return train_val_test_split_dict
 
 

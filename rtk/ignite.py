@@ -865,7 +865,9 @@ def create_diffusion_model_engines(
 
     # TODO: Add validation metrics, particularly FID and SSIM
     val_handlers = []
-    val_handlers = add_handlers(ignite_cfg=ignite_cfg, trainer=trainer, model=model)
+    # val_handlers = add_handlers(
+    #     ignite_cfg=ignite_cfg, trainer=trainer, model=model, optimizer=optimizer
+    # )
     val_handlers.append(StatsHandler(name="train_log", output_transform=lambda x: None))
     evaluator = SupervisedEvaluator(
         device=device,
@@ -919,7 +921,7 @@ def prepare_diffusion_run(
     device: torch.device,
     **kwargs,
 ):
-    logger.info("Preparing ignite run...")
+    logger.info("Preparing ignite diffusion run...")
     ignite_cfg = cfg.ignite
     trainer_args = create_default_trainer_args(cfg)
 

@@ -6,7 +6,7 @@ defaults:
   - job: train-diffusion
   - models: ddpm-model
   # module configurations
-  - ignite: ignite
+  - ignite: diffusion-ignite
   - mlflow: local
   - sklearn: classifier
   # overrides:
