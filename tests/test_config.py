@@ -17,8 +17,8 @@ class TestConfig:
         assert any(test_cfg.datasets.dataloader._target_)
         assert any(test_cfg.datasets.instantiate._target_)
         # model checks
-        assert any(test_cfg.models.model._target_)
         assert any(test_cfg.models.criterion._target_)
+        assert any(test_cfg.models.model._target_)
         assert any(test_cfg.models.optimizer._target_)
 
         ## module configuration checks

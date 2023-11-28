@@ -1,6 +1,8 @@
+accelerate
 azureml-core
 azureml-dataset-runtime
 bitstring
+diffusers
 einops
 hydra-colorlog
 hydra-core

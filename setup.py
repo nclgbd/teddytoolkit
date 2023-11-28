@@ -24,6 +24,7 @@ setup(
     entry_points={
         "console_scripts": [
             f"rtk-job=scripts.run_job:main",
+            f"rtk-diffusion=scripts.run_diffusion:main",
         ],
     },
     long_description="",

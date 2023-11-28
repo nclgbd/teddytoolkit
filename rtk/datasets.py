@@ -80,9 +80,11 @@ def create_transforms(
     """
     Get transforms for the model based on the model configuration.
     ## Args
-    * `model_config` (`TorchModelConfiguration`, optional): The model configuration. Defaults to `None`.
+    * `cfg` (`Configuration`, optional): The configuration. Defaults to `None`.
+    * `dataset_cfg` (`DatasetConfiguration`, optional): The dataset configuration. Defaults to `None`.
     * `use_transforms` (`bool`, optional): Whether or not to use the transforms. Defaults to `False`.
     * `transform_dicts` (`dict`, optional): The dictionary of transforms to use. Defaults to `None`.
+    * `mode` (`str`, optional): The mode to use. Add in kwargs.
     ## Returns
     * `torchvision.transforms.Compose`: The transforms for the model in the form of a `torchvision.transforms.Compose`
     object.
@@ -613,6 +615,11 @@ def load_cxr14_dataset(
     patient_df = metadata.loc[multiclass_df.index]
     patient_df = pd.concat([patient_df, multiclass_df[_LABEL_KEYNAME]], axis=1)
 
+    # remove all of the negative class for diffusion
+    if cfg.job.mode == "diffusion":
+        logger.info("Removing all negative class for mode='diffusion'...")
+        patient_df = patient_df[patient_df[_LABEL_KEYNAME] == 1]
+
     train_metadata = patient_df[patient_df.index.isin(train_val_list)]
     train_transforms = create_transforms(cfg, use_transforms=cfg.job.use_transforms)
     train_dataset: monai.data.Dataset = instantiate(
@@ -844,6 +851,11 @@ def instantiate_train_val_test_datasets(
     logger.info("Val dataset:\t{}".format(Counter(val_dataset.labels)))
     # logger.info("Test dataset:\t{}\n\n".format(Counter(test_dataset.labels)))
 
+    if job_cfg.mode == "diffusion":
+        for split, dataset in train_val_test_split_dict.items():
+            logger.info("Converting '{}' dataset for 'diffusion' mode...".format(split))
+            train_val_test_split_dict[split] = convert_image_dataset(dataset)
+
     return train_val_test_split_dict
 
 
@@ -909,7 +921,6 @@ def prepare_data(cfg: Configuration = None, **kwargs):
 def convert_image_dataset(
     dataset: ImageDataset,
     transform: monai.transforms.Compose = None,
-    Dataset: monai.data.Dataset = PersistentDataset,
     **kwargs,
 ):
     """
@@ -924,12 +935,10 @@ def convert_image_dataset(
 
     transform = dataset.transform if transform is None else transform
 
-    if isinstance(Dataset, PersistentDataset):
-        kwargs["cache_dir"] = _CACHE_DIR
-
-    new_dataset: monai.data.Dataset = Dataset(
+    new_dataset: monai.data.Dataset = PersistentDataset(
         data=dataset_list,
         transform=transform,
+        cache_dir=_CACHE_DIR,
         **kwargs,
     )
     return new_dataset

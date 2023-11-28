@@ -21,23 +21,22 @@
                 "++mlflow.experiment_name=tests",
             ]
         },
-        // {
-        //     "name": "Debug run_job.py: chest-xray-experiments conf",
-        //     "type": "python",
-        //     "request": "launch",
-        //     "program": "scripts/run_job.py",
-        //     "console": "integratedTerminal",
-        //     "justMyCode": false,
-        //     "args": [
-        //         "--config-name",
-        //         "chest-xray-experiments",
-        //         "--config-path",
-        //         "../configs/",
-        //         "job.dry_run=true",
-        //         "job.epoch_length=8",
-        //         "job.max_epochs=2",
-        //         "+mlflow.experiment_name=tests",
-        //     ]
-        // }
+        {
+            "name": "Debug run_diffusion.py: tests conf",
+            "type": "python",
+            "request": "launch",
+            "program": "scripts/run_diffusion.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--config-name",
+                "tests",
+                "--config-path",
+                "../configs/",
+                "job.epoch_length=8",
+                "job.max_epochs=2",
+                "++mlflow.experiment_name=tests",
+            ]
+        },
     ]
 }
