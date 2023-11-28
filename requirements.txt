@@ -1,3 +1,4 @@
+accelerate
 azureml-core
 azureml-dataset-runtime
 bitstring

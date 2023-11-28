@@ -103,20 +103,19 @@ def instantiate_optimizer(cfg: Configuration, model: nn.Module, **kwargs):
     return optimizer
 
 
-def instantiate_diffusion_scheduler(model_cfg: DiffusionModelConfiguration, **kwargs):
+def instantiate_diffusion_scheduler(cfg: DiffusionModelConfiguration, **kwargs):
     """
     Instantiates the scheduler from a given configuration.
 
     ## Args:
     * `model_cfg` (`DiffusionModelConfiguration`): The model configuration.
     """
+    model_cfg = cfg.models
     scheduler: Scheduler = hydra_instantiate(cfg=model_cfg.scheduler, **kwargs)
     return scheduler
 
 
-def instantiate_diffusion_inferer(
-    model_cfg: DiffusionModelConfiguration, scheduler: Scheduler, **kwargs
-):
+def instantiate_diffusion_inferer(cfg: Configuration, scheduler: Scheduler, **kwargs):
     """
     Instantiates the inferer from a given configuration.
 
@@ -124,6 +123,7 @@ def instantiate_diffusion_inferer(
     * `model_cfg` (`ModelConfiguration`): The model configuration.
     * `scheduler` (`Scheduler`): The scheduler to use.
     """
+    model_cfg = cfg.models
     inferer: DiffusionInferer = hydra_instantiate(
         cfg=model_cfg.inference, scheduler=scheduler, **kwargs
     )

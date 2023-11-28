@@ -42,7 +42,7 @@ def create_run_name(cfg: Configuration, random_state: int, **kwargs):
         run_name += f";pretrained_model={pretrained_model}"
 
     elif tags.get("type", "train") == "diff" or job_cfg.mode == "diffusion":
-        raise NotImplementedError("Diffusion not implemented yet.")
+        pass
 
     date = cfg.date
     postfix: str = cfg.get("postfix", "")
