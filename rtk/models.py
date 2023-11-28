@@ -7,7 +7,9 @@ from azureml.core import Model, Workspace
 
 # torch imports
 import torch
+import torch.distributed as dist
 import torch.nn as nn
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 # monai
 from generative.inferers import DiffusionInferer
@@ -19,6 +21,18 @@ from rtk.config import Configuration, ModelConfiguration, DiffusionModelConfigur
 from rtk.utils import get_logger, hydra_instantiate
 
 logger = get_logger(__name__)
+
+
+def ddp_setup(rank: int, world_size: int):
+    """
+    Args:
+        rank: Unique identifier of each process
+        world_size: Total number of processes
+    """
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "12355"
+    dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+    torch.cuda.set_device(rank)
 
 
 def download_model_weights(
@@ -70,6 +84,12 @@ def instantiate_model(
         ws = login()
         model_path = download_model_weights(ws, **load_model)
         model.load_state_dict(torch.load(model_path))
+
+    if cfg.job.get("use_multi_gpu", False):
+        logger.info("Using multi-GPU...")
+        device_ids = kwargs.get("device_ids", [device])
+        model = DDP(model, device_ids=device_ids, output_device=0)
+        return model
 
     return model.to(device)
 

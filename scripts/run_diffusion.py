@@ -11,7 +11,9 @@ from tqdm.auto import tqdm
 
 # torch
 import torch
+import torch.multiprocessing as mp
 import torch.nn.functional as F
+from torch.distributed import destroy_process_group
 from torch.utils.data import DataLoader
 
 # :huggingface:
@@ -91,6 +93,7 @@ def train_loop(
     )
     device = accelerator.device
     logger.info(f"Using device:\t{device}")
+    use_multi_gpu = cfg.job.get("use_multi_gpu", False)
     if accelerator.is_main_process:
         accelerator.init_trackers("train_example")
 
@@ -122,6 +125,9 @@ def train_loop(
         progress_bar.set_description(f"Epoch {epoch+1}")
 
         for step, batch in enumerate(train_loader):
+            if use_multi_gpu:
+                train_loader.sampler.set_epoch(epoch)
+
             clean_images = batch[_IMAGE_KEYNAME]
             # Sample noise to add to the images
             noise = torch.randn(clean_images.shape).to(clean_images.device)
@@ -170,6 +176,11 @@ def train_loop(
                 evaluate(cfg, epoch, pipeline)
 
             if (epoch + 1) % log_interval == 0 or epoch == max_epochs - 1:
+                state_dict = (
+                    unwrapped_model.state_dict()
+                    if not use_multi_gpu
+                    else unwrapped_model.module.state_dict()
+                )
                 torch.save(
                     unwrapped_model.state_dict(), f"{output_dir}/{epoch:04d}-model.pt"
                 )
@@ -178,12 +189,13 @@ def train_loop(
 
 
 @hydra.main(version_base=None, config_path="", config_name="")
-def main(cfg: Configuration):
+def main(cfg: Configuration, **kwargs):
     # before we run....
     logger.debug(OmegaConf.to_yaml(cfg))
     job_cfg = cfg.job
     mode: str = job_cfg.get("mode", "diffusion")
     random_state: int = job_cfg.get("random_state", random.randint(0, _MAX_RAND_INT))
+    use_multi_gpu = job_cfg.get("use_multi_gpu", False)
 
     monai.utils.set_determinism(seed=random_state)
     logger.info(f"Using seed:\t{random_state}")
@@ -192,6 +204,11 @@ def main(cfg: Configuration):
 
     run_name = create_run_name(cfg=cfg, random_state=random_state)
     logger.info(f"Run name:\t'{run_name}'")
+
+    if use_multi_gpu:
+        rank: int = kwargs["rank"]
+        world_size: int = kwargs["world_size"]
+        models.ddp_setup(rank, world_size)
 
     # prepare data
     loaders = datasets.prepare_data(cfg)
@@ -219,9 +236,16 @@ def main(cfg: Configuration):
 
     mlflow.end_run()
 
+    if use_multi_gpu:
+        destroy_process_group()
+
 
 if __name__ == "__main__":
     repl.install(show_locals=False)
     logger = get_logger("rtk.scripts")
     monai.config.print_config()
-    main()
+    if False:
+        world_size: int = torch.cuda.device_count()
+        mp.spawn(main, args=(world_size), nprocs=world_size)
+    else:
+        main()

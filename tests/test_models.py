@@ -1,11 +1,15 @@
 """
 Tests for the `rtk.config` module.
 """
-# torch
+
 from collections import Counter
 import pytest
+
+# torch
 import torch
+import torch.multiprocessing as mp
 from torch import nn
+from torch.distributed import init_process_group, destroy_process_group
 from torch.utils.data import DataLoader
 
 # monai
@@ -58,7 +62,7 @@ class TestModels:
 
     def test_instantiate_model(self, test_cfg: Configuration):
         """Test the `rtk.models.instantiate_model` function."""
-        model = models.instantiate_model(test_cfg, device=torch.device("cpu"))
+        model = models.instantiate_model(test_cfg, device=0)
         assert isinstance(model, nn.Module)
 
     def test_instantiate_criterion(

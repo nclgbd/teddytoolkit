@@ -22,6 +22,7 @@ from imblearn.over_sampling import RandomOverSampler
 # torch
 import torch
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 
 # monai
 import monai
@@ -895,23 +896,33 @@ def prepare_data(cfg: Configuration = None, **kwargs):
     train_dataset.transform = train_transform
     test_dataset.transform = eval_transform
 
+    use_multi_gpu: bool = job_cfg.get("use_multi_gpu", False)
     train_loader: DataLoader = hydra_instantiate(
         cfg=dataset_cfg.dataloader,
         dataset=train_dataset,
         pin_memory=torch.cuda.is_available() if torch.cuda.is_available() else False,
-        shuffle=True,
+        shuffle=False if use_multi_gpu else True,
+        sampler=DistributedSampler(train_dataset, seed=job_cfg.random_state)
+        if use_multi_gpu
+        else None,
     )
     val_loader: DataLoader = hydra_instantiate(
         cfg=dataset_cfg.dataloader,
         dataset=val_dataset,
         pin_memory=torch.cuda.is_available(),
-        shuffle=True,
+        shuffle=False if use_multi_gpu else True,
+        sampler=DistributedSampler(val_dataset, seed=job_cfg.random_state)
+        if use_multi_gpu
+        else None,
     )
     test_loader: DataLoader = hydra_instantiate(
         cfg=dataset_cfg.dataloader,
         dataset=test_dataset,
         pin_memory=torch.cuda.is_available(),
-        shuffle=True,
+        shuffle=False if use_multi_gpu else True,
+        sampler=DistributedSampler(test_dataset, seed=job_cfg.random_state)
+        if use_multi_gpu
+        else None,
     )
 
     logger.info("Data prepared.\n\n")
