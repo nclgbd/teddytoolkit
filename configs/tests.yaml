@@ -1,26 +1,29 @@
-# * python scripts/run_job.py --config-dir=$(pwd)/configs/ --config-name=tests
+# * rtk-job --config-dir=$(pwd)/configs/ --config-name=tests
 
 defaults:
   - _self_
-  - datasets: chest-xray-dataset
-  - job: run-eval
+  - datasets: chest-xray14-dataset
+  - job: test-run
   - models: default-model
   # module configurations
   - ignite: ignite
   - mlflow: local
   - sklearn: classifier
   # overrides:
+  # - override datasets/preprocessing: icu-preprocessing
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog
 
 date: ${now:%Y-%m-%d}
-postfix: ""
+postfix: "test"
 timestamp: ${now:%H-%M-%S}
 
 # hydra settings
 hydra:
   job:
     chdir: true
+  searchpath:
+    - file:///home/nicoleg/workspaces/dissertation/configs
   sweep:
     dir: outputs/${hydra.job.config_name}/${date}/${timestamp}
     subdir: ${hydra.job.override_dirname}

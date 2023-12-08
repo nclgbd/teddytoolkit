@@ -1,9 +1,0 @@
-# sklearn: classifier
-
-# metrics:
-#   - _target_: sklearn.metrics.roc_auc_score
-
-model_selection:
-  train_test_split:
-    shuffle: true
-    test_size: 0.1

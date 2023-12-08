@@ -7,16 +7,13 @@ from azureml.core import Model, Workspace
 
 # torch imports
 import torch
+import torch.distributed as dist
 import torch.nn as nn
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 # monai
 from generative.inferers import DiffusionInferer
 from generative.networks.schedulers import Scheduler
-
-# research libraries
-from coca_pytorch.coca_pytorch import CoCa
-from vit_pytorch.extractor import Extractor
-from vit_pytorch.simple_vit_with_patch_dropout import SimpleViT
 
 # rtk
 from rtk import DEFAULT_MODEL_PATH
@@ -26,19 +23,16 @@ from rtk.utils import get_logger, hydra_instantiate
 logger = get_logger(__name__)
 
 
-def get_vit_extractor(cfg: Configuration):
-    image_size = cfg.datasets.dim
-    vit = SimpleViT(
-        depth=6,
-        dim=1024,
-        heads=16,
-        image_size=image_size,
-        mlp_dim=2048,
-        num_classes=2,
-        patch_size=32,  # https://arxiv.org/abs/2212.00794
-    )
-    vit = Extractor(vit, return_embeddings_only=True, detach=False)
-    return vit
+def ddp_setup(rank: int, world_size: int):
+    """
+    Args:
+        rank: Unique identifier of each process
+        world_size: Total number of processes
+    """
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "12355"
+    dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+    torch.cuda.set_device(rank)
 
 
 def download_model_weights(
@@ -80,10 +74,6 @@ def instantiate_model(
     logger.info("Instantiating model...")
     model_cfg: ModelConfiguration = cfg.models
     model_name: str = model_cfg.model._target_.split(".")[-1]
-
-    if model_name == "CoCa":
-        vit = get_vit_extractor(cfg=cfg)
-        kwargs["img_encoder"] = vit
     model: nn.Module = hydra_instantiate(cfg=model_cfg.model, **kwargs)
 
     load_model = model_cfg.get("load_model", None)
@@ -94,6 +84,12 @@ def instantiate_model(
         ws = login()
         model_path = download_model_weights(ws, **load_model)
         model.load_state_dict(torch.load(model_path))
+
+    if cfg.job.get("use_multi_gpu", False):
+        logger.info("Using multi-GPU...")
+        device_ids = kwargs.get("device_ids", [device])
+        model = DDP(model, device_ids=device_ids, output_device=0)
+        return model
 
     return model.to(device)
 
@@ -127,20 +123,19 @@ def instantiate_optimizer(cfg: Configuration, model: nn.Module, **kwargs):
     return optimizer
 
 
-def instantiate_diffusion_scheduler(model_cfg: DiffusionModelConfiguration, **kwargs):
+def instantiate_diffusion_scheduler(cfg: DiffusionModelConfiguration, **kwargs):
     """
     Instantiates the scheduler from a given configuration.
 
     ## Args:
     * `model_cfg` (`DiffusionModelConfiguration`): The model configuration.
     """
+    model_cfg = cfg.models
     scheduler: Scheduler = hydra_instantiate(cfg=model_cfg.scheduler, **kwargs)
     return scheduler
 
 
-def instantiate_diffusion_inferer(
-    model_cfg: DiffusionModelConfiguration, scheduler: Scheduler, **kwargs
-):
+def instantiate_diffusion_inferer(cfg: Configuration, scheduler: Scheduler, **kwargs):
     """
     Instantiates the inferer from a given configuration.
 
@@ -148,6 +143,7 @@ def instantiate_diffusion_inferer(
     * `model_cfg` (`ModelConfiguration`): The model configuration.
     * `scheduler` (`Scheduler`): The scheduler to use.
     """
+    model_cfg = cfg.models
     inferer: DiffusionInferer = hydra_instantiate(
         cfg=model_cfg.inference, scheduler=scheduler, **kwargs
     )

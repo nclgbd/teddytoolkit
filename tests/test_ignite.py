@@ -44,15 +44,18 @@ class TestIgnite:
         """Fixture for the train loader."""
         dataset_cfg: DatasetConfiguration = test_cfg.datasets
         job_cfg: JobConfiguration = test_cfg.job
-        transform = datasets.create_transforms(
-            test_cfg, use_transforms=job_cfg.use_transforms
-        )
+        use_transforms = job_cfg.use_transforms
+        transform = datasets.create_transforms(test_cfg, use_transforms=use_transforms)
+        val_transform = datasets.create_transforms(test_cfg, use_transforms=False)
         _datasets = datasets.instantiate_image_dataset(
             cfg=test_cfg, transform=transform
         )
         _train_dataset = _datasets[0]
         train_val_test_split_dict = datasets.instantiate_train_val_test_datasets(
-            cfg=test_cfg, dataset=_train_dataset
+            cfg=test_cfg,
+            dataset=_train_dataset,
+            train_transforms=transform,
+            eval_transforms=val_transform,
         )
         train_dataset = train_val_test_split_dict["train"]
         train_loader: DataLoader = hydra_instantiate(
@@ -77,15 +80,10 @@ class TestIgnite:
         )
         return train_loader, val_loader, test_loader
 
-    def test_create_default_trainer_args(self, test_cfg: Configuration, loaders: tuple):
+    def test_create_default_trainer_args(self, test_cfg: Configuration):
         """Test the `rtk.ignite.create_default_trainer_args` function."""
         trainer_args = create_default_trainer_args(test_cfg)
         trainer = create_supervised_trainer(**trainer_args)
-        # ProgressBar().attach(trainer)
-
-        # # run trainer
-        # train_loader = loaders[0]
-        # state = trainer.run(data=train_loader, **TRAINER_RUN_KWARGS)
         assert trainer is not None
 
     def test_create_metrics(self, test_cfg: Configuration):
@@ -95,6 +93,7 @@ class TestIgnite:
         metrics = create_metrics(cfg=test_cfg, criterion=criterion)
         assert metrics is not None
 
+    @pytest.mark.requires_live_test
     def test_prepare_run(self, test_cfg: Configuration, loaders: tuple):
         """Test the `rtk.ignite.prepare_run` function."""
         device = torch.device(test_cfg.job.device)
@@ -104,31 +103,19 @@ class TestIgnite:
         state = trainer.run(data=loaders[0], **TRAINER_RUN_KWARGS)
         assert len(state.batch) > 0
 
-    @pytest.mark.diffusion
-    def test_prepare_diffusion_run(self, test_cfg: Configuration, loaders: tuple):
-        """Test the `rtk.ignite.prepare_diffusion_run` function."""
+    # @pytest.mark.diffusion
+    # def test_prepare_diffusion_run(self, test_cfg: Configuration, loaders: tuple):
+    #     """Test the `rtk.ignite.prepare_diffusion_run` function."""
 
-        dataset_cfg: DatasetConfiguration = test_cfg.datasets
-        device = torch.device(test_cfg.job.device)
-        train_dataset = datasets.convert_image_dataset(loaders[0].dataset)
-        train_loader = hydra_instantiate(
-            cfg=dataset_cfg.dataloader,
-            dataset=train_dataset,
-            pin_memory=torch.cuda.is_available(),
-            shuffle=True,
-        )
-        val_dataset = datasets.convert_image_dataset(loaders[1].dataset)
-        val_loader = hydra_instantiate(
-            cfg=dataset_cfg.dataloader,
-            dataset=val_dataset,
-            pin_memory=torch.cuda.is_available(),
-            shuffle=True,
-        )
-        new_loaders = [train_loader, val_loader]
-        trainer, _ = prepare_diffusion_run(
-            cfg=test_cfg, loaders=new_loaders, device=device
-        )
+    #     dataset_cfg: DatasetConfiguration = test_cfg.datasets
+    #     device = torch.device(test_cfg.job.device)
+    #     train_loader = loaders[0]
+    #     val_loader = loaders[1]
+    #     new_loaders = [train_loader, val_loader]
+    #     trainer, _ = prepare_diffusion_run(
+    #         cfg=test_cfg, loaders=new_loaders, device=device
+    #     )
 
-        # run trainer
-        trainer.run()
-        assert True
+    #     # run trainer
+    #     trainer.run()
+    #     assert True

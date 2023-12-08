@@ -4,13 +4,17 @@
 			"path": "."
 		},
 		{
-			"name": "imagecore",
-			"path": "../../anaconda3/envs/dissertation-dev/lib/python3.9/site-packages/imagecore",
-		},
-		{
-			"name": "GenerativeModels",
-			"path": "../GenerativeModels",
-		},
+			"name": "dissertation",
+			"path": "../dissertation"
+		}
+		// {
+		// 	"name": "imagecore",
+		// 	"path": "../../anaconda3/envs/dissertation-dev/lib/python3.9/site-packages/imagecore",
+		// },
+		// {
+		// 	"name": "GenerativeModels",
+		// 	"path": "../GenerativeModels",
+		// },
 	],
 	"settings": {
 		"python.testing.pytestEnabled": true,
@@ -18,15 +22,16 @@
 		"python.testing.pytestArgs": [
 			"-v",
 			"--log-level=DEBUG",
-			"-m",
-			"not diffusion",
+			// "-m",
+			// "not diffusion",
 		],
 		"hide-files.files": [
 			"__pycache__",
 			".pytest_cache",
 			".vscode/__pycache__",
-			"rtk/__pycache__",
-			"tests/__pycache__"
+			"rtk/**/__pycache__",
+			"tests/__pycache__",
+			"/home/nicoleg/workspaces/dissertation/mlruns"
 		]
 	}
 }

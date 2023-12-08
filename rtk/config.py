@@ -126,6 +126,8 @@ class DatasetConfiguration:
     preprocessing: PreprocessingConfiguration = field(
         default_factory=PreprocessingConfiguration
     )
+    # name of the dataset
+    name: str = ""
     # dimension to resize the images to
     dim: int = 224
     # the name of the index column in the metadata
@@ -144,7 +146,7 @@ class DatasetConfiguration:
     extension: str = ".jpeg"
     # the names for each label in alphabetical order
     labels: list = field(default_factory=lambda: [])
-    # encoding
+    # # encoding
     encoding: dict = field(default_factory=lambda: {})
     # the kind of dataset to instantiate
     instantiate: DictConfig = field(

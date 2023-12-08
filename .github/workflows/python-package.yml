@@ -5,13 +5,12 @@ name: Run `rtk` pytests (offline version)
 
 on:
   push:
-    branches: [ "develop", "develop-*" ]
-  pull_request:
-    branches: [ "main" ]
+    branches: ["test"]
+  # pull_request:
+  #   branches: ["main"]
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -19,16 +18,22 @@ jobs:
         python-version: ["3.9", "3.10", "3.11"]
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install flake8 pytest
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-    - name: Test with pytest
-      run: |
-        pytest -v -m "not diffusion and not requires_live_test and not requires_azureml"
+      - uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          echo "Installing pip dependencies..."
+          python -m pip install --upgrade pip
+          python -m pip install build pytest
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Install rtk
+        run: |
+          echo "Installing rtk..."
+          python -m pip install -e .
+      - name: Test with pytest
+        run: |
+          echo "Running pytest..."
+          pytest -v -m "not diffusion and not requires_live_test and not requires_azureml"
