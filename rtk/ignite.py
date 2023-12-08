@@ -236,76 +236,6 @@ def create_diffusion_model_trainer(
     return trainer
 
 
-# def create_diffusion_model_engines(
-#     cfg: Configuration,
-#     train_loader: torch.utils.data.DataLoader,
-#     val_loader: torch.utils.data.DataLoader = None,
-#     **kwargs,
-# ):
-#     ignite_cfg: IgniteConfiguration = kwargs.get("ignite_cfg", cfg.ignite)
-#     trainer_kwargs = create_default_trainer_args(cfg=cfg, **kwargs)
-#     model, optimizer = trainer_kwargs["model"], trainer_kwargs["optimizer"]
-#     engine_dict = dict()
-#     job_cfg: JobConfiguration = kwargs.get("job_cfg", cfg.job)
-#     model_cfg: ModelConfiguration = kwargs.get("model_cfg", cfg.models)
-#     device: torch.device = kwargs.get("device", torch.device(job_cfg.device))
-#     scheduler: Scheduler = models.instantiate_diffusion_scheduler(model_cfg)
-#     inferer: DiffusionInferer = models.instantiate_diffusion_inferer(
-#         model_cfg, scheduler=scheduler
-#     )
-
-#     trainer = create_diffusion_model_trainer(
-#         cfg=cfg, model=model, optimizer=optimizer, inferer=inferer
-#     )
-#     engine_dict["trainer"] = trainer
-#     train_evaluator = create_diffusion_model_evaluator(
-#         cfg=cfg, model=model, inferer=inferer
-#     )
-#     engine_dict["train_evaluator"] = train_evaluator
-
-#     # add additional handlers
-#     ProgressBar().attach(trainer)
-#     log_interval = ignite_cfg.get("log_interval", job_cfg.epochs // 10)
-#     trainer.add_event_handler(
-#         event_name=Events.EPOCH_COMPLETED(every=log_interval),
-#         handler=prepare_diffusion_run,
-#         **{
-#             "evaluator": train_evaluator,
-#             "loader": train_loader,
-#             "cfg": cfg,
-#             # sampling from diffusion model kwargs
-#             "model": model,
-#             "scheduler": scheduler,
-#             "inferer": inferer,
-#             "device": device,
-#         },
-#     )
-#     ProgressBar().attach(train_evaluator)
-
-#     if val_loader is not None:
-#         val_evaluator = create_diffusion_model_evaluator(
-#             cfg=cfg, model=model, inferer=inferer
-#         )
-#         trainer.add_event_handler(
-#             event_name=Events.EPOCH_COMPLETED(every=log_interval),
-#             handler=prepare_diffusion_run,
-#             **{
-#                 "evaluator": val_evaluator,
-#                 "loader": val_loader,
-#                 "cfg": cfg,
-#                 # sample from diffusion model kwargs
-#                 "model": model,
-#                 "scheduler": scheduler,
-#                 "device": device,
-#             },
-#         )
-#         ProgressBar().attach(val_evaluator)
-#         engine_dict["val_evaluator"] = val_evaluator
-
-#     logger.info("Diffusion model engines created.\n")
-#     return engine_dict
-
-
 def sample_from_diffusion_model(
     # engine: Engine,
     cfg: Configuration,
@@ -434,26 +364,6 @@ def add_handlers(
     return handlers
 
 
-def _sigmoid_output_transform(output):
-    y_pred, y = output
-    y_pred = torch.sigmoid(y_pred)
-    return y_pred, y
-
-
-# class SKLearnMetric(Metric):
-#     def __init__(self, metric_fn: callable, output_transform=lambda x: x, device="cpu"):
-#         super().__init__(output_transform, device)
-#         self.metric_fn = metric_fn
-#         self.metric_name: str = metric_fn.__name__
-
-
-#     @sync_all_reduce("_num_examples", "_num_correct:SUM")
-#     def compute(self):
-#         if self._num_examples == 0:
-#             raise NotComputableError(f'{self.metric_name} must have at least one example before it can be computed.')
-#         return self._num_correct.item() / self._num_examples
-
-
 def add_sklearn_metrics(
     old_metrics: dict,
     metrics: list,
@@ -500,8 +410,7 @@ def create_metrics(
                 metric_fn = getattr(mod, metric_name)
                 if metric_name == "Loss":
                     metric_fn_kwargs["loss_fn"] = criterion
-                # if metric_name == "ROC_AUC":
-                #     metric_fn_kwargs["output_transform"] = _sigmoid_output_transform
+
                 metrics[metric_name.lower()] = (
                     metric_fn(device=device, **metric_fn_kwargs)
                     if any(metric_fn_kwargs)
@@ -521,21 +430,10 @@ def create_metrics(
         elif not flag:
             logger.warn(f"Metric '{metric_name}' not found.")
 
-    # if "metrics" in cfg.sklearn.keys() and any(cfg.sklearn.metrics):
-    #     logger.info("Adding sklearn metrics...")
-    #     sklearn_metrics = add_sklearn_metrics(
-    #         old_metrics=metrics, metrics=cfg.sklearn.metrics
-    #     )
-    #     logger.debug(f"Sklearn metrics:\n{sklearn_metrics}\n")
-
     logger.info("Metrics created.\n")
     logger.debug(f"Metrics:\n{metrics}\n")
 
     return metrics
-
-
-# def instantiate_ignite_metrics(ignite_cfg: IgniteConfiguration, **kwargs):
-#     ignite_cfg = cfg.ignite
 
 
 def create_lr_scheduler(
@@ -649,6 +547,15 @@ def _log_metrics(
     y_true = metrics["y_true"]
     y_pred = metrics["y_preds"]
     labels = cfg.datasets.labels
+
+    try:
+        image_files = loader.dataset.image_files
+        index = pd.Index([os.path.basename(image_file) for image_file in image_files])
+        predictions_df = pd.DataFrame({"y_true": y_true, "y_pred": y_pred}, index=index)
+        predictions_df.to_csv(f"artifacts/{split}/predictions_epoch={epoch}.csv")
+
+    except AttributeError as e:
+        pass
 
     # classification report
     cr_str = classification_report(
@@ -793,11 +700,11 @@ def prepare_run(
     ## prepare run
     default_trainer_kwargs = {}
 
-    if cfg.datasets.preprocessing.use_sampling == False:
-        train_dataset = loaders[0].dataset
-        samples_per_class = list(Counter(vars(train_dataset)[_LABEL_KEYNAME]).values())
-        criterion_kwargs = {"samples_per_class": samples_per_class}
-        default_trainer_kwargs["criterion_kwargs"] = criterion_kwargs
+    # if cfg.datasets.preprocessing.use_sampling == False:
+    #     train_dataset = loaders[0].dataset
+    #     samples_per_class = list(Counter(vars(train_dataset)[_LABEL_KEYNAME]).values())
+    #     criterion_kwargs = {"samples_per_class": samples_per_class}
+    #     default_trainer_kwargs["criterion_kwargs"] = criterion_kwargs
 
     trainer_args = create_default_trainer_args(cfg, **default_trainer_kwargs)
     trainer = create_supervised_trainer(**trainer_args)

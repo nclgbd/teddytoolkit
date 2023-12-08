@@ -542,14 +542,14 @@ def load_pediatrics_dataset(
 
 
 def load_cxr14_dataset(
-    cfg: Configuration, save_metadata=False, return_metadata=False, **kwargs
+    cfg: Configuration, save_metadata=True, return_metadata=False, **kwargs
 ):
     dataset_cfg: DatasetConfiguration = cfg.datasets
     target = dataset_cfg.target
     scan_path = dataset_cfg.scan_data
     preprocessing_cfg = dataset_cfg.preprocessing
     positive_class = preprocessing_cfg.get("positive_class", "Pneumonia")
-    version = preprocessing_cfg.get("version", 1.0)
+    version: int = preprocessing_cfg.get("version", 1.0)
 
     metadata = build_cxr14_metadata_dataframe(cfg=cfg)
 
@@ -599,14 +599,16 @@ def load_cxr14_dataset(
         drop_indices = pd.Index(_drop_indices)
         positive_df = positive_df.drop(index=drop_indices)
 
-    logger.info(
-        f"Number of '{positive_class.lower()}' cases: {len(positive_df)}, {len(positive_df) / len(multiclass_df) * 100:.4f}%"
-    )
-    logger.info(
-        f"Number of 'non-{positive_class.lower()}' cases: {len(negative_df)}, {len(negative_df) / len(multiclass_df) * 100:.4f}%"
-    )
+    logger.info(f"Number of '{positive_class.lower()}' cases: {len(positive_df)}")
+    logger.info(f"Number of 'non-{positive_class.lower()}' cases: {len(negative_df)}")
 
     multiclass_df = pd.concat([positive_df, negative_df])
+    if save_metadata:
+        multiclass_df.to_csv(
+            os.path.join(
+                DEFAULT_DATA_PATH, "patients", f"cxr14_multiclass_{version}.csv"
+            )
+        )
     assert len(multiclass_df) == len(positive_df) + len(negative_df)
 
     # train split
@@ -919,7 +921,7 @@ def prepare_data(cfg: Configuration = None, **kwargs):
         cfg=dataset_cfg.dataloader,
         dataset=test_dataset,
         pin_memory=torch.cuda.is_available(),
-        shuffle=False if use_multi_gpu else True,
+        shuffle=False,
         sampler=DistributedSampler(test_dataset, seed=job_cfg.random_state)
         if use_multi_gpu
         else None,

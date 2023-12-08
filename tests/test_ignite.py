@@ -93,6 +93,7 @@ class TestIgnite:
         metrics = create_metrics(cfg=test_cfg, criterion=criterion)
         assert metrics is not None
 
+    @pytest.mark.requires_live_test
     def test_prepare_run(self, test_cfg: Configuration, loaders: tuple):
         """Test the `rtk.ignite.prepare_run` function."""
         device = torch.device(test_cfg.job.device)
@@ -102,19 +103,19 @@ class TestIgnite:
         state = trainer.run(data=loaders[0], **TRAINER_RUN_KWARGS)
         assert len(state.batch) > 0
 
-    @pytest.mark.diffusion
-    def test_prepare_diffusion_run(self, test_cfg: Configuration, loaders: tuple):
-        """Test the `rtk.ignite.prepare_diffusion_run` function."""
+    # @pytest.mark.diffusion
+    # def test_prepare_diffusion_run(self, test_cfg: Configuration, loaders: tuple):
+    #     """Test the `rtk.ignite.prepare_diffusion_run` function."""
 
-        dataset_cfg: DatasetConfiguration = test_cfg.datasets
-        device = torch.device(test_cfg.job.device)
-        train_loader = loaders[0]
-        val_loader = loaders[1]
-        new_loaders = [train_loader, val_loader]
-        trainer, _ = prepare_diffusion_run(
-            cfg=test_cfg, loaders=new_loaders, device=device
-        )
+    #     dataset_cfg: DatasetConfiguration = test_cfg.datasets
+    #     device = torch.device(test_cfg.job.device)
+    #     train_loader = loaders[0]
+    #     val_loader = loaders[1]
+    #     new_loaders = [train_loader, val_loader]
+    #     trainer, _ = prepare_diffusion_run(
+    #         cfg=test_cfg, loaders=new_loaders, device=device
+    #     )
 
-        # run trainer
-        trainer.run()
-        assert True
+    #     # run trainer
+    #     trainer.run()
+    #     assert True

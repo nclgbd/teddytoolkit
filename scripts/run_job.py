@@ -43,7 +43,10 @@ def run_trainer(
     loaders: list, train_loader: DataLoader, device: torch.device, cfg: Configuration
 ):
     job_cfg: JobConfiguration = cfg.job
-    trainer, _ = prepare_run(loaders=loaders, device=device, cfg=cfg)
+    prepare_func: callable = hydra_instantiate(
+        job_cfg["prepare_function"], _partial_=True
+    )
+    trainer, _ = prepare_func(loaders=loaders, device=device, cfg=cfg)
     state = trainer.run(
         data=train_loader,
         max_epochs=job_cfg.max_epochs,

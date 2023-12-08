@@ -17,6 +17,7 @@ class TestUtilities:
         """The AzureML workspace object."""
         return utils.login()
 
+    @pytest.mark.requires_azureml
     def test_load_patient_dataset(self, ws: Workspace):
         """Test the `rtk.load_patient_dataset` function."""
         dataset = utils.load_patient_dataset(
@@ -24,6 +25,7 @@ class TestUtilities:
         )
         assert dataset is not None
 
+    @pytest.mark.requires_azureml
     def test_load_scan_dataset(self, ws: Workspace):
         """Test the `rtk.load_scan_dataset` function."""
         # with mount=True
