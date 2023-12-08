@@ -5,7 +5,7 @@ name: Run `rtk` pytests (offline version)
 
 on:
   push:
-    branches: ["develop-*"]
+    branches: ["test"]
   # pull_request:
   #   branches: ["main"]
 
