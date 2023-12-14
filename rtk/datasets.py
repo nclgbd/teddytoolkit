@@ -559,7 +559,6 @@ def load_cxr14_dataset(
 
         mlb = MultiLabelBinarizer()
         labels = dataset_cfg.labels
-        positive_class = dataset_cfg.preprocessing["positive_class"]
         logger.info(f"Positive class: '{positive_class}'")
         logger.info(f"New labels:\n{labels}")
         logger.debug(f"{Counter(df[target])}")
