@@ -853,10 +853,10 @@ def instantiate_train_val_test_datasets(
     logger.info("Val dataset:\t{}".format(Counter(val_dataset.labels)))
     # logger.info("Test dataset:\t{}\n\n".format(Counter(test_dataset.labels)))
 
-    if job_cfg.mode == "diffusion":
-        for split, dataset in train_val_test_split_dict.items():
-            logger.info("Converting '{}' dataset for 'diffusion' mode...".format(split))
-            train_val_test_split_dict[split] = convert_image_dataset(dataset)
+    # if job_cfg.mode == "diffusion":
+    #     for split, dataset in train_val_test_split_dict.items():
+    #         logger.info("Converting '{}' dataset for 'diffusion' mode...".format(split))
+    #         train_val_test_split_dict[split] = convert_image_dataset(dataset)
 
     return train_val_test_split_dict
 
@@ -869,7 +869,7 @@ def prepare_data(cfg: Configuration = None, **kwargs):
     )
     job_cfg: JobConfiguration = kwargs.get(
         "job_cfg",
-        cfg.get("job", {"use_transforms": kwargs.get("use_transforms", True)}),
+        cfg.job,
     )
     use_transforms = job_cfg["use_transforms"]
     train_transform = create_transforms(cfg, use_transforms=use_transforms)
