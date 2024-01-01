@@ -90,8 +90,9 @@ def train_loop(
     accelerator = Accelerator(
         mixed_precision="fp16",
         gradient_accumulation_steps=1,
+        device_placement=False,
     )
-    device = accelerator.device
+    device = torch.device(cfg.job.device)
     logger.info(f"Using device:\t{device}")
     use_multi_gpu = cfg.job.get("use_multi_gpu", False)
     if accelerator.is_main_process:
@@ -111,8 +112,13 @@ def train_loop(
     # There is no specific order to remember, you just need to unpack the
     # objects in the same order you gave them to the prepare method.
     model, optimizer, train_loader, lr_scheduler = accelerator.prepare(
-        model, optimizer, train_loader, lr_scheduler
+        model,
+        optimizer,
+        train_loader,
+        lr_scheduler,
+        device_placement=[False, False, False, False],
     )
+    # model.to(device)
 
     global_step = 0
     log_interval = ignite_cfg.get("log_interval", max(cfg.job.max_epochs // 10, 1))
@@ -124,11 +130,11 @@ def train_loop(
         )
         progress_bar.set_description(f"Epoch {epoch+1}")
 
-        for step, batch in enumerate(train_loader):
+        for _, batch in enumerate(train_loader):
             if use_multi_gpu:
                 train_loader.sampler.set_epoch(epoch)
 
-            clean_images = batch[_IMAGE_KEYNAME]
+            clean_images = batch[0].to(device)
             # Sample noise to add to the images
             noise = torch.randn(clean_images.shape).to(clean_images.device)
             bs = clean_images.shape[0]
