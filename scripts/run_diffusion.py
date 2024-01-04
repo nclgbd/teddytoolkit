@@ -16,6 +16,9 @@ import torch.nn.functional as F
 from torch.distributed import destroy_process_group
 from torch.utils.data import DataLoader
 
+# torchmetrics
+from torchmetrics.metric import Metric
+
 # :huggingface:
 from accelerate import Accelerator
 from diffusers import DDPMPipeline, DDPMScheduler
@@ -30,13 +33,32 @@ from rtk import datasets, repl, models
 from rtk.datasets import _IMAGE_KEYNAME, _LABEL_KEYNAME
 from rtk.config import *
 from rtk.mlflow import *
-from rtk.utils import hydra_instantiate, get_logger
+from rtk.utils import hydra_instantiate, get_logger, _strip_target
 
 _MAX_RAND_INT = 8192
 
 
-def run_diffusion_trainer():
-    pass
+def instantiate_torch_metrics(cfg: Configuration, **kwargs):
+    ignite_cfg = cfg.ignite
+    metrics = []
+    for metric_cfg in ignite_cfg.metrics:
+        metric = hydra_instantiate(metric_cfg, **kwargs)
+        target_name = _strip_target(metric_cfg, lower=False)
+        if target_name == "FrechetInceptionDistance":
+            new_target_name = "FID"
+
+        elif target_name == "InceptionScore":
+            new_target_name = "IS"
+
+        elif target_name == "MultiScaleStructuralSimilarityIndexMeasure":
+            new_target_name = "MS-SSIM"
+
+        else:
+            raise ValueError(f"Unknown metric: '{target_name}'")
+
+        metrics.append({new_target_name: metric})
+
+    return metrics
 
 
 # https://colab.research.google.com/github/huggingface/notebooks/blob/main/diffusers/training_example.ipynb
@@ -46,25 +68,6 @@ def make_grid(images, rows, cols):
     for i, image in tqdm(enumerate(images), desc="Creating grid"):
         grid.paste(image, box=(i % cols * w, i // cols * h))
     return grid
-
-
-# https://colab.research.google.com/github/huggingface/notebooks/blob/main/diffusers/training_example.ipynb
-def evaluate(cfg: Configuration, epoch: int, pipeline):
-    # Sample some images from random noise (this is the backward diffusion process).
-    # The default pipeline output type is `List[PIL.Image]`
-    dataset_cfg = cfg.datasets
-    images = pipeline(
-        batch_size=dataset_cfg.dataloader.batch_size,
-        generator=torch.manual_seed(cfg.job.random_state),
-    ).images
-
-    # Make a grid out of the images
-    image_grid = make_grid(images, rows=4, cols=4)
-
-    # Save the images
-    test_dir = os.path.join("artifacts", "samples")
-    os.makedirs(test_dir, exist_ok=True)
-    image_grid.save(f"{test_dir}/{epoch:04d}.png")
 
 
 def get_full_repo_name(model_id: str, organization: str = None, token: str = None):
@@ -77,9 +80,100 @@ def get_full_repo_name(model_id: str, organization: str = None, token: str = Non
         return f"{organization}/{model_id}"
 
 
+def forward_diffusion(
+    clean_images: torch.Tensor,
+    model_cfg: Configuration,
+    device: torch.device,
+    noise_scheduler: DDPMScheduler,
+):
+    # Sample noise to add to the images
+    noise = torch.randn(clean_images.shape).to(clean_images.device)
+    bs = clean_images.shape[0]
+
+    # Sample a random timestep for each image
+    timesteps = torch.randint(
+        0,
+        model_cfg.scheduler.num_train_timesteps,
+        (bs,),
+        device=clean_images.device,
+    ).long()
+
+    # Add noise to the clean images according to the noise magnitude at each timestep
+    # (this is the forward diffusion process)
+    noisy_images = noise_scheduler.add_noise(clean_images, noise, timesteps)
+    return noise, timesteps, noisy_images
+
+
+# https://colab.research.google.com/github/huggingface/notebooks/blob/main/diffusers/training_example.ipynb
+def evaluate(
+    cfg: Configuration,
+    epoch: int,
+    pipeline: DDPMPipeline,
+    loader: DataLoader = None,
+    log_samples: bool = True,
+):
+    logger.info("Evaluating model...")
+
+    dataset_cfg = cfg.datasets
+    # metrics = instantiate_torch_metrics(cfg)
+
+    # pred_images = pipeline(
+    #     batch_size=len(loader.dataset),
+    #     generator=loader,
+    # ).images
+
+    # def _update_metric(key: str, metric: Metric, images: DataLoader, **kwargs):
+    #     for image, _ in loader:
+    #         if key == "MS-SSIM":
+    #             logger.warn("'MS-SSIM' is not yet implemented. Skipping calculation...")
+
+    #         elif key == "FID":
+    #             logger.warn("'FID' is not yet implemented. Skipping calculation...")
+    #             # metric.update(image, real=True)
+    #             # metric.update(image, real=False)
+
+    #         elif key == "IS":
+    #             metric.update(image, **kwargs)
+
+    #     out = metric.compute()
+    #     return out
+
+    # logged_metrics = {}
+    # for item in metrics:
+    #     key = list(item.keys())[0]
+    #     metric = item[key]
+    #     out: torch.Tensor = _update_metric(key, metric, loader)
+    #     if key == "IS":
+    #         key_mean = f"{key}_mean"
+    #         key_std = f"{key}_std"
+    #         logged_metrics[key_mean] = out[0].item()
+    #         logged_metrics[key_std] = out[1].item()
+    #     else:
+    #         logged_metrics[key] = out.item()
+
+    # mlflow.log_metrics(logged_metrics, step=epoch)
+
+    # Sample some images from random noise (this is the backward diffusion process).
+    # The default pipeline output type is `List[PIL.Image]`
+    if log_samples:
+        samples_images = pipeline(
+            batch_size=dataset_cfg.dataloader.batch_size,
+            generator=torch.manual_seed(cfg.job.random_state),
+        ).images
+
+        # Make a grid out of the images
+        image_grid = make_grid(samples_images, rows=4, cols=4)
+
+        # Save the images
+        test_dir = os.path.join("artifacts", "samples")
+        os.makedirs(test_dir, exist_ok=True)
+        image_grid.save(f"{test_dir}/{(epoch+1):04d}.png")
+
+
 def train_loop(
     cfg: Configuration,
     train_loader: DataLoader,
+    test_loader: DataLoader = None,
     **start_run_kwargs,
 ):
     # Initialize accelerator and tensorboard logging
@@ -93,7 +187,7 @@ def train_loop(
         device_placement=False,
     )
     device = torch.device(cfg.job.device)
-    logger.info(f"Using device:\t{device}")
+    logger.info(f"Using device:\t'{device}'")
     use_multi_gpu = cfg.job.get("use_multi_gpu", False)
     if accelerator.is_main_process:
         accelerator.init_trackers("train_example")
@@ -134,22 +228,13 @@ def train_loop(
             if use_multi_gpu:
                 train_loader.sampler.set_epoch(epoch)
 
-            clean_images = batch[0].to(device)
-            # Sample noise to add to the images
-            noise = torch.randn(clean_images.shape).to(clean_images.device)
-            bs = clean_images.shape[0]
-
-            # Sample a random timestep for each image
-            timesteps = torch.randint(
-                0,
-                model_cfg.scheduler.num_train_timesteps,
-                (bs,),
-                device=clean_images.device,
-            ).long()
-
-            # Add noise to the clean images according to the noise magnitude at each timestep
-            # (this is the forward diffusion process)
-            noisy_images = noise_scheduler.add_noise(clean_images, noise, timesteps)
+            clean_images: torch.Tensor = batch[0].to(device)
+            noise, timesteps, noisy_images = forward_diffusion(
+                clean_images,
+                model_cfg,
+                device,
+                noise_scheduler,
+            )
 
             with accelerator.accumulate(model):
                 # Predict the noise residual
@@ -179,7 +264,7 @@ def train_loop(
             pipeline = DDPMPipeline(unet=unwrapped_model, scheduler=noise_scheduler)
 
             if (epoch + 1) % log_interval == 0 or epoch == max_epochs - 1:
-                evaluate(cfg, epoch, pipeline)
+                evaluate(cfg, epoch, pipeline, loader=test_loader)
 
             if (epoch + 1) % log_interval == 0 or epoch == max_epochs - 1:
                 state_dict = (
@@ -235,10 +320,10 @@ def main(cfg: Configuration, **kwargs):
                 )
             )
             log_mlflow_params(cfg)
-            train_loop(cfg, train_loader)
+            train_loop(cfg, train_loader, test_loader=test_loader)
             mlflow.log_artifact("./")
     else:
-        train_loop(cfg, train_loader)
+        train_loop(cfg, train_loader, test_loader=test_loader)
 
     mlflow.end_run()
 
