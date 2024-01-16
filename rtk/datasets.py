@@ -618,7 +618,7 @@ def load_cxr14_dataset(
     patient_df = pd.concat([patient_df, multiclass_df[_LABEL_KEYNAME]], axis=1)
 
     # remove all of the negative class for diffusion
-    if cfg.job.mode == "diffusion":
+    if "diffusion" in cfg.job.mode:
         logger.info("Removing all negative class for mode='diffusion'...")
         patient_df = patient_df[patient_df[_LABEL_KEYNAME] == 1]
 

@@ -1,9 +1,8 @@
 ##!/usr/bin/env python3
-import logging
+import hydra
+import math
 import os
 import random
-import sys
-import hydra
 from PIL import Image
 from omegaconf import OmegaConf
 from pathlib import Path
@@ -17,52 +16,33 @@ from torch.distributed import destroy_process_group
 from torch.utils.data import DataLoader
 
 # torchmetrics
+from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure
+from torchmetrics.image.fid import FrechetInceptionDistance
+from torchmetrics.image.inception import InceptionScore
 from torchmetrics.metric import Metric
 
 # :huggingface:
 from accelerate import Accelerator
 from diffusers import DDPMPipeline, DDPMScheduler
 from diffusers.optimization import get_cosine_schedule_with_warmup
-from huggingface_hub import HfFolder, Repository, whoami
 
 # monai
 import monai
 
 # rtk
 from rtk import datasets, repl, models
-from rtk.datasets import _IMAGE_KEYNAME, _LABEL_KEYNAME
 from rtk.config import *
+from rtk.datasets import _IMAGE_KEYNAME, _LABEL_KEYNAME
 from rtk.mlflow import *
 from rtk.utils import hydra_instantiate, get_logger, _strip_target
 
 _MAX_RAND_INT = 8192
 
 
-def instantiate_torch_metrics(cfg: Configuration, **kwargs):
-    ignite_cfg = cfg.ignite
-    metrics = []
-    for metric_cfg in ignite_cfg.metrics:
-        metric = hydra_instantiate(metric_cfg, **kwargs)
-        target_name = _strip_target(metric_cfg, lower=False)
-        if target_name == "FrechetInceptionDistance":
-            new_target_name = "FID"
-
-        elif target_name == "InceptionScore":
-            new_target_name = "IS"
-
-        elif target_name == "MultiScaleStructuralSimilarityIndexMeasure":
-            new_target_name = "MS-SSIM"
-
-        else:
-            raise ValueError(f"Unknown metric: '{target_name}'")
-
-        metrics.append({new_target_name: metric})
-
-    return metrics
-
-
 # https://colab.research.google.com/github/huggingface/notebooks/blob/main/diffusers/training_example.ipynb
-def make_grid(images, rows, cols):
+def make_grid(images):
+    dim = int(math.sqrt(len(images)))
+    rows, cols = dim, dim
     w, h = images[0].size
     grid = Image.new("RGB", size=(cols * w, rows * h))
     for i, image in tqdm(enumerate(images), desc="Creating grid"):
@@ -70,20 +50,99 @@ def make_grid(images, rows, cols):
     return grid
 
 
-def get_full_repo_name(model_id: str, organization: str = None, token: str = None):
-    if token is None:
-        token = HfFolder.get_token()
-    if organization is None:
-        username = whoami(token)["name"]
-        return f"{username}/{model_id}"
-    else:
-        return f"{organization}/{model_id}"
+def instantiate_torch_metrics(cfg: Configuration, **kwargs):
+    ignite_cfg = cfg.ignite
+    metrics = {}
+    for metric_cfg in ignite_cfg.metrics:
+        metric = hydra_instantiate(metric_cfg, **kwargs)
+        target_name = _strip_target(metric_cfg, lower=False)
+        if target_name == "FrechetInceptionDistance":
+            new_target_name = "fid"
+
+        elif target_name == "InceptionScore":
+            new_target_name = "inception"
+
+        elif target_name == "MultiScaleStructuralSimilarityIndexMeasure":
+            new_target_name = "ms-ssim"
+
+        else:
+            raise ValueError(f"Unknown metric: '{target_name}'")
+
+        metrics[new_target_name] = metric
+
+    return metrics
+
+
+# https://colab.research.google.com/github/huggingface/notebooks/blob/main/diffusers/training_example.ipynb
+def evaluate(
+    cfg: Configuration,
+    epoch: int,
+    model: torch.nn.Module,
+    pipeline: DDPMPipeline,
+    loader: DataLoader,
+    scheduler: DDPMScheduler,
+    device: torch.device,
+):
+    logger.info("Evaluating model...")
+    model = model.to("cpu")
+    model.eval()
+
+    # dataset_cfg = cfg.datasets
+    metrics = instantiate_torch_metrics(cfg)
+    fid_metric: FrechetInceptionDistance = metrics["fid"]
+    inception_metric: InceptionScore = metrics["inception"]
+    ms_ssim_metric: MultiScaleStructuralSimilarityIndexMeasure = metrics["ms-ssim"]
+    ms_ssims = []
+
+    # y_true = []
+    # y_pred = []
+
+    for batch in tqdm(loader, desc="Evaluating model"):
+        clean_images: torch.Tensor = batch[0].to("cpu")
+        # y_true.extend(clean_images)
+        _, timesteps, noisy_images = forward_diffusion(
+            clean_images,
+            cfg.models,
+            scheduler,
+        )
+        noise_pred = model(noisy_images, timesteps, return_dict=False)[0]
+        # y_pred.extend(noise_pred)
+
+        # FID
+        fid_metric.update(clean_images, real=True)
+        fid_metric.update(noise_pred, real=False)
+
+        # IS
+        inception_metric.update(noise_pred.to("cpu"))
+
+        # MS-SSIM
+        # _ms_ssim = ms_ssim_metric(noise_pred, clean_images)
+        # ms_ssims.append(_ms_ssim)
+
+    # Compute metrics
+    fid = fid_metric.compute()
+    inception_m, inception_s = inception_metric.compute()
+    # ms_ssim = torch.stack(ms_ssims).mean().item()
+
+    # Log metrics
+    logged_metrics = {
+        "fid": fid,
+        "inception_mean": inception_m,
+        "inception_std": inception_s,
+        # "ms_ssim": ms_ssim,
+    }
+
+    if cfg.job.use_azureml:
+        mlflow.log_metrics(logged_metrics, step=epoch)
+
+    model.to(device)
+    generator = torch.Generator(device=device).manual_seed(cfg.job.random_state)
+    generate_samples(cfg, pipeline, generator=generator, epoch=epoch)
 
 
 def forward_diffusion(
     clean_images: torch.Tensor,
     model_cfg: Configuration,
-    device: torch.device,
     noise_scheduler: DDPMScheduler,
 ):
     # Sample noise to add to the images
@@ -104,70 +163,29 @@ def forward_diffusion(
     return noise, timesteps, noisy_images
 
 
-# https://colab.research.google.com/github/huggingface/notebooks/blob/main/diffusers/training_example.ipynb
-def evaluate(
+def generate_samples(
     cfg: Configuration,
-    epoch: int,
     pipeline: DDPMPipeline,
-    loader: DataLoader = None,
-    log_samples: bool = True,
+    generator: torch.Generator = torch.Generator(device="cuda").manual_seed(0),
+    epoch: int = None,
 ):
-    logger.info("Evaluating model...")
-
-    dataset_cfg = cfg.datasets
-    # metrics = instantiate_torch_metrics(cfg)
-
-    # pred_images = pipeline(
-    #     batch_size=len(loader.dataset),
-    #     generator=loader,
-    # ).images
-
-    # def _update_metric(key: str, metric: Metric, images: DataLoader, **kwargs):
-    #     for image, _ in loader:
-    #         if key == "MS-SSIM":
-    #             logger.warn("'MS-SSIM' is not yet implemented. Skipping calculation...")
-
-    #         elif key == "FID":
-    #             logger.warn("'FID' is not yet implemented. Skipping calculation...")
-    #             # metric.update(image, real=True)
-    #             # metric.update(image, real=False)
-
-    #         elif key == "IS":
-    #             metric.update(image, **kwargs)
-
-    #     out = metric.compute()
-    #     return out
-
-    # logged_metrics = {}
-    # for item in metrics:
-    #     key = list(item.keys())[0]
-    #     metric = item[key]
-    #     out: torch.Tensor = _update_metric(key, metric, loader)
-    #     if key == "IS":
-    #         key_mean = f"{key}_mean"
-    #         key_std = f"{key}_std"
-    #         logged_metrics[key_mean] = out[0].item()
-    #         logged_metrics[key_std] = out[1].item()
-    #     else:
-    #         logged_metrics[key] = out.item()
-
-    # mlflow.log_metrics(logged_metrics, step=epoch)
-
     # Sample some images from random noise (this is the backward diffusion process).
     # The default pipeline output type is `List[PIL.Image]`
-    if log_samples:
-        samples_images = pipeline(
-            batch_size=dataset_cfg.dataloader.batch_size,
-            generator=torch.manual_seed(cfg.job.random_state),
-        ).images
+    # if log_metrics:
+    generator.manual_seed(epoch)
+    samples_images = pipeline(
+        batch_size=cfg.datasets.dataloader.batch_size,
+        generator=generator,
+        # torch_dtype=torch.float16,  # recommended here: https://huggingface.co/docs/diffusers/stable_diffusion
+    ).images
 
-        # Make a grid out of the images
-        image_grid = make_grid(samples_images, rows=4, cols=4)
+    # Make a grid out of the images
+    image_grid = make_grid(samples_images)  # , rows=4, cols=4)
 
-        # Save the images
-        test_dir = os.path.join("artifacts", "samples")
-        os.makedirs(test_dir, exist_ok=True)
-        image_grid.save(f"{test_dir}/{(epoch+1):04d}.png")
+    # Save the images
+    test_dir = os.path.join("artifacts", "samples")
+    os.makedirs(test_dir, exist_ok=True)
+    image_grid.save(f"{test_dir}/{(epoch+1):04d}.png")
 
 
 def train_loop(
@@ -190,13 +208,12 @@ def train_loop(
     logger.info(f"Using device:\t'{device}'")
     use_multi_gpu = cfg.job.get("use_multi_gpu", False)
     if accelerator.is_main_process:
-        accelerator.init_trackers("train_example")
+        accelerator.init_trackers("run_diffusion")
 
     # Prepare everything
     # prepare model
     model = models.instantiate_model(cfg, device=device)
     optimizer = models.instantiate_optimizer(cfg, model=model)
-    # criterion = models.instantiate_criterion(cfg, device=device)
     noise_scheduler = models.instantiate_diffusion_scheduler(cfg)
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer=optimizer,
@@ -212,7 +229,6 @@ def train_loop(
         lr_scheduler,
         device_placement=[False, False, False, False],
     )
-    # model.to(device)
 
     global_step = 0
     log_interval = ignite_cfg.get("log_interval", max(cfg.job.max_epochs // 10, 1))
@@ -224,7 +240,7 @@ def train_loop(
         )
         progress_bar.set_description(f"Epoch {epoch+1}")
 
-        for _, batch in enumerate(train_loader):
+        for batch in train_loader:
             if use_multi_gpu:
                 train_loader.sampler.set_epoch(epoch)
 
@@ -232,7 +248,6 @@ def train_loop(
             noise, timesteps, noisy_images = forward_diffusion(
                 clean_images,
                 model_cfg,
-                device,
                 noise_scheduler,
             )
 
@@ -254,7 +269,6 @@ def train_loop(
                 "step": global_step,
             }
             progress_bar.set_postfix(**logs)
-            # accelerator.log(logs, step=global_step)
             mlflow.log_metrics(logs, step=global_step)
             global_step += 1
 
@@ -264,7 +278,15 @@ def train_loop(
             pipeline = DDPMPipeline(unet=unwrapped_model, scheduler=noise_scheduler)
 
             if (epoch + 1) % log_interval == 0 or epoch == max_epochs - 1:
-                evaluate(cfg, epoch, pipeline, loader=test_loader)
+                evaluate(
+                    cfg,
+                    epoch,
+                    unwrapped_model,
+                    pipeline,
+                    loader=test_loader,
+                    scheduler=noise_scheduler,
+                    device=device,
+                )
 
             if (epoch + 1) % log_interval == 0 or epoch == max_epochs - 1:
                 state_dict = (
@@ -272,11 +294,41 @@ def train_loop(
                     if not use_multi_gpu
                     else unwrapped_model.module.state_dict()
                 )
-                torch.save(
-                    unwrapped_model.state_dict(), f"{output_dir}/{epoch:04d}-model.pt"
-                )
+                torch.save(state_dict, f"{output_dir}/{(epoch+1):04d}-model.pt")
 
     logger.info("Training finished.")
+
+
+def run_loop(
+    cfg: Configuration,
+    train_loader: DataLoader,
+    test_loader: DataLoader,
+    device: torch.device = torch.device("cuda"),
+):
+    if cfg.job.use_azureml:
+        log_mlflow_params(cfg)
+
+    if cfg.job.mode == "diffusion":
+        train_loop(cfg, train_loader, test_loader=test_loader)
+
+    elif cfg.job.mode == "diffusion-evaluate":
+        # prepare model and pipeline
+        model = models.instantiate_model(cfg, device=device)
+        noise_scheduler = models.instantiate_diffusion_scheduler(cfg)
+        pipeline = DDPMPipeline(unet=model, scheduler=noise_scheduler)
+        evaluate(
+            cfg,
+            epoch=-1,
+            model=model,
+            pipeline=pipeline,
+            loader=test_loader,
+            scheduler=noise_scheduler,
+            device=device,
+        )
+
+    if cfg.job.use_azureml:
+        mlflow.log_artifact("./")
+        mlflow.end_run()
 
 
 @hydra.main(version_base=None, config_path="", config_name="")
@@ -284,7 +336,6 @@ def main(cfg: Configuration, **kwargs):
     # before we run....
     logger.debug(OmegaConf.to_yaml(cfg))
     job_cfg = cfg.job
-    mode: str = job_cfg.get("mode", "diffusion")
     random_state: int = job_cfg.get("random_state", random.randint(0, _MAX_RAND_INT))
     use_multi_gpu = job_cfg.get("use_multi_gpu", False)
 
@@ -319,13 +370,10 @@ def main(cfg: Configuration, **kwargs):
                     mlflow_run.info.run_id, mlflow_run.info.status
                 )
             )
-            log_mlflow_params(cfg)
-            train_loop(cfg, train_loader, test_loader=test_loader)
-            mlflow.log_artifact("./")
-    else:
-        train_loop(cfg, train_loader, test_loader=test_loader)
+            run_loop(cfg, train_loader, test_loader=test_loader)
 
-    mlflow.end_run()
+    else:
+        run_loop(cfg, train_loader, test_loader=test_loader)
 
     if use_multi_gpu:
         destroy_process_group()
