@@ -684,7 +684,12 @@ def load_cxr14_dataset(
         )
 
     return (
-        (train_dataset, test_dataset, train_metadata, test_metadata)
+        (
+            train_dataset,
+            test_dataset,
+            train_metadata,
+            test_metadata,
+        )
         if return_metadata
         else (train_dataset, test_dataset)
     )
@@ -742,6 +747,7 @@ def instantiate_train_val_test_datasets(
     """
     dataset_cfg: DatasetConfiguration = cfg.datasets
     preprocessing_cfg = dataset_cfg.preprocessing
+    positive_class: str = preprocessing_cfg.get("positive_class", "Pneumonia")
     job_cfg: JobConfiguration = cfg.job
     random_state = job_cfg.get("random_state", kwargs.get("random_state", 0))
     sklearn_cfg = cfg.sklearn
@@ -760,16 +766,62 @@ def instantiate_train_val_test_datasets(
             random_state=random_state,
             **train_test_split_kwargs,
         )
+        X_train = X_train.reshape(-1)
+        train_df = pd.DataFrame({_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train})
+
+        sampling_method = preprocessing_cfg.sampling_method
+        if isinstance(sampling_method.method["__target__"], (str, os.PathLike)):
+            logger.info("Loading additional generated images...")
+            gen_path = sampling_method.method["__target__"]
+            target_encoding = dataset_cfg.encoding[positive_class]
+
+            generated_image_files = [
+                os.path.join(gen_path, p) for p in os.listdir(gen_path)
+            ]
+            generated_labels = [target_encoding] * len(generated_image_files)
+            generated_df = pd.DataFrame(
+                {
+                    _IMAGE_KEYNAME: generated_image_files,
+                    _LABEL_KEYNAME: generated_labels,
+                }
+            )
+
+            positive_df = train_df[train_df[_LABEL_KEYNAME] == 1]
+            offset = abs(len(positive_df) - len(generated_df))
+            sampled_generated_df: pd.DataFrame = generated_df.sample(
+                offset, random_state=cfg.job.random_state
+            )
+            logger.info(
+                f"Number of sampled generated images: {len(sampled_generated_df)}"
+            )
+            train_df = pd.concat([train_df, sampled_generated_df])
+
         if preprocessing_cfg.get("use_sampling", False):
             sample_to_value: int = preprocessing_cfg.sampling_method["sample_to_value"]
 
-            X_train = X_train.reshape(-1)
-            _train_df = pd.DataFrame({_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train})
-            _train_df = _train_df.groupby(_LABEL_KEYNAME).apply(
-                lambda x: x.sample(sample_to_value, replace=True)
-            )
-            X_train = _train_df[_IMAGE_KEYNAME].values
-            y_train = _train_df[_LABEL_KEYNAME].values
+            X_train = train_df[_IMAGE_KEYNAME].values.reshape(-1)
+            y_train = train_df[_LABEL_KEYNAME].values
+            # train_df = pd.DataFrame({_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train})
+
+            sampling_method = preprocessing_cfg.sampling_method
+            if isinstance(sampling_method.method["__target__"], (str, os.PathLike)):
+                from imblearn.under_sampling import RandomUnderSampler
+
+                sampler = RandomUnderSampler(
+                    random_state=random_state,
+                )
+                X_train, y_train = sampler.fit_resample(X_train.reshape(-1, 1), y_train)
+                X_train = X_train.reshape(-1)
+                # y_train = y_train
+                train_df = pd.DataFrame(
+                    {_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train}
+                )
+            else:
+                train_df = train_df.groupby(_LABEL_KEYNAME).apply(
+                    lambda x: x.sample(sample_to_value, replace=True)
+                )
+            X_train = train_df[_IMAGE_KEYNAME].values
+            y_train = train_df[_LABEL_KEYNAME].values
 
         train_dataset: monai.data.Dataset = instantiate(
             config=dataset_cfg.instantiate,

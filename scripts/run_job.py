@@ -117,6 +117,7 @@ def run_diffusion():
 
 @hydra.main(version_base=None, config_path="", config_name="")
 def main(cfg: Configuration) -> None:
+    dataset_cfg: DatasetConfiguration = cfg.datasets
     # before we run....
     logger.debug(OmegaConf.to_yaml(cfg))
     job_cfg = cfg.job
