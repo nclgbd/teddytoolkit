@@ -117,6 +117,7 @@ def run_diffusion():
 
 @hydra.main(version_base=None, config_path="", config_name="")
 def main(cfg: Configuration) -> None:
+    dataset_cfg: DatasetConfiguration = cfg.datasets
     # before we run....
     logger.debug(OmegaConf.to_yaml(cfg))
     job_cfg = cfg.job
@@ -146,10 +147,10 @@ def main(cfg: Configuration) -> None:
     elif mode == "evaluate":
         run_eval(cfg, run_name, loaders, device)
 
-    elif mode == "diffusion":
-        raise NotImplementedError("Diffusion not implemented yet.")
+    else:
+        raise ValueError(f"Unknown mode: '{mode}'")
 
-    logger.info("Run complete.")
+    logger.info("Job complete.")
 
 
 if __name__ == "__main__":
