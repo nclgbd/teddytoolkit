@@ -98,6 +98,8 @@ def get_params(cfg: Configuration, **kwargs):
     def __collect_dataset_params():
         params["dataset_name"] = dataset_cfg.name
         params.update(preprocessing_cfg)
+        if params["use_sampling"] == False:
+            del params["sampling_method"]
 
     __collect_dataset_params()
 

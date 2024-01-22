@@ -72,7 +72,9 @@ def instantiate_model(
     * `device` (`torch.device`, optional): The device to instantiate the model on. Defaults to `torch.device("cpu")`.
     """
     logger.info("Instantiating model...")
-    model_cfg: ModelConfiguration = cfg.models
+    model_cfg: ModelConfiguration = (
+        cfg.models if kwargs.get("model_cfg", None) is None else kwargs.get("model_cfg")
+    )
     model_name: str = model_cfg.model._target_.split(".")[-1]
     model: nn.Module = hydra_instantiate(cfg=model_cfg.model, **kwargs)
 
