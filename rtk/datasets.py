@@ -46,6 +46,22 @@ _COLUMN_NAMES = [_IMAGE_KEYNAME, _LABEL_KEYNAME]
 _CACHE_DIR = os.path.join(DEFAULT_CACHE_DIR, "tmp")
 
 
+def normalize_images(images: np.ndarray):
+    def _normalize_image(image: np.ndarray):
+        # Normalize to [0, 1]
+        min_val = np.min(image)
+        max_val = np.max(image)
+        image = (image - min_val) / (max_val - min_val)
+
+        # Scale to [0, 255]
+        image = image * 255
+
+        return image.astype(np.uint8)
+
+    normalized_images = np.array([_normalize_image(image) for image in images])
+    return normalized_images
+
+
 def visualize_scan(
     iterator: iter = None,
     index: int = None,
