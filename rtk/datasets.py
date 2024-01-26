@@ -35,31 +35,10 @@ from rtk.config import Configuration, JobConfiguration, DatasetConfiguration
 from rtk.utils import get_logger, hydra_instantiate, yaml_to_configuration
 
 logger = get_logger(__name__)
-
-_CHEST_XRAY_TRAIN_DATASET_SIZE = 5232
-_CHEST_XRAY_TEST_DATASET_SIZE = 624
-_IXI_MRI_DATASET_SIZE = 538
-
 _IMAGE_KEYNAME = "image_files"
 _LABEL_KEYNAME = "labels"
 _COLUMN_NAMES = [_IMAGE_KEYNAME, _LABEL_KEYNAME]
 _CACHE_DIR = os.path.join(DEFAULT_CACHE_DIR, "tmp")
-
-
-def normalize_images(images: np.ndarray):
-    def _normalize_image(image: np.ndarray):
-        # Normalize to [0, 1]
-        min_val = np.min(image)
-        max_val = np.max(image)
-        image = (image - min_val) / (max_val - min_val)
-
-        # Scale to [0, 255]
-        image = image * 255
-
-        return image.astype(np.uint8)
-
-    normalized_images = np.array([_normalize_image(image) for image in images])
-    return normalized_images
 
 
 def visualize_scan(
@@ -786,9 +765,10 @@ def instantiate_train_val_test_datasets(
         train_df = pd.DataFrame({_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train})
 
         sampling_method = preprocessing_cfg.sampling_method
-        if isinstance(sampling_method.method["__target__"], (str, os.PathLike)):
+        # if isinstance(sampling_method.method["__target__"], (os.PathLike)):
+        if "_dir_" in sampling_method.method.keys():
             logger.info("Loading additional generated images...")
-            gen_path = sampling_method.method["__target__"]
+            gen_path = sampling_method.method["_dir_"]
             target_encoding = dataset_cfg.encoding[positive_class]
 
             generated_image_files = [
@@ -820,7 +800,7 @@ def instantiate_train_val_test_datasets(
             # train_df = pd.DataFrame({_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train})
 
             sampling_method = preprocessing_cfg.sampling_method
-            if isinstance(sampling_method.method["__target__"], (str, os.PathLike)):
+            if "_dir_" in sampling_method.method.keys():
                 from imblearn.under_sampling import RandomUnderSampler
 
                 sampler = RandomUnderSampler(

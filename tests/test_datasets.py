@@ -18,9 +18,6 @@ from rtk import (
     datasets,
 )
 from rtk.datasets import (
-    _CHEST_XRAY_TRAIN_DATASET_SIZE,
-    _CHEST_XRAY_TEST_DATASET_SIZE,
-    _IXI_MRI_DATASET_SIZE,
     _IMAGE_KEYNAME,
     _LABEL_KEYNAME,
 )
@@ -47,16 +44,6 @@ class TestDatasets:
             == len(load_transforms) + len(eval_transforms) + 1
         )
 
-        # test diffusion transforms
-        # TODO: properly test this
-        transforms = datasets.create_transforms(
-            test_cfg,
-            mode="diffusion",
-            use_transforms=True,
-        )
-        # assert transforms were created
-        assert transforms is not None
-
     def test_instantiate_image_dataset(self, test_cfg: Configuration):
         """Tests the `rtk.datasets.instantiate_image_dataset` function."""
         dataset_cfg: DatasetConfiguration = test_cfg.datasets
@@ -68,25 +55,6 @@ class TestDatasets:
         train_dataset, test_dataset = dataset[0], dataset[1]
         # assert dataset was created
         assert train_dataset is not None
-
-        # check length of dataset
-        # if test_cfg.job.perform_validation and dataset_cfg.extension == ".nii.gz":
-        #     assert len(dataset) == _IXI_MRI_DATASET_SIZE
-        # elif test_cfg.job.perform_validation and dataset_cfg.extension == ".jpeg":
-        #     # see if resampling was applied properly
-        #     resample_value: int = dataset_cfg.get("resample_value", 1)
-        #     if resample_value > 1:
-        #         labels: np.array = train_dataset.labels
-        #         assert len(np.unique(labels)) == len(dataset_cfg.labels)
-        #     else:
-        #         assert len(train_dataset) == _CHEST_XRAY_TRAIN_DATASET_SIZE
-
-        #     assert len(test_dataset) == _CHEST_XRAY_TEST_DATASET_SIZE
-        # elif test_cfg.job.perform_validation and dataset_cfg.extension == ".png":
-        #     pass
-
-        # attempt retrieval of sample
-        # train_dataset = datasets.transform_image_dataset_to_cache_dataset(train_dataset)
         scan, label = first(train_dataset)
         assert isinstance(scan, torch.Tensor)
         assert type(label) == np.int64 or type(label) == int
@@ -110,7 +78,6 @@ class TestDatasets:
             eval_transforms=transform,
             save_metadata=True,
         )
-        # train_val_test_split_dict["test"] = dataset[1]
 
         assert train_val_test_split_dict is not None
         if use_val and dataset_cfg.extension == ".nii.gz":

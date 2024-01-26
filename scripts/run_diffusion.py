@@ -4,6 +4,7 @@ import math
 import os
 import random
 from PIL import Image
+import numpy as np
 from omegaconf import OmegaConf
 from pathlib import Path
 from tqdm.auto import tqdm
@@ -12,6 +13,7 @@ from tqdm.auto import tqdm
 import torch
 import torch.multiprocessing as mp
 import torch.nn.functional as F
+from torchvision import transforms
 from torch.distributed import destroy_process_group
 from torch.utils.data import DataLoader
 
@@ -33,159 +35,11 @@ import monai
 from rtk import datasets, repl, models
 from rtk.config import *
 from rtk.datasets import _IMAGE_KEYNAME, _LABEL_KEYNAME
+from rtk.diffusion import *
 from rtk.mlflow import *
 from rtk.utils import hydra_instantiate, get_logger, _strip_target
 
 _MAX_RAND_INT = 8192
-
-
-# https://colab.research.google.com/github/huggingface/notebooks/blob/main/diffusers/training_example.ipynb
-def make_grid(images):
-    dim = int(math.sqrt(len(images)))
-    rows, cols = dim, dim
-    w, h = images[0].size
-    grid = Image.new("RGB", size=(cols * w, rows * h))
-    for i, image in tqdm(enumerate(images), desc="Creating grid"):
-        grid.paste(image, box=(i % cols * w, i // cols * h))
-    return grid
-
-
-def instantiate_torch_metrics(cfg: Configuration, **kwargs):
-    ignite_cfg = cfg.ignite
-    metrics = {}
-    for metric_cfg in ignite_cfg.metrics:
-        metric = hydra_instantiate(metric_cfg, **kwargs)
-        target_name = _strip_target(metric_cfg, lower=False)
-        if target_name == "FrechetInceptionDistance":
-            new_target_name = "fid"
-
-        elif target_name == "InceptionScore":
-            new_target_name = "inception"
-
-        elif target_name == "MultiScaleStructuralSimilarityIndexMeasure":
-            new_target_name = "ms-ssim"
-
-        else:
-            raise ValueError(f"Unknown metric: '{target_name}'")
-
-        metrics[new_target_name] = metric
-
-    return metrics
-
-
-# https://colab.research.google.com/github/huggingface/notebooks/blob/main/diffusers/training_example.ipynb
-def evaluate(
-    cfg: Configuration,
-    epoch: int,
-    model: torch.nn.Module,
-    pipeline: DDPMPipeline,
-    loader: DataLoader,
-    scheduler: DDPMScheduler,
-    device: torch.device,
-):
-    logger.info("Evaluating model...")
-    model = model.to("cpu")
-    model.eval()
-
-    # dataset_cfg = cfg.datasets
-    metrics = instantiate_torch_metrics(cfg)
-    fid_metric: FrechetInceptionDistance = metrics["fid"]
-    inception_metric: InceptionScore = metrics["inception"]
-    ms_ssim_metric: MultiScaleStructuralSimilarityIndexMeasure = metrics["ms-ssim"]
-    ms_ssims = []
-
-    # y_true = []
-    # y_pred = []
-
-    for batch in tqdm(loader, desc="Evaluating model"):
-        clean_images: torch.Tensor = batch[0].to("cpu")
-        # y_true.extend(clean_images)
-        _, timesteps, noisy_images = forward_diffusion(
-            clean_images,
-            cfg.models,
-            scheduler,
-        )
-        noise_pred = model(noisy_images, timesteps, return_dict=False)[0]
-        # y_pred.extend(noise_pred)
-
-        # FID
-        fid_metric.update(clean_images, real=True)
-        fid_metric.update(noise_pred, real=False)
-
-        # IS
-        inception_metric.update(noise_pred.to("cpu"))
-
-        # MS-SSIM
-        # _ms_ssim = ms_ssim_metric(noise_pred, clean_images)
-        # ms_ssims.append(_ms_ssim)
-
-    # Compute metrics
-    fid = fid_metric.compute()
-    inception_m, inception_s = inception_metric.compute()
-    # ms_ssim = torch.stack(ms_ssims).mean().item()
-
-    # Log metrics
-    logged_metrics = {
-        "fid": fid,
-        "inception_mean": inception_m,
-        "inception_std": inception_s,
-        # "ms_ssim": ms_ssim,
-    }
-
-    if cfg.job.use_azureml:
-        mlflow.log_metrics(logged_metrics, step=epoch)
-
-    model.to(device)
-    generator = torch.Generator(device=device).manual_seed(cfg.job.random_state)
-    generate_samples(cfg, pipeline, generator=generator, epoch=epoch)
-
-
-def forward_diffusion(
-    clean_images: torch.Tensor,
-    model_cfg: Configuration,
-    noise_scheduler: DDPMScheduler,
-):
-    # Sample noise to add to the images
-    noise = torch.randn(clean_images.shape).to(clean_images.device)
-    bs = clean_images.shape[0]
-
-    # Sample a random timestep for each image
-    timesteps = torch.randint(
-        0,
-        model_cfg.scheduler.num_train_timesteps,
-        (bs,),
-        device=clean_images.device,
-    ).long()
-
-    # Add noise to the clean images according to the noise magnitude at each timestep
-    # (this is the forward diffusion process)
-    noisy_images = noise_scheduler.add_noise(clean_images, noise, timesteps)
-    return noise, timesteps, noisy_images
-
-
-def generate_samples(
-    cfg: Configuration,
-    pipeline: DDPMPipeline,
-    generator: torch.Generator = torch.Generator(device="cuda").manual_seed(0),
-    epoch: int = None,
-):
-    # Sample some images from random noise (this is the backward diffusion process).
-    # The default pipeline output type is `List[PIL.Image]`
-    # if log_metrics:
-    generator.manual_seed(epoch)
-    samples_images = pipeline(
-        batch_size=cfg.datasets.dataloader.batch_size,
-        generator=generator,
-        # torch_dtype=torch.float16,  # recommended here: https://huggingface.co/docs/diffusers/stable_diffusion
-    ).images
-
-    # Make a grid out of the images
-    image_grid = make_grid(samples_images)  # , rows=4, cols=4)
-
-    # Save the images
-    test_dir = os.path.join("artifacts", "samples")
-    os.makedirs(test_dir, exist_ok=True)
-    image_grid.save(f"{test_dir}/{(epoch+1):04d}.png")
 
 
 def train_loop(
@@ -281,10 +135,8 @@ def train_loop(
                 evaluate(
                     cfg,
                     epoch,
-                    unwrapped_model,
                     pipeline,
                     loader=test_loader,
-                    scheduler=noise_scheduler,
                     device=device,
                 )
 
@@ -319,10 +171,8 @@ def run_loop(
         evaluate(
             cfg,
             epoch=-1,
-            model=model,
             pipeline=pipeline,
             loader=test_loader,
-            scheduler=noise_scheduler,
             device=device,
         )
 
