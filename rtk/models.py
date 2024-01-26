@@ -54,6 +54,7 @@ def download_model_weights(
     model = Model(ws, name=name, version=version)
     model_path = os.path.join(target_dir, name)
     os.makedirs(target_dir, exist_ok=True)
+
     location = model.download(target_dir=model_path, exist_ok=True)
     logger.info("Download complete.")
     logger.debug(f"Model location: {location}")
@@ -78,13 +79,13 @@ def instantiate_model(
     model_name: str = model_cfg.model._target_.split(".")[-1]
     model: nn.Module = hydra_instantiate(cfg=model_cfg.model, **kwargs)
 
-    load_model = model_cfg.get("load_model", None)
-    if load_model is not None:
+    pretrained_weights = model_cfg.get("pretrained_weights", None)
+    if pretrained_weights is not None:
         logger.info("Loading model weights...")
         from rtk.utils import login
 
         ws = login()
-        model_path = download_model_weights(ws, **load_model)
+        model_path = download_model_weights(ws, **pretrained_weights)
         model.load_state_dict(torch.load(model_path))
 
     if cfg.job.get("use_multi_gpu", False):

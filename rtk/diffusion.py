@@ -83,8 +83,8 @@ def evaluate(
     old_dim = cfg.datasets.dim
     cfg.datasets.dim = 299
     eval_transforms = datasets.create_transforms(cfg, use_transforms=False)
-    dataset = deepcopy(loader.dataset)
-    dataset.transform = eval_transforms
+    eval_loader = deepcopy(loader)
+    eval_loader.dataset.transform = eval_transforms
     metrics = instantiate_torch_metrics(cfg)
     fid_metric: FrechetInceptionDistance = metrics["fid"]
     inception_metric: InceptionScore = metrics["inception"]
@@ -94,7 +94,7 @@ def evaluate(
     # get `num_samples` real images from dataset
     logger.info("Getting real images...")
     real_images = []
-    for batch in loader:
+    for batch in eval_loader:
         b_images = list(batch[0].to("cpu"))
         real_images.extend(b_images)
 
@@ -112,14 +112,17 @@ def evaluate(
         num_samples=num_samples,
         save_images=True,
     )
-    # fake_eval_transforms = transforms.Compose(eval_transforms.transforms[:-2])
-    fake_images = [eval_transforms(np.array(img)) for img in fake_images]
-    fake_images = torch.Tensor(fake_images).permute(0, 3, 1, 2)
+    fake_images = [
+        eval_transforms(np.array(img).transpose(2, 0, 1)) for img in fake_images
+    ]
     # fake_images = torch.Tensor(fake_images)
 
     # Compute metrics
-    fid.update(real_images, real=True)
-    fid.update(fake_images, real=False)
+    real_images = torch.stack(real_images)
+    fake_images = torch.stack(fake_images)
+
+    fid_metric.update(real_images, real=True)
+    fid_metric.update(fake_images, real=False)
     fid = fid_metric.compute()
 
     inception_metric.update(fake_images)
