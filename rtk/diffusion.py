@@ -114,6 +114,7 @@ def evaluate(
     )
     # fake_eval_transforms = transforms.Compose(eval_transforms.transforms[:-2])
     fake_images = [eval_transforms(np.array(img)) for img in fake_images]
+    fake_images = torch.Tensor(fake_images).permute(0, 3, 1, 2)
     # fake_images = torch.Tensor(fake_images)
 
     # Compute metrics
