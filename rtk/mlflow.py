@@ -13,6 +13,15 @@ from rtk.config import *
 _logger = get_logger(__name__)
 
 
+def _determine_model_name(cfg: Configuration, **kwargs):
+    model_cfg = cfg.models
+    model_name: str = _strip_target(model_cfg.model, lower=True)
+    if model_name == "from_pretrained":
+        model_name = model_cfg.model.pretrained_model_name_or_path.split("/")[-1]
+
+    return model_name
+
+
 def create_run_name(cfg: Configuration, random_state: int, **kwargs):
     """Create a run name."""
     dataset_cfg = cfg.datasets
@@ -21,7 +30,7 @@ def create_run_name(cfg: Configuration, random_state: int, **kwargs):
     tags = job_cfg.get("tags", {})
     model_cfg = cfg.models
 
-    model_name = model_cfg.model._target_.split(".")[-1]
+    model_name = _determine_model_name(cfg, **kwargs)
     run_name: str = model_cfg.model.get("model_name", model_name.lower())
 
     if tags.get("type", "train") == "train" or job_cfg.mode == "train":
@@ -77,9 +86,8 @@ def get_params(cfg: Configuration, **kwargs):
     # NOTE: model parameters
     def __collect_model_params():
         # model parameters
-        params["model_name"] = model_cfg.model.get(
-            "model_name", _strip_target(model_cfg.model, lower=True)
-        )
+        model_name = _determine_model_name(cfg, **kwargs)
+        params["model_name"] = model_name
         params.update(model_cfg.model)
         # criterion parameters
         params["criterion_name"] = params.get(

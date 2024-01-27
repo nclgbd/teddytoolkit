@@ -47,7 +47,6 @@ from ignite.utils import setup_logger
 from ignite.contrib import metrics as c_ignite_metrics_module
 from ignite.contrib.handlers import ProgressBar
 
-from rtk.datasets import _LABEL_KEYNAME
 
 IGNITE_METRICS_MODULE = [ignite_metrics_module, c_ignite_metrics_module]
 
@@ -69,14 +68,8 @@ from generative.networks.schedulers import Scheduler
 
 # rtk
 from rtk import models
-from rtk.config import (
-    Configuration,
-    DatasetConfiguration,
-    DiffusionModelConfiguration,
-    IgniteConfiguration,
-    JobConfiguration,
-    ModelConfiguration,
-)
+from rtk._datasets import LABEL_KEYNAME
+from rtk.config import *
 from rtk.utils import get_logger, login, hydra_instantiate
 
 logger = get_logger(__name__)
@@ -702,7 +695,7 @@ def prepare_run(
 
     # if cfg.datasets.preprocessing.use_sampling == False:
     #     train_dataset = loaders[0].dataset
-    #     samples_per_class = list(Counter(vars(train_dataset)[_LABEL_KEYNAME]).values())
+    #     samples_per_class = list(Counter(vars(train_dataset)[LABEL_KEYNAME]).values())
     #     criterion_kwargs = {"samples_per_class": samples_per_class}
     #     default_trainer_kwargs["criterion_kwargs"] = criterion_kwargs
 
@@ -768,7 +761,7 @@ def create_diffusion_model_engines(
     optimizer = trainer_args["optimizer"]
     scheduler = models.instantiate_diffusion_scheduler(model_cfg)
     inferer = models.instantiate_diffusion_inferer(model_cfg, scheduler=scheduler)
-    condition_name = _LABEL_KEYNAME
+    condition_name = LABEL_KEYNAME
 
     # TODO: Add validation metrics, particularly FID and SSIM
     val_handlers = []
@@ -821,46 +814,3 @@ def create_diffusion_model_engines(
 
     return trainer, evaluator
 
-
-def prepare_diffusion_run(
-    cfg: Configuration,
-    loaders: dict,
-    device: torch.device,
-    **kwargs,
-):
-    logger.info("Preparing ignite diffusion run...")
-    ignite_cfg = cfg.ignite
-    trainer_args = create_default_trainer_args(cfg)
-
-    ## prepare run
-    trainer, evaluator = create_diffusion_model_engines(
-        cfg, loaders, trainer_args=trainer_args, device=device, **kwargs
-    )
-
-    # logger.info("Running diffusion model evaluator...")
-    # state = evaluator.run(loader)
-    ## create evaluators
-    # metrics = create_metrics(cfg, criterion=trainer_args["loss_fn"], device=device)
-    # evaluator = create_supervised_evaluator(
-    #     trainer_args["model"], metrics=metrics, device=device
-    # )
-    # score_name = cfg.ignite.score_name
-    # sample_from_diffusion_model_kwargs["epoch"] = state.epoch
-    # sample_from_diffusion_model_kwargs["val_score"] = state.output.cpu().numpy()
-    # sample_from_diffusion_model(cfg=cfg, **sample_from_diffusion_model_kwargs)
-    # logger.debug(f"State:\n{state}\n")
-
-    # # TODO: Callback for MLflow
-    log_interval = ignite_cfg.get("log_interval", max(cfg.job.max_epochs // 10, 1))
-
-    def _log_metrics(evaluator: Engine, loader: DataLoader, split: str):
-        evaluator.run(loader)
-        metrics = evaluator.state.metrics
-        epoch = trainer.state.epoch
-
-        logger.info(f"epoch: {epoch}\n{metrics}")
-
-        if cfg.job.use_mlflow:
-            _log_metrics_to_mlflow(cfg, metrics=metrics, split=split, epoch=epoch)
-
-    return trainer, evaluator

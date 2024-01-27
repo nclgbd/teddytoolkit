@@ -76,7 +76,6 @@ def instantiate_model(
     model_cfg: ModelConfiguration = (
         cfg.models if kwargs.get("model_cfg", None) is None else kwargs.get("model_cfg")
     )
-    model_name: str = model_cfg.model._target_.split(".")[-1]
     model: nn.Module = hydra_instantiate(cfg=model_cfg.model, **kwargs)
 
     pretrained_weights = model_cfg.get("pretrained_weights", None)

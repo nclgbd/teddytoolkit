@@ -34,7 +34,6 @@ import monai
 # rtk
 from rtk import datasets, repl, models
 from rtk.config import *
-from rtk.datasets import _IMAGE_KEYNAME, _LABEL_KEYNAME
 from rtk.diffusion import *
 from rtk.mlflow import *
 from rtk.utils import hydra_instantiate, get_logger, _strip_target
@@ -166,8 +165,13 @@ def run_loop(
     elif cfg.job.mode == "diffusion-evaluate":
         # prepare model and pipeline
         model = models.instantiate_model(cfg, device=device)
-        noise_scheduler = models.instantiate_diffusion_scheduler(cfg)
-        pipeline = DDPMPipeline(unet=model, scheduler=noise_scheduler)
+
+        if isinstance(model, DDPMPipeline):
+            pipeline = model
+        else:
+            noise_scheduler = models.instantiate_diffusion_scheduler(cfg)
+            pipeline = DDPMPipeline(unet=model, scheduler=noise_scheduler)
+
         evaluate(
             cfg,
             epoch=-1,
