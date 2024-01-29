@@ -65,7 +65,8 @@ def train_loop(
 
     # Prepare everything
     # prepare model
-    model = models.instantiate_model(cfg, device=device)
+    model: DDPMPipeline = models.instantiate_model(cfg, device=device)
+    model = model if not isinstance(model, DDPMPipeline) else model.unet
     optimizer = models.instantiate_optimizer(cfg, model=model)
     noise_scheduler = models.instantiate_diffusion_scheduler(cfg)
     lr_scheduler = get_cosine_schedule_with_warmup(
