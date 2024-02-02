@@ -62,26 +62,28 @@ def create_run_name(cfg: Configuration, random_state: int, **kwargs):
     return run_name
 
 
+def get_base_params(cfg: Configuration, **kwargs):
+    params = dict()
+    params["date"] = cfg.date
+    params["postfix"] = cfg.postfix
+    params["random_state"] = cfg.random_state
+    params["timestamp"] = cfg.timestamp
+    params["use_transforms"] = cfg.use_transforms
+    return params
+
+
 def get_params(cfg: Configuration, **kwargs):
     """
     Get the parameters of this run.
     """
     dataset_cfg: DatasetConfiguration = kwargs.get("dataset_cfg", cfg.datasets)
-    job_cfg: JobConfiguration = kwargs.get("job_cfg", cfg.job)
     model_cfg: ModelConfiguration = kwargs.get("model_cfg", cfg.models)
     preprocessing_cfg: PreprocessingConfiguration = kwargs.get(
         "preprocessing_cfg", dataset_cfg.preprocessing
     )
 
-    params = dict()
-
-    # NOTE: job parameters
-    def __collect_job_params():
-        params["max_epochs"] = job_cfg.max_epochs
-        params["use_pretrained"] = job_cfg.use_pretrained
-        params["use_transforms"] = job_cfg.use_transforms
-
-    __collect_job_params()
+    # NOTE: cfg parameters
+    params = get_base_params(cfg, **kwargs)
 
     # NOTE: model parameters
     def __collect_model_params():

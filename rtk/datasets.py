@@ -35,7 +35,7 @@ from rtk._datasets import create_transforms
 from rtk._datasets.cxr14 import load_cxr14_dataset
 from rtk._datasets.ixi import load_ixi_dataset
 from rtk._datasets.pediatrics import load_pediatrics_dataset
-from rtk.config import Configuration, JobConfiguration, DatasetConfiguration
+from rtk.config import *
 from rtk.utils import (
     get_logger,
     hydra_instantiate,
@@ -202,16 +202,9 @@ def create_subset(df: pd.DataFrame, target: str, labels: list = []) -> pd.DataFr
 
 
 def instantiate_image_dataset(
-    cfg: Configuration = None, save_metadata=False, return_metadata=False, **kwargs
+    cfg: BaseConfiguration = None, save_metadata=False, return_metadata=False, **kwargs
 ):
-    """
-    Instantiates a MONAI image dataset given a hydra configuration. This uses the `hydra.utils.instantiate` function to instantiate the dataset from the MONAI python package.
-
-    ## Args
-    * `cfg` (`Configuration`): The configuration.
-    ## Returns
-    * `monai.data.Dataset`: The instantiated dataset.
-    """
+    """ """
     logger.info("Instantiating image dataset...")
     dataset_cfg: DatasetConfiguration = kwargs.get(
         "dataset_cfg", cfg.datasets if cfg is not None else None
@@ -253,10 +246,9 @@ def instantiate_train_val_test_datasets(
     """
     dataset_cfg: DatasetConfiguration = cfg.datasets
     preprocessing_cfg = dataset_cfg.preprocessing
-    positive_class: str = preprocessing_cfg.get("positive_class", "Pneumonia")
-    job_cfg: JobConfiguration = cfg.job
-    random_state = job_cfg.get("random_state", kwargs.get("random_state", 0))
+    positive_class: str = preprocessing_cfg.get("positive_class", "Pneumonia (m)")
     sklearn_cfg = cfg.sklearn
+    random_state = cfg.random_state
 
     train_val_test_split_dict = {}
     train_test_split_kwargs: dict = sklearn_cfg.model_selection.train_test_split
@@ -296,7 +288,7 @@ def instantiate_train_val_test_datasets(
             positive_df = train_df[train_df[LABEL_KEYNAME] == 1]
             offset = abs(len(positive_df) - len(generated_df))
             sampled_generated_df: pd.DataFrame = generated_df.sample(
-                offset, random_state=cfg.job.random_state
+                offset, random_state=cfg.random_state
             )
             logger.info(
                 f"Number of sampled generated images: {len(sampled_generated_df)}"
@@ -335,17 +327,15 @@ def instantiate_train_val_test_datasets(
             image_files=X_train,
             labels=y_train,
             transform=train_transforms,
-            **kwargs,
         )
         train_val_test_split_dict["train"] = train_dataset
 
-        if cfg.job.perform_validation:
+        if kwargs.get("perform_validation", False):
             val_dataset: monai.data.Dataset = hydra.utils.instantiate(
                 config=dataset_cfg.instantiate,
                 image_files=X_val,
                 labels=y_val,
                 transform=eval_transforms,
-                **kwargs,
             )
             train_val_test_split_dict["val"] = val_dataset
 
@@ -373,7 +363,7 @@ def instantiate_train_val_test_datasets(
             **kwargs,
         )
         train_val_test_split_dict["test"] = test_dataset
-        if job_cfg.perform_validation:
+        if kwargs.get("perform_validation", False):
             ## create the train/val splits
             X_train, X_val, y_train, y_val = train_test_split(
                 X_train,
@@ -410,37 +400,25 @@ def instantiate_train_val_test_datasets(
     logger.info("Train/val/test splits created.")
     logger.info("Train dataset:\t{}".format(Counter(train_dataset.labels)))
     logger.info("Val dataset:\t{}".format(Counter(val_dataset.labels)))
-    # logger.info("Test dataset:\t{}\n\n".format(Counter(test_dataset.labels)))
-
-    # if job_cfg.mode == "diffusion":
-    #     for split, dataset in train_val_test_split_dict.items():
-    #         logger.info("Converting '{}' dataset for 'diffusion' mode...".format(split))
-    #         train_val_test_split_dict[split] = convert_image_dataset(dataset)
 
     return train_val_test_split_dict
 
 
-def prepare_data(cfg: Configuration = None, **kwargs):
-    """Prepare the data by creating the train/val/test splits."""
+def prepare_validation_dataloaders(cfg: Configuration = None, **kwargs):
     logger.info("Preparing data...")
     dataset_cfg: DatasetConfiguration = kwargs.get(
         "dataset_cfg", cfg.datasets if cfg else None
     )
-    job_cfg: JobConfiguration = kwargs.get(
-        "job_cfg",
-        cfg.job,
-    )
-    use_transforms = job_cfg["use_transforms"]
+    use_transforms = cfg.use_transforms
     train_transform = create_transforms(cfg, use_transforms=use_transforms)
     eval_transform = create_transforms(cfg, use_transforms=False)
     dataset = instantiate_image_dataset(cfg=cfg, transform=train_transform)
-    train_dataset, test_dataset = dataset[0], dataset[1]
+    train_dataset, test_dataset = dataset[0], dataset[-1]
 
     # NOTE: combined datasets here
     if len(dataset_cfg.get("additional_datasets", [])) > 0:
-        train_dataset, test_dataset = combine_datasets(
-            train_dataset, test_dataset, cfg=cfg
-        )
+        combined_datasets = combine_datasets(train_dataset, test_dataset, cfg=cfg)
+        train_dataset, test_dataset = combined_datasets[0], combined_datasets[-1]
 
     # split the dataset into train/val/test
     train_val_test_split_dict = instantiate_train_val_test_datasets(
@@ -456,33 +434,23 @@ def prepare_data(cfg: Configuration = None, **kwargs):
     train_dataset.transform = train_transform
     test_dataset.transform = eval_transform
 
-    use_multi_gpu: bool = job_cfg.get("use_multi_gpu", False)
     train_loader: DataLoader = hydra_instantiate(
         cfg=dataset_cfg.dataloader,
         dataset=train_dataset,
-        # pin_memory=torch.cuda.is_available() if torch.cuda.is_available() else False,
-        shuffle=False if use_multi_gpu else True,
-        sampler=DistributedSampler(train_dataset, seed=job_cfg.random_state)
-        if use_multi_gpu
-        else None,
+        pin_memory=torch.cuda.is_available() if torch.cuda.is_available() else False,
+        shuffle=True,
     )
     val_loader: DataLoader = hydra_instantiate(
         cfg=dataset_cfg.dataloader,
         dataset=val_dataset,
-        # pin_memory=torch.cuda.is_available(),
-        shuffle=False if use_multi_gpu else True,
-        sampler=DistributedSampler(val_dataset, seed=job_cfg.random_state)
-        if use_multi_gpu
-        else None,
+        pin_memory=torch.cuda.is_available(),
+        shuffle=True,
     )
     test_loader: DataLoader = hydra_instantiate(
         cfg=dataset_cfg.dataloader,
         dataset=test_dataset,
-        # pin_memory=torch.cuda.is_available(),
+        pin_memory=torch.cuda.is_available(),
         shuffle=False,
-        sampler=DistributedSampler(test_dataset, seed=job_cfg.random_state)
-        if use_multi_gpu
-        else None,
     )
 
     logger.info("Data prepared.\n\n")

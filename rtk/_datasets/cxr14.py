@@ -47,7 +47,7 @@ def load_cxr14_dataset(
     ).set_index(dataset_cfg.index)
 
     # remove all of the negative class for diffusion
-    if target != "class_conditioned_labels" and "diffusion" in cfg.job.mode:
+    if target != "class_conditioned_labels" and "diffusion" in cfg.mode:
         logger.info("Removing all negative classes...")
         class_encoding = dataset_cfg.encoding
         cxr_metadata = cxr_metadata[
@@ -59,7 +59,7 @@ def load_cxr14_dataset(
         train_val_list = [idx.strip() for idx in f.readlines()]
 
     train_metadata = cxr_metadata[cxr_metadata.index.isin(train_val_list)]
-    train_transforms = create_transforms(cfg, use_transforms=cfg.job.use_transforms)
+    train_transforms = create_transforms(cfg, use_transforms=cfg.use_transforms)
     train_image_files = np.array(
         [os.path.join(scan_path, filename) for filename in train_metadata.index.values]
     )

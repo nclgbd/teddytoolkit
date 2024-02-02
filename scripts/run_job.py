@@ -134,7 +134,7 @@ def main(cfg: Configuration) -> None:
     logger.info(f"Run name:\t'{run_name}'")
 
     # prepare data
-    loaders = datasets.prepare_data(cfg)
+    loaders = datasets.prepare_validation_dataloaders(cfg)
     train_loader = loaders[0]
     test_loader = loaders[-1]
 

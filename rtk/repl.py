@@ -1,6 +1,7 @@
 """
 For quick debugging and testing.
 """
+
 from rich import pretty, traceback
 
 from rtk.utils import get_console
@@ -31,9 +32,9 @@ def install(
 def prepare_console(**kwargs):
     from rtk.utils import login
 
-    install()
+    install(**kwargs)
     ws = login()
-    console = get_console(**kwargs)
+    console = get_console()
     console.clear()
 
     return ws, console

@@ -13,29 +13,17 @@ from rtk.config import *
 
 
 def create_transforms(
-    cfg: Configuration = None,
+    cfg: BaseConfiguration = None,
     dataset_cfg: DatasetConfiguration = None,
     use_transforms: bool = None,
     transform_dicts: dict = None,
     **kwargs,
 ):
-    """
-    Get transforms for the model based on the model configuration.
-    ## Args
-    * `cfg` (`Configuration`, optional): The configuration. Defaults to `None`.
-    * `dataset_cfg` (`DatasetConfiguration`, optional): The dataset configuration. Defaults to `None`.
-    * `use_transforms` (`bool`, optional): Whether or not to use the transforms. Defaults to `False`.
-    * `transform_dicts` (`dict`, optional): The dictionary of transforms to use. Defaults to `None`.
-    * `mode` (`str`, optional): The mode to use. Add in kwargs.
-    ## Returns
-    * `torchvision.transforms.Compose`: The transforms for the model in the form of a `torchvision.transforms.Compose`
-    object.
-    """
     dataset_cfg = cfg.datasets if cfg is not None else dataset_cfg
     use_transforms = (
         use_transforms
         if use_transforms is not None
-        else cfg.job.get("use_transforms", False)
+        else cfg.get("use_transforms", False)
     )
     if use_transforms:
         logger.info("Creating 'train' transforms...")
@@ -68,24 +56,6 @@ def create_transforms(
             )
             transform_fn = hydra.utils.instantiate(transform)
             _ret_transforms.append(transform_fn)
-
-        # # diffusion transforms
-        # if kwargs.get("mode", "") == "diffusion":
-        #     if use_transforms:
-        #         rand_lambda_transform = monai_transforms.RandLambdad(
-        #             keys=[LABEL_KEYNAME],
-        #             prob=0.15,
-        #             func=lambda x: -1 * torch.ones_like(x),
-        #         )
-        #         _ret_transforms.append(rand_lambda_transform)
-        #     lambda_transform = monai_transforms.Lambdad(
-        #         keys=[LABEL_KEYNAME],
-        #         func=lambda x: torch.tensor(x, dtype=torch.float32)
-        #         .unsqueeze(0)
-        #         .unsqueeze(0),
-        #     )
-        #     _ret_transforms.append(lambda_transform)
-        #     # _ret_transforms.appent(monai_transforms.EnsureType(dtype=torch.float32))
 
         # always convert to tensor at the end
         _ret_transforms.append(monai_transforms.ToTensor())

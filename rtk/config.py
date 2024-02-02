@@ -1,6 +1,7 @@
 """
 Basic hydra template configurations for the `rtk` package.
 """
+
 import os
 import random
 from dataclasses import dataclass, field
@@ -14,6 +15,117 @@ from hydra.core.global_hydra import GlobalHydra
 from rtk.utils import get_logger
 
 logger = get_logger(__name__)
+
+
+@dataclass
+class PreprocessingConfiguration:
+    resample_value: int = 1
+    sample_to_value: int = -1
+    subset: list = field(default_factory=lambda: [])
+    use_sampling: bool = False
+    use_subset: bool = False
+
+
+@dataclass
+class DatasetConfiguration:
+
+    # name of the dataset
+    name: str = ""
+
+    # preprocessing configuration
+    preprocessing: PreprocessingConfiguration = field(
+        default_factory=PreprocessingConfiguration
+    )
+    # transforms
+    transforms: DictConfig = field(
+        default_factory=lambda: DictConfig({"load": [], "train": []})
+    )
+    # encoding
+    encoding: dict = field(default_factory=lambda: {})
+
+    # dimension to resize the images to
+    dim: int = 224
+    # the name of the index column in the metadata
+    index: str = ""
+    # the name of the target column in the metadata
+    target: str = ""
+    # # integer representation of how many times to expand the dataset
+    # # i.e.: if the dataset has 100 samples and resample_value is 3, then the dataset will be expanded to 300 samples.
+    # # default is 1, which means no expansion.
+    # resample_value: int = 1
+    # the path to the metadata of the dataset
+    patient_data: str = ""
+    patient_data_version: str = "latest"
+    # the path to the scan of the dataset
+    scan_data: str = ""
+    # the extension of the scan files
+    extension: str = ".png"
+    # the names for each label in alphabetical order
+    labels: list = field(default_factory=lambda: [])
+    # the kind of dataset to instantiate
+    instantiate: DictConfig = field(
+        default_factory=lambda: DictConfig({"_target_": "monai.data.ImageDataset"})
+    )
+    #
+    dataloader: DictConfig = field(
+        default_factory=lambda: DictConfig({"_target_": "torch.utils.data.DataLoader"})
+    )
+    #
+    additional_datasets: DictConfig = field(
+        default_factory=lambda: DictConfig({"dataset_configs": []})
+    )
+
+
+@dataclass
+class MLflowConfiguration:
+    experiment_name: str = "Default"
+    tracking_uri: str = (
+        "file:///home/nicoleg/workspaces/ResearchToolKit/outputs/mlruns/"
+    )
+    start_run: dict = field(default_factory=lambda: {})
+
+
+@dataclass
+class BaseConfiguration:
+    datasets: DatasetConfiguration = field(default_factory=DatasetConfiguration())
+    mlflow: MLflowConfiguration = field(default_factory=MLflowConfiguration())
+    # run: RunConfiguration = field(default_factory=RunConfiguration())
+    date: str = ""
+    postfix: str = ""
+    timestamp: str = ""
+    mode: str = "train"
+    # the gpu device to use
+    device: str = "cpu"
+    # whether to use transforms or not
+    use_transforms: bool = False
+    # the random seed for reproducibility
+    random_state: int = random.randint(0, 8192)
+
+
+def set_hydra_configuration(
+    config_name: str,
+    ConfigurationInstance: BaseConfiguration,
+    init_method: callable = initialize_config_dir,
+    init_method_kwargs: dict = {},
+    **compose_kwargs,
+):
+    """
+    Creates and returns a hydra configuration.
+
+    ## Args:
+    * `config_name` (`str`, optional): The name of the config (usually the file name without the .yaml extension).
+    * `init_method` (`function`, optional): The initialization method to use. Should be either [`initialize`, `initialize_config_module`, `initialize_config_dir`].
+    Defaults to `initialize_config_dir`.
+    * `kwargs` (`dict`, optional): Keyword arguments for the `init_method` function.
+
+    ## Returns:
+    * `DictConfig`: The hydra configuration.
+    """
+    logger.info(f"Creating configuration: '{config_name}'\n")
+    GlobalHydra.instance().clear()
+    init_method(version_base="1.1", **init_method_kwargs)
+    cfg: DictConfig = compose(config_name=config_name, **compose_kwargs)
+    return ConfigurationInstance(**cfg)
 
 
 @dataclass
@@ -91,105 +203,8 @@ class SklearnConfiguration:
 
 
 @dataclass
-class PreprocessingConfiguration:
-    """Preprocessing configuration class.
-
-    ## Attributes:
-    * `resample_value` (`int`): Integer representation of how many times to expand the dataset.
-    * `sample_to_value` (`int`): Integer representation of how many samples to use from the dataset.
-    * `subset` (`list`): The subset of the dataset to use.
-    * `use_sampling` (`bool`): Whether to use sampling or not.
-    * `use_subset` (`bool`): Whether to use a subset or not.
-    """
-
-    resample_value: int = 1
-    sample_to_value: int = -1
-    subset: list = field(default_factory=lambda: [])
-    use_sampling: bool = False
-    use_subset: bool = False
-
-
-@dataclass
-class DatasetConfiguration:
-    """
-    Dataset configuration class.
-
-    ## Attributes:
-    * `patient_data` (`os.PathLike`): The path to the metadata of the dataset.
-    * `scan_data` (`os.PathLike`, optional): The path to the scan of the dataset. Defaults to `"./data/"`.
-    * `extension` (`str`, optional): The extension of the scan files. Defaults to `".nii.gz"`.
-    * `labels` (`list`, optional): The names for each label in alphabetical order. Defaults to `[]`.
-    * `instantiate` (`DictConfig`, optional): The kind of dataset to instantiate. Defaults to `DictConfig({"_target_": "monai.data.ImageDataset"})`.
-    """
-
-    # preprocessing configuration
-    preprocessing: PreprocessingConfiguration = field(
-        default_factory=PreprocessingConfiguration
-    )
-    # name of the dataset
-    name: str = ""
-    # dimension to resize the images to
-    dim: int = 224
-    # the name of the index column in the metadata
-    index: str = ""
-    # the name of the target column in the metadata
-    target: str = ""
-    # integer representation of how many times to expand the dataset
-    # i.e.: if the dataset has 100 samples and resample_value is 3, then the dataset will be expanded to 300 samples.
-    # default is 1, which means no expansion.
-    resample_value: int = 1
-    # the path to the metadata of the dataset
-    patient_data: os.PathLike = ""
-    # the path to the scan of the dataset
-    scan_data: os.PathLike = ""
-    # the extension of the scan files
-    extension: str = ".png"
-    # the names for each label in alphabetical order
-    labels: list = field(default_factory=lambda: [])
-    # # encoding
-    encoding: dict = field(default_factory=lambda: {})
-    # the kind of dataset to instantiate
-    instantiate: DictConfig = field(
-        default_factory=lambda: DictConfig({"_target_": "monai.data.ImageDataset"})
-    )
-    #
-    dataloader: DictConfig = field(
-        default_factory=lambda: DictConfig({"_target_": "torch.utils.data.DataLoader"})
-    )
-    # preprocessing: PreprocessingConfiguration = field(
-    #     default_factory=PreprocessingConfiguration()
-    # )
-    additional_datasets: DictConfig = field(
-        default_factory=lambda: DictConfig({"dataset_configs": []})
-    )
-    # transforms
-    transforms: DictConfig = field(
-        default_factory=lambda: DictConfig({"load": [], "train": []})
-    )
-
-
-@dataclass
 class JobConfiguration:
-    """
-    Job configuration class.
 
-    ## Attributes:
-    * `device` (`str`): The gpu device to use.
-    * `dry_run` (`bool`): Whether to run in dry run mode.
-    * `epoch_length` (`int`): The number of iterations within each epoch.
-    * `max_epochs` (`int`): The maximum number of epochs to train for.
-    * `perform_validation` (`bool`): Whether to create an additional validation split or just use a train/test split.
-    * `random_state` (`int`): The random seed for reproducibility.
-    * `set_track_meta` (`bool`): Whether to track meta data or not.
-    * `use_autocast` (`bool`): Whether to use automatic mixed precision or not.
-    * `use_azureml` (`bool`): Whether to use Azure ML.
-    * `use_mlflow` (`bool`): Whether to use MLflow.
-    * `use_pretrained_weights` (`bool`): Whether to use pretrained weights or not.
-    * `use_transforms` (`bool`): Whether to use transforms or not.
-    """
-
-    # the gpu device to use
-    device: str = "cpu"
     # whether to run in dry run mode
     dry_run: bool = True
     # the number of iterations within each epoch
@@ -198,8 +213,6 @@ class JobConfiguration:
     max_epochs: int = 10
     # whether to create an additional validation split or just use a train/test split
     perform_validation: bool = True
-    # the random seed for reproducibility
-    random_state: int = random.randint(0, 8192)
     # whether to track meta data or not
     set_track_meta: bool = False
     # whether to use automatic mixed precision or not
@@ -210,20 +223,10 @@ class JobConfiguration:
     use_mlflow: bool = False
     # whether to use pretrained weights or not
     use_pretrained: bool = True
-    # whether to use transforms or not
-    use_transforms: bool = False
 
 
 @dataclass
 class ModelConfiguration:
-    """
-    The model configuration class.
-
-    ## Attributes:
-    * `model` (`DictConfig`): The model configuration.
-    * `criterion` (`DictConfig`): The criterion configuration.
-    * `optimizer` (`DictConfig`): The optimizer configuration.
-    """
 
     model: DictConfig = field(default_factory=lambda: DictConfig({"_target_": ""}))
     criterion: DictConfig = field(default_factory=lambda: DictConfig({"_target_": ""}))
@@ -232,37 +235,12 @@ class ModelConfiguration:
 
 @dataclass
 class DiffusionModelConfiguration(ModelConfiguration):
-    """
-    The diffusion model configuration class. Extends `ModelConfiguration`.
-
-    ## Attributes:
-    * `model` (`DictConfig`): The model configuration.
-    * `criterion` (`DictConfig`): The criterion configuration.
-    * `optimizer` (`DictConfig`): The optimizer configuration.
-    * `scheduler` (`DictConfig`): The scheduler configuration.
-    * `inference` (`DictConfig`): The inference configuration.
-    """
-
     scheduler: DictConfig = field(default_factory=lambda: DictConfig({"_target_": ""}))
-    inference: DictConfig = field(default_factory=lambda: DictConfig({"_target_": ""}))
 
 
 @dataclass
-class Configuration:
-    """
-    Configuration dataclass.
+class Configuration(BaseConfiguration):
 
-    ## Attributes:
-    * `run` (`RunConfiguration`): The run configuration.
-    * `dataset` (`DatasetConfiguration`): The dataset configuration.
-    * `artifacts_path` (`str`): The path to the artifacts directory.
-    * `results_path` (`str`): The path to the results directory.
-    """
-
-    date: str = ""
-    postfix: str = ""
-    timestamp: str = ""
-    datasets: DatasetConfiguration = field(default_factory=DatasetConfiguration())
     job: JobConfiguration = field(default_factory=JobConfiguration())
     models: ModelConfiguration = field(default_factory=ModelConfiguration())
 
@@ -272,27 +250,93 @@ class Configuration:
     sklearn: SklearnConfiguration = field(default_factory=SklearnConfiguration())
 
 
-def set_hydra_configuration(
-    config_name: str,
-    ConfigurationInstance: Configuration,
-    init_method: callable = initialize_config_dir,
-    init_method_kwargs: dict = {},
-    **compose_kwargs,
-):
-    """
-    Creates and returns a hydra configuration.
-
-    ## Args:
-    * `config_name` (`str`, optional): The name of the config (usually the file name without the .yaml extension).
-    * `init_method` (`function`, optional): The initialization method to use. Should be either [`initialize`, `initialize_config_module`, `initialize_config_dir`].
-    Defaults to `initialize_config_dir`.
-    * `kwargs` (`dict`, optional): Keyword arguments for the `init_method` function.
-
-    ## Returns:
-    * `DictConfig`: The hydra configuration.
-    """
-    logger.info(f"Creating configuration: '{config_name}'\n")
-    GlobalHydra.instance().clear()
-    init_method(version_base="1.1", **init_method_kwargs)
-    cfg: DictConfig = compose(config_name=config_name, **compose_kwargs)
-    return ConfigurationInstance(**cfg)
+@dataclass
+class TextToImageConfiguration(BaseConfiguration):
+    # The scale of input perturbation. Recommended 0.1.
+    input_perturbation: float = 0.0
+    # Path to pretrained model or model identifier from huggingface.co/models.
+    pretrained_model_name_or_path: str = ""
+    # Revision of pretrained model identifier from huggingface.co/models.
+    revision: str = ""
+    # Variant of the model files of the pretrained model identifier from huggingface.co/models, 'e.g.' fp16
+    variant: str = ""
+    #
+    image_column: str = "image_files"
+    #
+    caption_column: str = "labels"
+    #
+    max_train_samples: int = None
+    #
+    validation_prompts: list = field(default_factory=lambda: [])
+    #
+    output_dir: str = "outputs"
+    #
+    cache_dir: str = None
+    #
+    seed: int = -1
+    #
+    resolution: int = -1
+    #
+    center_crop: bool = False
+    #
+    random_flip: bool = False
+    #
+    train_batch_size: int = -1
+    #
+    num_train_epochs: int = 100
+    #
+    max_train_steps: int = 400
+    # Whether or not to use gradient checkpointing to save memory at the expense of slower backward pass.
+    gradient_accumulation_steps: bool = True
+    # Initial learning rate (after the potential warmup period) to use.
+    learning_rate: float = -1.0
+    #
+    scale_lr: bool = False
+    #
+    lr_scheduler: str = "constant"
+    #
+    lr_warmup_steps: int = 500
+    #
+    snr_gamma: float = None
+    # Whether or not to use 8-bit Adam from bitsandbytes.
+    use_8bit_adam: bool = True
+    #
+    allow_tf32: bool = True
+    #
+    use_ema: bool = True
+    #
+    non_ema_revision: str = None
+    #
+    dataloader_num_workers: int = -1
+    #
+    adam_beta1: float = 0.9
+    #
+    adam_beta2: float = 0.999
+    #
+    adam_weight_decay: float = 1e-2
+    #
+    adam_epsilon: float = 1e-8
+    #
+    max_grad_norm: float = 1.0
+    #
+    prediction_type: str = None
+    #
+    logging_dir: str = "outputs/logs"
+    #
+    mixed_precision: str = "fp16"
+    #
+    local_rank: int = -1
+    #
+    checkpointing_steps: int = 500
+    #
+    checkpoints_total_limit: int = None
+    #
+    resume_from_checkpoint: str = None
+    #
+    enable_xformers_memory_efficient_attention: bool = True
+    #
+    noise_offset: float = 0.0
+    #
+    validation_epochs: int = 5
+    #
+    tracker_project_name: str = "text2image-fine-tune"

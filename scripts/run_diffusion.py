@@ -208,7 +208,7 @@ def main(cfg: Configuration, **kwargs):
         models.ddp_setup(rank, world_size)
 
     # prepare data
-    loaders = datasets.prepare_data(cfg)
+    loaders = datasets.prepare_validation_dataloaders(cfg)
     train_loader = loaders[0]
     test_loader = loaders[-1]
 
