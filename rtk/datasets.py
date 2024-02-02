@@ -460,7 +460,7 @@ def prepare_data(cfg: Configuration = None, **kwargs):
     train_loader: DataLoader = hydra_instantiate(
         cfg=dataset_cfg.dataloader,
         dataset=train_dataset,
-        pin_memory=torch.cuda.is_available() if torch.cuda.is_available() else False,
+        # pin_memory=torch.cuda.is_available() if torch.cuda.is_available() else False,
         shuffle=False if use_multi_gpu else True,
         sampler=DistributedSampler(train_dataset, seed=job_cfg.random_state)
         if use_multi_gpu
@@ -469,7 +469,7 @@ def prepare_data(cfg: Configuration = None, **kwargs):
     val_loader: DataLoader = hydra_instantiate(
         cfg=dataset_cfg.dataloader,
         dataset=val_dataset,
-        pin_memory=torch.cuda.is_available(),
+        # pin_memory=torch.cuda.is_available(),
         shuffle=False if use_multi_gpu else True,
         sampler=DistributedSampler(val_dataset, seed=job_cfg.random_state)
         if use_multi_gpu
@@ -478,7 +478,7 @@ def prepare_data(cfg: Configuration = None, **kwargs):
     test_loader: DataLoader = hydra_instantiate(
         cfg=dataset_cfg.dataloader,
         dataset=test_dataset,
-        pin_memory=torch.cuda.is_available(),
+        # pin_memory=torch.cuda.is_available(),
         shuffle=False,
         sampler=DistributedSampler(test_dataset, seed=job_cfg.random_state)
         if use_multi_gpu

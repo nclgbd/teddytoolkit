@@ -54,7 +54,7 @@ def create_run_name(cfg: Configuration, random_state: int, **kwargs):
         pass
 
     date = cfg.date
-    postfix: str = cfg.get("postfix", "")
+    postfix: str = cfg.postfix
     timestamp = cfg.timestamp
     run_name = "".join(
         [run_name, f";seed={random_state}", f";{date}-{timestamp}", f";{postfix}"]
@@ -144,9 +144,13 @@ def prepare_mlflow(cfg: Configuration):
         tracking_uri = mlflow_cfg.get("tracking_uri", "~/mlruns/")
 
     mlflow.set_tracking_uri(tracking_uri)
-    experiment_name = mlflow_cfg.get(
-        "experiment_name", HydraConfig.get().job.config_name
-    )
+
+    try:
+        experiment_name = mlflow_cfg.get(
+            "experiment_name", HydraConfig.get().job.config_name
+        )
+    except ValueError:
+        experiment_name = mlflow_cfg.get("experiment_name", "rcg-experiments")
     experiment_id = mlflow.create_experiment(
         experiment_name, artifact_location=tracking_uri
     )

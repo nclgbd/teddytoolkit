@@ -24,49 +24,20 @@ def chest_xray14_get_target_counts(df: pd.DataFrame, target: str = ""):
     return Counter(",".join(df[target]).replace("|", ",").split(","))
 
 
-# def build_cxr14_metadata_dataframe(cfg: Configuration, version: float = 2.0):
-#     dataset_cfg: DatasetConfiguration = cfg.datasets
-#     index = dataset_cfg.index
-#     patient_path = dataset_cfg.patient_data
-#     scan_path = dataset_cfg.scan_data
-
-#     cxr_metadata = pd.read_csv(patient_path).set_index(index)
-#     filename_matches = {IMAGE_KEYNAME: [], index: []}
-#     if version == 1.0:
-#         for n in range(1, 13):
-#             label_path = os.path.join(scan_path, f"images_{n:03}", "images")
-
-#             for filename in os.listdir(label_path):
-#                 filename_matches[index].append(filename)
-#                 filename_matches[IMAGE_KEYNAME].append(
-#                     os.path.join(label_path, filename)
-#                 )
-#     elif version == 2.0:
-#         for filename in os.listdir(scan_path):
-#             if filename.endswith(".png"):
-#                 filename_matches[index].append(filename)
-#                 filename_matches[IMAGE_KEYNAME].append(
-#                     os.path.join(scan_path, filename)
-#                 )
-
-#     filename_matches = pd.DataFrame.from_dict(
-#         filename_matches, orient="columns"
-#     ).set_index(index)
-#     cxr_metadata = cxr_metadata.merge(filename_matches, on=index, how="inner")
-
-#     return cxr_metadata
-
-
 def load_cxr14_dataset(
-    cfg: Configuration, save_metadata=True, return_metadata=False, **kwargs
+    cfg: Configuration = None,
+    save_metadata=True,
+    return_metadata=False,
+    **kwargs,
 ):
-    dataset_cfg: DatasetConfiguration = cfg.datasets
-    # index = dataset_cfg.index
+    dataset_cfg: DatasetConfiguration = kwargs.get("dataset_cfg", None)
+    if dataset_cfg is None:
+        dataset_cfg = cfg.datasets
+
     scan_path = dataset_cfg.scan_data
     target = dataset_cfg.target
     preprocessing_cfg = dataset_cfg.preprocessing
     positive_class = preprocessing_cfg.get("positive_class", "Pneumonia")
-    # version = preprocessing_cfg.get("version", 1.0)
 
     ws = login()
     cxr_metadata = load_patient_dataset(
@@ -75,17 +46,17 @@ def load_cxr14_dataset(
         patient_dataset_version=dataset_cfg.patient_data_version,
     ).set_index(dataset_cfg.index)
 
-    # train split
-    with open(os.path.join(scan_path, "train_val_list.txt"), "r") as f:
-        train_val_list = [idx.strip() for idx in f.readlines()]
-
     # remove all of the negative class for diffusion
-    if "diffusion" in cfg.job.mode and target != "class_conditioned_labels":
-        logger.info("Removing all negative class for mode='diffusion'...")
+    if target != "class_conditioned_labels" and "diffusion" in cfg.job.mode:
+        logger.info("Removing all negative classes...")
         class_encoding = dataset_cfg.encoding
         cxr_metadata = cxr_metadata[
             cxr_metadata[target] == class_encoding[positive_class]
         ]
+
+    # train split
+    with open(os.path.join(scan_path, "train_val_list.txt"), "r") as f:
+        train_val_list = [idx.strip() for idx in f.readlines()]
 
     train_metadata = cxr_metadata[cxr_metadata.index.isin(train_val_list)]
     train_transforms = create_transforms(cfg, use_transforms=cfg.job.use_transforms)

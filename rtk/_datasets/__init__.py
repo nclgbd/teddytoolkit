@@ -58,7 +58,7 @@ def create_transforms(
     if use_transforms:
         transforms += transform_dicts["train"]
 
-    def __get_monai_transforms(
+    def __get_transforms(
         transforms: list,
     ):
         _ret_transforms = []
@@ -69,28 +69,28 @@ def create_transforms(
             transform_fn = hydra.utils.instantiate(transform)
             _ret_transforms.append(transform_fn)
 
-        # diffusion transforms
-        if kwargs.get("mode", "") == "diffusion":
-            if use_transforms:
-                rand_lambda_transform = monai_transforms.RandLambdad(
-                    keys=[LABEL_KEYNAME],
-                    prob=0.15,
-                    func=lambda x: -1 * torch.ones_like(x),
-                )
-                _ret_transforms.append(rand_lambda_transform)
-            lambda_transform = monai_transforms.Lambdad(
-                keys=[LABEL_KEYNAME],
-                func=lambda x: torch.tensor(x, dtype=torch.float32)
-                .unsqueeze(0)
-                .unsqueeze(0),
-            )
-            _ret_transforms.append(lambda_transform)
-            # _ret_transforms.appent(monai_transforms.EnsureType(dtype=torch.float32))
+        # # diffusion transforms
+        # if kwargs.get("mode", "") == "diffusion":
+        #     if use_transforms:
+        #         rand_lambda_transform = monai_transforms.RandLambdad(
+        #             keys=[LABEL_KEYNAME],
+        #             prob=0.15,
+        #             func=lambda x: -1 * torch.ones_like(x),
+        #         )
+        #         _ret_transforms.append(rand_lambda_transform)
+        #     lambda_transform = monai_transforms.Lambdad(
+        #         keys=[LABEL_KEYNAME],
+        #         func=lambda x: torch.tensor(x, dtype=torch.float32)
+        #         .unsqueeze(0)
+        #         .unsqueeze(0),
+        #     )
+        #     _ret_transforms.append(lambda_transform)
+        #     # _ret_transforms.appent(monai_transforms.EnsureType(dtype=torch.float32))
 
         # always convert to tensor at the end
         _ret_transforms.append(monai_transforms.ToTensor())
         return _ret_transforms
 
-    ret_transforms = __get_monai_transforms(transforms)
+    ret_transforms = __get_transforms(transforms)
 
     return monai_transforms.Compose(ret_transforms)

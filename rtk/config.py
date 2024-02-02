@@ -143,7 +143,7 @@ class DatasetConfiguration:
     # the path to the scan of the dataset
     scan_data: os.PathLike = ""
     # the extension of the scan files
-    extension: str = ".jpeg"
+    extension: str = ".png"
     # the names for each label in alphabetical order
     labels: list = field(default_factory=lambda: [])
     # # encoding
