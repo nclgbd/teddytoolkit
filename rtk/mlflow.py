@@ -33,7 +33,7 @@ def create_run_name(cfg: Configuration, random_state: int, **kwargs):
     model_name = _determine_model_name(cfg, **kwargs)
     run_name: str = model_cfg.model.get("model_name", model_name.lower())
 
-    if tags.get("type", "train") == "train" or job_cfg.mode == "train":
+    if tags.get("type", "train") == "train" or cfg.mode == "train":
         criterion_name: str = model_cfg.criterion._target_.split(".")[-1].lower()
         lr: float = model_cfg.optimizer.lr
         optimizer_name: str = model_cfg.optimizer._target_.split(".")[-1].lower()
@@ -46,11 +46,11 @@ def create_run_name(cfg: Configuration, random_state: int, **kwargs):
 
         run_name += f";pretrained={str(job_cfg.use_pretrained).lower()}"
 
-    elif tags.get("type", "train") == "eval" or job_cfg.mode == "evaluate":
+    elif tags.get("type", "train") == "eval" or cfg.mode == "evaluate":
         pretrained_model = model_cfg.get("load_model", {}).get("name", "")
         run_name += f";pretrained_model={pretrained_model}"
 
-    elif tags.get("type", "train") == "diff" or job_cfg.mode == "diffusion":
+    elif tags.get("type", "train") == "diff" or cfg.mode == "diffusion":
         pass
 
     date = cfg.date
@@ -152,7 +152,7 @@ def prepare_mlflow(cfg: Configuration):
             "experiment_name", HydraConfig.get().job.config_name
         )
     except ValueError:
-        experiment_name = mlflow_cfg.get("experiment_name", "rcg-experiments")
+        experiment_name = mlflow_cfg.get("experiment_name", "Default")
     experiment_id = mlflow.create_experiment(
         experiment_name, artifact_location=tracking_uri
     )

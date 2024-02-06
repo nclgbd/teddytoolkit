@@ -19,8 +19,12 @@ logger = get_logger(__name__)
 
 @dataclass
 class PreprocessingConfiguration:
-    resample_value: int = 1
-    sample_to_value: int = -1
+    name: str = ""
+    positive_class: str = None
+    labels: list = None
+    sampling_method: DictConfig = field(
+        default_factory=lambda: DictConfig({"sample_to_value": -1, "method": None})
+    )
     subset: list = field(default_factory=lambda: [])
     use_sampling: bool = False
     use_subset: bool = False
@@ -58,6 +62,7 @@ class DatasetConfiguration:
     patient_data_version: str = "latest"
     # the path to the scan of the dataset
     scan_data: str = ""
+    scan_dataset_version: str = "latest"
     # the extension of the scan files
     extension: str = ".png"
     # the names for each label in alphabetical order

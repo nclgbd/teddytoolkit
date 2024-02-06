@@ -76,7 +76,7 @@ logger = get_logger(__name__)
 
 
 def create_default_trainer_args(
-    cfg: Configuration,
+    cfg: BaseConfiguration,
     **kwargs,
 ):
     """
@@ -84,14 +84,11 @@ def create_default_trainer_args(
     """
     logger.info("Creating default trainer arguments...")
     trainer_kwargs = dict()
-    job_cfg: JobConfiguration = kwargs.get("job_cfg", cfg.job)
-    model_cfg: ModelConfiguration = kwargs.get("model_cfg", cfg.models)
-    device: torch.device = kwargs.get("device", torch.device(job_cfg.device))
+    device: torch.device = kwargs.get("device", torch.device(cfg.device))
     trainer_kwargs["device"] = device
 
     # Prepare model, optimizer, loss function, and criterion
     model: nn.Module = models.instantiate_model(cfg, device=device)
-    # model.train()
     trainer_kwargs["model"] = model
     criterion_kwargs = kwargs.get("criterion_kwargs", {})
     criterion = models.instantiate_criterion(cfg, device=device, **criterion_kwargs)
@@ -100,193 +97,6 @@ def create_default_trainer_args(
     trainer_kwargs["optimizer"] = optimizer
 
     return trainer_kwargs
-
-
-def create_diffusion_model_evaluator(
-    cfg: Configuration, model: nn.Module, inferer: DiffusionInferer, **kwargs
-):
-    """
-    Creates the validation/test evaluator for the diffusion model.
-
-    ## Args:
-    """
-    device: torch.device = kwargs.get("device", torch.device(cfg.job.device))
-    use_autocast: bool = kwargs.get("use_autocast", cfg.job.use_autocast)
-
-    def diffusion_validation_step(
-        engine: Engine,
-        batch: dict,
-    ):
-        """
-        The validation step function for the diffusion model.
-
-        Sources:
-        - https://github.com/Project-MONAI/GenerativeModels/blob/main/tutorials/generative/3d_ddpm/3d_ddpm_tutorial.ipynb.
-        - https://pytorch-ignite.ai/how-to-guides/02-convert-pytorch-to-ignite/
-
-        """
-        model.eval()
-        # with torch.no_grad():
-        #     x, y = batch
-        #     y_pred = model(x)
-
-        # return y_pred, y
-        images, _ = batch
-        images: torch.Tensor = images.to(device)
-        noise = torch.randn_like(images).to(device)
-        with torch.no_grad():
-            with autocast(enabled=use_autocast):
-                timesteps = torch.randint(
-                    0,
-                    inferer.scheduler.num_train_timesteps,
-                    (images.shape[0],),
-                    device=device,
-                ).long()
-
-                # Get model prediction
-                noise_pred = inferer(
-                    inputs=images,
-                    diffusion_model=model,
-                    noise=noise,
-                    timesteps=timesteps,
-                )
-                val_loss = F.mse_loss(noise_pred.float(), noise.float())
-
-        return val_loss
-
-    evaluator = Engine(diffusion_validation_step)
-    return evaluator
-
-
-def create_diffusion_model_trainer(
-    cfg: Configuration,
-    model: nn.Module,
-    optimizer: torch.optim.Optimizer,
-    inferer: DiffusionInferer,
-    **kwargs,
-):
-    kwargs = {} if kwargs is None else kwargs
-    # ignite_cfg: IgniteConfiguration = kwargs.get("ignite_cfg", cfg.ignite)
-    job_cfg: JobConfiguration = kwargs.get("job_cfg", cfg.job)
-    device: torch.device = kwargs.get("device", torch.device(cfg.job.device))
-    use_autocast: bool = kwargs.get("use_autocast", job_cfg.use_autocast)
-
-    ##### Prepare trainer #####
-
-    # inputs, targets = batch
-    # optimizer.zero_grad()
-    # outputs = model(inputs)
-    # loss = criterion(outputs, targets)
-    # loss.backward()
-    # optimizer.step()
-    # return loss.item()
-
-    def diffusion_train_step(
-        engine: Engine,
-        batch: dict,
-    ):
-        """
-        The training step function for the diffusion model.
-
-        Sources:
-        - https://github.com/Project-MONAI/GenerativeModels/blob/main/tutorials/generative/3d_ddpm/3d_ddpm_tutorial.ipynb.
-        - https://pytorch-ignite.ai/how-to-guides/02-convert-pytorch-to-ignite/
-
-        """
-        if not use_autocast:
-            raise NotImplementedError("`auto_cast` required.")
-        model.train()
-        images, _ = batch
-        images: torch.Tensor = images.to(device)
-        optimizer.zero_grad(set_to_none=True)
-
-        with autocast(enabled=use_autocast):
-            # Generate random noise
-            noise = torch.randn_like(images).to(device)
-
-            # Create timesteps
-            timesteps: torch.long = torch.randint(
-                0,
-                inferer.scheduler.num_train_timesteps,
-                (images.shape[0],),
-                device=images.device,
-            ).long()
-
-            # Get model prediction
-            noise_pred = inferer(
-                inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps
-            )
-
-            loss = F.mse_loss(noise_pred.float(), noise.float())
-
-        scaler = GradScaler()
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
-        return loss
-
-    trainer = Engine(diffusion_train_step)
-    return trainer
-
-
-def sample_from_diffusion_model(
-    # engine: Engine,
-    cfg: Configuration,
-    model: nn.Module,
-    scheduler: Scheduler,
-    inferer: DiffusionInferer,
-    device: torch.device,
-    num_inference_steps: int = 1000,
-    val_score: float = 0.0,
-    epoch: int = 0,
-    _callback_dict: dict = None,
-    **kwargs,
-):
-    """
-    Generates a sample from the diffusion model.
-    """
-    logger.info("Generating sample from diffusion model...")
-    model.eval()
-    kwargs = {} if kwargs is None else kwargs
-    dataset_cfg: DatasetConfiguration = kwargs.get("dataset_cfg", cfg.datasets)
-    spatial_size = kwargs.get(
-        "spatial_size", dataset_cfg["transforms"]["load"][-1]["spatial_size"]
-    )
-
-    ## Sampling image during training
-    image = torch.randn((1, 1, *spatial_size), device=device)
-    image = image.to(device)
-    scheduler.set_timesteps(num_inference_steps=num_inference_steps)
-    with autocast(enabled=cfg.job.use_autocast):
-        image = inferer.sample(
-            input_noise=image, diffusion_model=model, scheduler=scheduler
-        )
-
-    plt.figure(figsize=(2, 2))
-    plt.imshow(
-        image[0, 0, :, :, spatial_size[-1] // 2].cpu(), vmin=0, vmax=1, cmap="gray"
-    )
-    plt.tight_layout()
-    plt.axis("off")
-
-    # return image
-    if _callback_dict is not None:
-        epoch = epoch + 1
-        score_name = cfg.ignite.score_name
-        sample_img_path = os.path.join(
-            os.cwd(),
-            "artifacts",
-            "samples",
-            f"sample_{epoch}_{score_name}={val_score}.png",
-        )
-        os.makedirs(os.path.dirname(sample_img_path), exist_ok=True)
-        _callback_dict[score_name] = val_score
-        plt.savefig(
-            sample_img_path,
-            bbox_inches="tight",
-        )
-        logger.info(f"Sample generated and saved to location '{sample_img_path}'.")
-    plt.close()
 
 
 def add_handlers(
@@ -693,12 +503,6 @@ def prepare_run(
     ## prepare run
     default_trainer_kwargs = {}
 
-    # if cfg.datasets.preprocessing.use_sampling == False:
-    #     train_dataset = loaders[0].dataset
-    #     samples_per_class = list(Counter(vars(train_dataset)[LABEL_KEYNAME]).values())
-    #     criterion_kwargs = {"samples_per_class": samples_per_class}
-    #     default_trainer_kwargs["criterion_kwargs"] = criterion_kwargs
-
     trainer_args = create_default_trainer_args(cfg, **default_trainer_kwargs)
     trainer = create_supervised_trainer(**trainer_args)
     ProgressBar().attach(trainer)
@@ -738,79 +542,3 @@ def prepare_run(
         )
 
     return trainer, evaluators
-
-
-def create_diffusion_model_engines(
-    cfg: Configuration,
-    loaders: list,
-    trainer_args: dict,
-    device: torch.device,
-    **kwargs,
-):
-    job_cfg: JobConfiguration = cfg.job
-    mode = "diffusion"
-    epoch_length: int = job_cfg.epoch_length
-    max_epochs = job_cfg.max_epochs
-    ignite_cfg: IgniteConfiguration = cfg.ignite
-    val_interval: int = ignite_cfg.get("log_interval", max(job_cfg.max_epochs // 10, 1))
-    model_cfg: DiffusionModelConfiguration = cfg.models
-    num_train_timesteps: int = model_cfg.scheduler.num_train_timesteps
-
-    train_loader, val_loader = loaders[0], loaders[1]
-    model = trainer_args["model"]
-    optimizer = trainer_args["optimizer"]
-    scheduler = models.instantiate_diffusion_scheduler(model_cfg)
-    inferer = models.instantiate_diffusion_inferer(model_cfg, scheduler=scheduler)
-    condition_name = LABEL_KEYNAME
-
-    # TODO: Add validation metrics, particularly FID and SSIM
-    val_handlers = []
-    # val_handlers = add_handlers(
-    #     ignite_cfg=ignite_cfg, trainer=trainer, model=model, optimizer=optimizer
-    # )
-    val_handlers.append(StatsHandler(name="train_log", output_transform=lambda x: None))
-    evaluator = SupervisedEvaluator(
-        device=device,
-        epoch_length=epoch_length,
-        inferer=inferer,
-        network=model,
-        prepare_batch=DiffusionPrepareBatch(
-            num_train_timesteps=num_train_timesteps, condition_name=condition_name
-        ),
-        val_data_loader=val_loader,
-        val_handlers=val_handlers,
-        # additional_metrics=create_metrics(cfg, device=device),
-        key_val_metric={
-            "val_mean_abs_error": MeanAbsoluteError(
-                output_transform=from_engine(["pred", "label"])
-            )
-        },
-    )
-
-    train_handlers = [
-        ValidationHandler(validator=evaluator, interval=val_interval, epoch_level=True),
-        # StatsHandler(name="train_log", tag_name="train_loss", output_transform=from_engine(["loss"], first=True)),
-    ]
-
-    trainer = SupervisedTrainer(
-        device=device,
-        epoch_length=epoch_length,
-        inferer=inferer,
-        loss_function=trainer_args["loss_fn"],
-        max_epochs=max_epochs,
-        network=model,
-        optimizer=optimizer,
-        prepare_batch=DiffusionPrepareBatch(
-            num_train_timesteps=num_train_timesteps, condition_name=condition_name
-        ),
-        train_data_loader=train_loader,
-        train_handlers=train_handlers,
-        key_train_metric={
-            "train_accuracy": MeanSquaredError(
-                output_transform=from_engine(["pred", "label"])
-            )
-        },
-    )
-
-    return trainer, evaluator
-

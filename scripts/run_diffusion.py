@@ -32,8 +32,10 @@ from diffusers.optimization import get_cosine_schedule_with_warmup
 import monai
 
 # rtk
-from rtk import datasets, repl, models
+from rtk import repl, models
+from rtk._datasets import cxr14
 from rtk.config import *
+from rtk.datasets import *
 from rtk.diffusion import *
 from rtk.mlflow import *
 from rtk.utils import hydra_instantiate, get_logger, _strip_target
@@ -48,18 +50,19 @@ def train_loop(
     **start_run_kwargs,
 ):
     # Initialize accelerator and tensorboard logging
+    job_cfg = cfg.job
     model_cfg = cfg.models
     output_dir = "artifacts"
-    max_epochs = cfg.job.max_epochs
+    max_epochs = job_cfg.max_epochs
     ignite_cfg = cfg.ignite
     accelerator = Accelerator(
         mixed_precision="fp16",
         gradient_accumulation_steps=1,
         device_placement=False,
     )
-    device = torch.device(cfg.job.device)
+    device = torch.device(cfg.device)
     logger.info(f"Using device:\t'{device}'")
-    use_multi_gpu = cfg.job.get("use_multi_gpu", False)
+    use_multi_gpu = job_cfg.get("use_multi_gpu", False)
     if accelerator.is_main_process:
         accelerator.init_trackers("run_diffusion")
 
@@ -72,7 +75,7 @@ def train_loop(
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer=optimizer,
         num_warmup_steps=500,
-        num_training_steps=(len(train_loader) * cfg.job.max_epochs),
+        num_training_steps=(len(train_loader) * job_cfg.max_epochs),
     )
     # There is no specific order to remember, you just need to unpack the
     # objects in the same order you gave them to the prepare method.
@@ -85,7 +88,7 @@ def train_loop(
     )
 
     global_step = 0
-    log_interval = ignite_cfg.get("log_interval", max(cfg.job.max_epochs // 10, 1))
+    log_interval = ignite_cfg.get("log_interval", max(job_cfg.max_epochs // 10, 1))
 
     # Now you train the model
     for epoch in range(max_epochs):
@@ -157,13 +160,14 @@ def run_loop(
     test_loader: DataLoader,
     device: torch.device = torch.device("cuda"),
 ):
-    if cfg.job.use_azureml:
+    job_cfg = cfg.job
+    if job_cfg.use_azureml:
         log_mlflow_params(cfg)
 
-    if cfg.job.mode == "diffusion":
+    if cfg.mode == "diffusion":
         train_loop(cfg, train_loader, test_loader=test_loader)
 
-    elif cfg.job.mode == "diffusion-evaluate":
+    elif cfg.mode == "diffusion-evaluate":
         # prepare model and pipeline
         model = models.instantiate_model(cfg, device=device)
 
@@ -181,7 +185,7 @@ def run_loop(
             device=device,
         )
 
-    if cfg.job.use_azureml:
+    if job_cfg.use_azureml:
         mlflow.log_artifact("./")
         mlflow.end_run()
 
@@ -191,7 +195,7 @@ def main(cfg: Configuration, **kwargs):
     # before we run....
     logger.debug(OmegaConf.to_yaml(cfg))
     job_cfg = cfg.job
-    random_state: int = job_cfg.get("random_state", random.randint(0, _MAX_RAND_INT))
+    random_state: int = cfg.get("random_state", random.randint(0, _MAX_RAND_INT))
     use_multi_gpu = job_cfg.get("use_multi_gpu", False)
 
     monai.utils.set_determinism(seed=random_state)
@@ -208,13 +212,26 @@ def main(cfg: Configuration, **kwargs):
         models.ddp_setup(rank, world_size)
 
     # prepare data
-    loaders = datasets.prepare_validation_dataloaders(cfg)
-    train_loader = loaders[0]
-    test_loader = loaders[-1]
+    # loaders = datasets.prepare_validation_dataloaders(cfg)
+    # train_loader = loaders[0]
+    # test_loader = loaders[-1]
+    train_dataset, test_dataset = cxr14.load_cxr14_dataset(cfg=cfg)
+    train_loader = hydra_instantiate(
+        cfg=cfg.datasets.dataloader,
+        dataset=train_dataset,
+        pin_memory=torch.cuda.is_available() if torch.cuda.is_available() else False,
+        shuffle=True,
+    )
+    test_loader = hydra_instantiate(
+        cfg=cfg.datasets.dataloader,
+        dataset=test_dataset,
+        pin_memory=torch.cuda.is_available() if torch.cuda.is_available() else False,
+        shuffle=False,
+    )
 
     os.makedirs("artifacts", exist_ok=True)
 
-    if cfg.job.use_mlflow:
+    if job_cfg.use_mlflow:
         start_run_kwargs = prepare_mlflow(cfg)
         with mlflow.start_run(
             run_name=run_name,

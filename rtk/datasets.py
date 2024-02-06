@@ -129,6 +129,13 @@ def subset_to_class(cfg: Configuration, data_df: pd.DataFrame, **kwargs):
     return data_df
 
 
+def set_labels_from_encoding(cfg: BaseConfiguration, encoding: dict = None):
+    dataset_cfg = cfg.datasets
+    encoding = dataset_cfg.encoding if encoding is None else encoding
+    if dataset_cfg.labels is not None and not any(dataset_cfg.labels):
+        dataset_cfg.labels = list(encoding.keys())
+
+
 def transform_labels_to_metaclass(
     df: pd.DataFrame,
     target_name: str,
@@ -209,6 +216,7 @@ def instantiate_image_dataset(
     dataset_cfg: DatasetConfiguration = kwargs.get(
         "dataset_cfg", cfg.datasets if cfg is not None else None
     )
+    set_labels_from_encoding(cfg=cfg)
 
     dataset_name = dataset_cfg.name
     if dataset_name == "pediatrics":

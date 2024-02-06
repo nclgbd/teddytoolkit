@@ -10,6 +10,7 @@ from tqdm.auto import tqdm
 
 # torch
 import torch
+from torch.utils.data import DataLoader
 from torchvision import transforms
 
 # torchmetrics
@@ -74,16 +75,17 @@ def evaluate(
     cfg: Configuration,
     epoch: int,
     pipeline: DDPMPipeline,
-    loader: monai.data.DataLoader,
+    loader: DataLoader,
     device: torch.device,
     num_samples: int = 32,
 ):
     logger.info("Evaluating model...")
-
+    job_cfg = cfg.job
     old_dim = cfg.datasets.dim
     cfg.datasets.dim = 299
+
     eval_transforms = datasets.create_transforms(cfg, use_transforms=False)
-    eval_loader = deepcopy(loader)
+    eval_loader: DataLoader = deepcopy(loader)
     eval_loader.dataset.transform = eval_transforms
     metrics = instantiate_torch_metrics(cfg)
     fid_metric: FrechetInceptionDistance = metrics["fid"]
@@ -102,7 +104,7 @@ def evaluate(
             break
 
     # get `num_samples` fake images from dataset
-    generator = torch.Generator(device=device).manual_seed(cfg.job.random_state)
+    generator = torch.Generator(device=device).manual_seed(cfg.random_state)
     fake_images = generate_samples(
         cfg,
         pipeline,
@@ -112,9 +114,10 @@ def evaluate(
         num_samples=num_samples,
         save_images=True,
     )
-    fake_images = [
-        eval_transforms(np.array(img).transpose(2, 0, 1)) for img in fake_images
-    ]
+    fake_img_transforms = [transforms.PILToTensor()]
+    fake_img_transforms.extend(eval_transforms.transforms)
+    eval_transforms.transforms = fake_img_transforms
+    fake_images = [eval_transforms(img) for img in fake_images]
     # fake_images = torch.Tensor(fake_images)
 
     # Compute metrics
@@ -138,7 +141,7 @@ def evaluate(
     }
     cfg.datasets.dim = old_dim
 
-    if cfg.job.use_azureml:
+    if job_cfg.use_azureml:
         mlflow.log_metrics(logged_metrics, step=epoch)
 
 
@@ -154,7 +157,7 @@ def generate_samples(
 ):
     logger.info("Generating samples...")
     generator = (
-        torch.Generator(device=device).manual_seed(cfg.job.random_state)
+        torch.Generator(device=device).manual_seed(cfg.random_state)
         if generator is None
         else generator
     )
