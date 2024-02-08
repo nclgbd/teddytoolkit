@@ -34,6 +34,7 @@ from rtk import *
 from rtk._datasets import create_transforms
 from rtk._datasets.cxr14 import load_cxr14_dataset
 from rtk._datasets.ixi import load_ixi_dataset
+from rtk._datasets.mimic import load_mimic_dataset
 from rtk._datasets.pediatrics import load_pediatrics_dataset
 from rtk.config import *
 from rtk.utils import (
@@ -119,7 +120,7 @@ def get_images_and_classes(dataset: ImageDataset, **kwargs):
     return images, classes
 
 
-def subset_to_class(cfg: Configuration, data_df: pd.DataFrame, **kwargs):
+def subset_to_class(cfg: BaseConfiguration, data_df: pd.DataFrame, **kwargs):
     dataset_cfg: DatasetConfiguration = cfg.datasets
     preprocessing_cfg = dataset_cfg.preprocessing
     subset: list = preprocessing_cfg.get("subset", kwargs.get("subset", []))
@@ -127,6 +128,45 @@ def subset_to_class(cfg: Configuration, data_df: pd.DataFrame, **kwargs):
         data_df = data_df[data_df[LABEL_KEYNAME].isin(subset)]
         logger.debug(f"Subset dataframe:/n{data_df.head()}")
     return data_df
+
+
+def get_target_breakdown(cfg: BaseConfiguration, datasets: list):
+    dataset_cfg = cfg.datasets
+    train_dataset, test_dataset = datasets[0], datasets[-1]
+    class_encoding = {v: k for k, v in dataset_cfg.encoding.items()}
+    concats = []
+
+    # train split
+    train_dataset_counts = Counter(train_dataset.labels)
+    train_target_breakdown = pd.DataFrame.from_dict(
+        train_dataset_counts, orient="index", columns=["Train split"]
+    )
+    train_target_breakdown.index = train_target_breakdown.index.map(class_encoding)
+    concats.append(train_target_breakdown)
+
+    # validation split
+    if len(datasets) == 3:
+        val_dataset_counts = Counter(datasets[1].labels)
+        val_target_breakdown = pd.DataFrame.from_dict(
+            val_dataset_counts, orient="index", columns=["Validation split"]
+        )
+        val_target_breakdown.index = val_target_breakdown.index.map(class_encoding)
+        concats.append(val_target_breakdown)
+
+    # test split
+    test_dataset_counts = Counter(test_dataset.labels)
+    test_target_breakdown = pd.DataFrame.from_dict(
+        test_dataset_counts, orient="index", columns=["Test split"]
+    )
+    test_target_breakdown.index = test_target_breakdown.index.map(class_encoding)
+    concats.append(test_target_breakdown)
+
+    target_breakdown = pd.concat(concats, axis=1)
+    target_breakdown["Total"] = target_breakdown.sum(axis=1)
+    split_totals = target_breakdown.sum(axis=0)
+    split_totals.name = "Total"
+    target_breakdown = pd.concat([target_breakdown, split_totals.to_frame().T], axis=0)
+    return target_breakdown
 
 
 def set_labels_from_encoding(cfg: BaseConfiguration, encoding: dict = None):
@@ -177,7 +217,7 @@ def transform_labels_to_metaclass(
 
 
 def preprocess_dataset(
-    cfg: Configuration,
+    cfg: BaseConfiguration,
     dataset: ImageDataset,
     **kwargs,
 ):
@@ -220,30 +260,32 @@ def instantiate_image_dataset(
 
     dataset_name = dataset_cfg.name
     if dataset_name == "pediatrics":
-        train_dataset, test_dataset = load_pediatrics_dataset(
+        loaded_datasets = load_pediatrics_dataset(
             cfg=cfg,
             save_metadata=save_metadata,
             return_metadata=return_metadata,
         )
 
     elif dataset_name == "cxr14":
-        train_dataset, test_dataset = load_cxr14_dataset(
-            cfg=cfg, save_metadata=save_metadata
-        )
+        loaded_datasets = load_cxr14_dataset(cfg=cfg, save_metadata=save_metadata)
+
+    elif dataset_name == "mimic-cxr":
+        loaded_datasets = load_mimic_dataset(cfg, save_metadata=save_metadata)
 
     elif dataset_name == "ixi":
-        train_dataset = load_ixi_dataset(cfg, save_metadata=save_metadata)
+        loaded_datasets = load_ixi_dataset(cfg, save_metadata=save_metadata)
+
     else:
         raise ValueError(
             f"Dataset '{dataset_name}' is not recognized not supported. Please use ['cxr14'|'pediatrics'|'ixi']."
         )
 
     logger.info("Image dataset instantiated.\n")
-    return train_dataset, test_dataset
+    return loaded_datasets
 
 
 def instantiate_train_val_test_datasets(
-    cfg: Configuration,
+    cfg: BaseConfiguration,
     dataset: monai.data.Dataset,
     train_transforms: monai.transforms.Compose,
     eval_transforms: monai.transforms.Compose,
@@ -412,7 +454,7 @@ def instantiate_train_val_test_datasets(
     return train_val_test_split_dict
 
 
-def prepare_validation_dataloaders(cfg: Configuration = None, **kwargs):
+def prepare_validation_dataloaders(cfg: BaseConfiguration = None, **kwargs):
     logger.info("Preparing data...")
     dataset_cfg: DatasetConfiguration = kwargs.get(
         "dataset_cfg", cfg.datasets if cfg else None
@@ -494,7 +536,7 @@ def convert_image_dataset(
 def combine_datasets(
     train_dataset: monai.data.Dataset,
     test_dataset: monai.data.Dataset,
-    cfg: Configuration = None,
+    cfg: BaseConfiguration = None,
     dataset_cfg: DatasetConfiguration = None,
     dataset_configs: list = [],
     # transform: monai.transforms.Compose = None,

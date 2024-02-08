@@ -274,7 +274,7 @@ class TextToImageConfiguration(BaseConfiguration):
     #
     validation_prompts: list = field(default_factory=lambda: [])
     #
-    output_dir: str = "outputs"
+    output_dir: str = "artifacts"
     #
     cache_dir: str = None
     #
