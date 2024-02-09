@@ -126,24 +126,18 @@ def log_mlflow_params(cfg: Configuration, **kwargs):
     """
     Log the parameters to MLFlow.
     """
-    tags = cfg.job.get("tags", {})
+    # tags = cfg.get("tags", {})
     params = get_params(cfg, **kwargs)
     logger.info("Logged parameters:\n{}".format(OmegaConf.to_yaml(params)))
     mlflow.log_params(params)
-    if any(tags):
-        mlflow.set_tags(tags)
 
 
 def prepare_mlflow(cfg: Configuration):
-    logger.info("Starting MLflow run...")
+    logger.info("Preparing MLflow run...")
     mlflow_cfg = cfg.mlflow
-    if cfg.job.use_azureml:
-        logger.debug("Using AzureML for experiment tracking...")
-        ws = login()
-        tracking_uri = ws.get_mlflow_tracking_uri()
-
-    else:
-        tracking_uri = mlflow_cfg.get("tracking_uri", "~/mlruns/")
+    logger.debug("Using AzureML for experiment tracking...")
+    ws = login()
+    tracking_uri = ws.get_mlflow_tracking_uri()
 
     mlflow.set_tracking_uri(tracking_uri)
 

@@ -175,6 +175,8 @@ def set_labels_from_encoding(cfg: BaseConfiguration, encoding: dict = None):
     if dataset_cfg.labels is not None and not any(dataset_cfg.labels):
         dataset_cfg.labels = list(encoding.keys())
 
+    return list(encoding.keys())
+
 
 def transform_labels_to_metaclass(
     df: pd.DataFrame,
