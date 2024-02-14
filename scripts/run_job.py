@@ -47,6 +47,7 @@ def run_trainer(
         job_cfg["prepare_function"], _partial_=True
     )
     trainer, _ = prepare_func(loaders=loaders, device=device, cfg=cfg)
+    cfg.datasets.labels = datasets.set_labels_from_encoding(cfg)
     state = trainer.run(
         data=train_loader,
         max_epochs=job_cfg.max_epochs,

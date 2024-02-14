@@ -51,24 +51,29 @@ def visualize_scan(
     index: int = None,
     scan: torch.Tensor = None,
     label: torch.Tensor = None,
+    display: bool = True,
 ):
     """"""
 
-    if scan is None or label is None:
+    if scan is None and label is None:
         scan, label = next(iterator)
         index = randint(0, len(scan) - 1) if index is None else index
         scan = scan[index]
         label = label[index]
 
-    _filename = scan._meta["filename_or_obj"].split("/")[-1]
-    patient_id = _filename.split(".")[0]
+    try:
+        _filename = scan._meta["filename_or_obj"].split("/")[-1]
+        patient_id = _filename.split(".")[0]
+    except AttributeError:
+        patient_id = None
 
     plt.title(f"Patient ID: {patient_id}; Label: {label}")
-    display_scan = scan.numpy()
+    display_scan = scan.cpu().numpy()
     display_scan = np.transpose(display_scan, (1, 2, 0))
-    plt.imshow(display_scan, cmap="bone")
+    if display:
+        plt.imshow(display_scan, cmap="bone")
 
-    return scan, label
+    return display_scan, label
 
 
 def resample_to_value(cfg: Configuration, metadata: pd.DataFrame, **kwargs):
@@ -173,7 +178,7 @@ def set_labels_from_encoding(cfg: BaseConfiguration, encoding: dict = None):
     dataset_cfg = cfg.datasets
     encoding = dataset_cfg.encoding if encoding is None else encoding
     if dataset_cfg.labels is not None and not any(dataset_cfg.labels):
-        dataset_cfg.labels = list(encoding.keys())
+        cfg.datasets.labels = list(encoding.keys())
 
     return list(encoding.keys())
 
@@ -382,7 +387,7 @@ def instantiate_train_val_test_datasets(
         )
         train_val_test_split_dict["train"] = train_dataset
 
-        if kwargs.get("perform_validation", False):
+        if kwargs.get("perform_validation", True):
             val_dataset: monai.data.Dataset = hydra.utils.instantiate(
                 config=dataset_cfg.instantiate,
                 image_files=X_val,
@@ -451,7 +456,8 @@ def instantiate_train_val_test_datasets(
 
     logger.info("Train/val/test splits created.")
     logger.info("Train dataset:\t{}".format(Counter(train_dataset.labels)))
-    logger.info("Val dataset:\t{}".format(Counter(val_dataset.labels)))
+    if kwargs.get("perform_validation", True):
+        logger.info("Val dataset:\t{}".format(Counter(val_dataset.labels)))
 
     return train_val_test_split_dict
 

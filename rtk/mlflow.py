@@ -147,6 +147,7 @@ def prepare_mlflow(cfg: Configuration):
         )
     except ValueError:
         experiment_name = mlflow_cfg.get("experiment_name", "Default")
+        # if experiment_name == None or experiment_name == "":
     experiment_id = mlflow.create_experiment(
         experiment_name, artifact_location=tracking_uri
     )
