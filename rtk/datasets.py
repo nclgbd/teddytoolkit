@@ -255,6 +255,22 @@ def create_subset(df: pd.DataFrame, target: str, labels: list = []) -> pd.DataFr
     return df[subset_condition]
 
 
+def convert_labels_to_prompts(
+    cfg: DiffusionConfiguration, dataset: ImageDataset, **kwargs
+):
+    dataset_cfg = cfg.datasets
+    base_prompt = "An image of a frontal chest x-ray depicting"
+
+    class_prompts: dict = dict(dataset_cfg.text_prompts["class_prompts"])
+    caption_labels = []
+    for label in dataset.labels:
+        new_label = f"{base_prompt} {class_prompts[label]}"
+        caption_labels.append(new_label)
+
+    dataset.labels = caption_labels
+    return caption_labels
+
+
 def instantiate_image_dataset(
     cfg: BaseConfiguration = None, save_metadata=False, return_metadata=False, **kwargs
 ):
@@ -284,7 +300,7 @@ def instantiate_image_dataset(
 
     else:
         raise ValueError(
-            f"Dataset '{dataset_name}' is not recognized not supported. Please use ['cxr14'|'pediatrics'|'ixi']."
+            f"Dataset '{dataset_name}' is not recognized not supported. Please use ['cxr14'|'pediatrics'|'ixi'|'mimic']."
         )
 
     logger.info("Image dataset instantiated.\n")

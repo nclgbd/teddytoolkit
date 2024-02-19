@@ -7,6 +7,7 @@ import random
 from PIL import Image
 from copy import deepcopy
 from tqdm.auto import tqdm
+from packaging import version
 
 # torch
 import torch
@@ -16,52 +17,203 @@ from torchvision import transforms
 # torchmetrics
 from torchmetrics.image.fid import FrechetInceptionDistance
 from torchmetrics.image.inception import InceptionScore
-from torchmetrics.image.ssim import MultiScaleStructuralSimilarityIndexMeasure
+from torchmetrics.image.ssim import StructuralSimilarityIndexMeasure
 
 # :huggingface:
+import accelerate
 from accelerate import Accelerator
-from diffusers import DDPMPipeline, DDPMScheduler
+from accelerate.state import AcceleratorState
+from diffusers.training_utils import EMAModel
+from diffusers import (
+    UNet2DConditionModel,
+    DiffusionPipeline,
+    DDPMScheduler,
+    AutoencoderKL,
+)
+from diffusers.utils.import_utils import is_xformers_available
 
-# monai
-import monai
+# transformers
+from transformers import CLIPTokenizer
+from transformers.models.clip.modeling_clip import CLIPTextModel
+from transformers.utils import ContextManagers
 
 # mlflow
 import mlflow
 
 # rtk
 from rtk import datasets
-from rtk.config import Configuration
+from rtk.config import *
 from rtk.utils import hydra_instantiate, _strip_target, get_logger
 
 logger = get_logger(__name__)
 
 
-def instantiate_torch_metrics(cfg: Configuration, **kwargs):
-    ignite_cfg = cfg.ignite
+def instantiate_torch_metrics(tm_cfg: TorchMetricsConfiguration, remap=True, **kwargs):
+    _metrics = tm_cfg.metrics
     metrics = {}
-    for metric_cfg in ignite_cfg.metrics:
+    for metric_cfg in _metrics:
         metric = hydra_instantiate(metric_cfg, **kwargs)
         target_name = _strip_target(metric_cfg, lower=False)
-        if target_name == "FrechetInceptionDistance":
-            new_target_name = "fid"
+        # if target_name == "FrechetInceptionDistance":
+        #     new_target_name = "fid"
 
-        elif target_name == "InceptionScore":
-            new_target_name = "inception"
+        # elif target_name == "InceptionScore":
+        #     new_target_name = "inception"
 
-        elif target_name == "MultiScaleStructuralSimilarityIndexMeasure":
-            new_target_name = "ms-ssim"
+        # elif target_name == "MultiScaleStructuralSimilarityIndexMeasure":
+        #     new_target_name = "ms-ssim"
+        if remap:
+            try:
+                target_name: str = tm_cfg.remap[target_name]
 
+            except Exception as e:
+                if isinstance(e, KeyError):
+                    logger.warning(
+                        f"No remap found for '{target_name}', using default name."
+                    )
+                if isinstance(e, AttributeError):
+                    logger.warning(
+                        f"No 'remap' attribute found in torch metrics configuration, using default name."
+                    )
+                    logger.debug(tm_cfg)
         else:
             raise ValueError(f"Unknown metric: '{target_name}'")
 
-        metrics[new_target_name] = metric
+        target_name = target_name.lower()
+        metrics[target_name] = metric
 
     return metrics
 
 
+def compile_huggingface_pipeline(
+    cfg: TextToImageConfiguration, accelerator: Accelerator, device: torch.device
+):
+    logger.info("Compiling HuggingFace pipeline...")
+    hf_cfg = cfg.huggingface
+
+    unet: UNet2DConditionModel = hydra_instantiate(
+        hf_cfg.unet, torch_dtype=torch.float16
+    )
+    scheduler: DDPMScheduler = hydra_instantiate(
+        hf_cfg.scheduler, torch_dtype=torch.float16
+    )
+    tokenizer: CLIPTokenizer = hydra_instantiate(
+        hf_cfg.tokenizer, torch_dtype=torch.float16
+    )
+    pipeline: DiffusionPipeline = hydra_instantiate(
+        hf_cfg.pipeline, torch_dtype=torch.float16
+    )
+
+    def deepspeed_zero_init_disabled_context_manager():
+        """
+        returns either a context list that includes one that will disable zero.Init or an empty context list
+        """
+        deepspeed_plugin = (
+            AcceleratorState().deepspeed_plugin
+            if accelerate.state.is_initialized()
+            else None
+        )
+        if deepspeed_plugin is None:
+            return []
+
+        return [deepspeed_plugin.zero3_init_context_manager(enable=False)]
+
+    # Currently Accelerate doesn't know how to handle multiple models under Deepspeed ZeRO stage 3.
+    # For this to work properly all models must be run through `accelerate.prepare`. But accelerate
+    # will try to assign the same optimizer with the same weights to all models during
+    # `deepspeed.initialize`, which of course doesn't work.
+    #
+    # For now the following workaround will partially support Deepspeed ZeRO-3, by excluding the 2
+    # frozen models from being partitioned during `zero.Init` which gets called during
+    # `from_pretrained` So CLIPTextModel and AutoencoderKL will not enjoy the parameter sharding
+    # across multiple gpus and only UNet2DConditionModel will get ZeRO sharded.
+    with ContextManagers(deepspeed_zero_init_disabled_context_manager()):
+        text_encoder: CLIPTextModel = hydra_instantiate(
+            hf_cfg.text_encoder, torch_dtype=torch.float16
+        )
+        vae: AutoencoderKL = hydra_instantiate(hf_cfg.vae, torch_dtype=torch.float16)
+
+    logger.info("Freezing vae and text encoder and setting unet to trainable")
+
+    # Freeze vae and text_encoder and set unet to trainable
+    vae.requires_grad_(False)
+    text_encoder.requires_grad_(False)
+    unet.train()
+
+    # Create EMA for the unet.
+    ema_unet: torch.nn.Module = None
+    if cfg.use_ema:
+        logger.warn("Using EMA for the UNet")
+        ema_unet: torch.nn.Module = hydra_instantiate(hf_cfg.unet)
+        ema_unet = EMAModel(
+            ema_unet.parameters(),
+            model_cls=UNet2DConditionModel,
+            model_config=ema_unet.config,
+        )
+
+    # `accelerate` 0.16.0 will have better support for customized saving
+    if version.parse(accelerate.__version__) >= version.parse("0.16.0"):
+        # create custom saving & loading hooks so that `accelerator.save_state(...)` serializes in a nice format
+        def save_model_hook(models, weights, output_dir):
+            if accelerator.is_main_process:
+                if cfg.use_ema:
+                    ema_unet.save_pretrained(os.path.join(output_dir, "unet_ema"))
+
+                for i, model in enumerate(models):
+                    model.save_pretrained(os.path.join(output_dir, "unet"))
+
+                    # make sure to pop weight so that corresponding model is not saved again
+                    weights.pop()
+
+        def load_model_hook(models, input_dir):
+            if cfg.use_ema:
+                load_model = EMAModel.from_pretrained(
+                    os.path.join(input_dir, "unet_ema"), UNet2DConditionModel
+                )
+                ema_unet.load_state_dict(load_model.state_dict())
+                ema_unet.to(device)
+                del load_model
+
+            for i in range(len(models)):
+                # pop models so that they are not loaded again
+                model = models.pop()
+
+                # load diffusers style into model
+                load_model = UNet2DConditionModel.from_pretrained(
+                    input_dir, subfolder="unet"
+                )
+                model.register_to_config(**load_model.config)
+
+                model.load_state_dict(load_model.state_dict())
+                del load_model
+
+        accelerator.register_save_state_pre_hook(save_model_hook)
+        accelerator.register_load_state_pre_hook(load_model_hook)
+
+    if cfg.gradient_checkpointing:
+        unet.enable_gradient_checkpointing()
+
+    if cfg.enable_xformers_memory_efficient_attention:
+        if is_xformers_available():
+            import xformers
+
+            xformers_version = version.parse(xformers.__version__)
+            if xformers_version == version.parse("0.0.16"):
+                logger.warn(
+                    "xFormers 0.0.16 cannot be used for training in some GPUs. If you observe problems during training, please update xFormers to at least 0.0.17. See https://huggingface.co/docs/diffusers/main/en/optimization/xformers for more details."
+                )
+            unet.enable_xformers_memory_efficient_attention()
+        else:
+            raise ValueError(
+                "xformers is not available. Make sure it is installed correctly"
+            )
+
+    return pipeline, unet, scheduler, tokenizer, text_encoder, vae, ema_unet
+
+
 # https://colab.research.google.com/github/huggingface/notebooks/blob/main/diffusers/training_example.ipynb
-def make_grid(images):
-    dim = int(math.sqrt(len(images)))
+def make_grid(images, dim: int = None):
+    dim = int(math.sqrt(len(images))) if dim is None else dim
     rows, cols = dim, dim
     w, h = images[0].size
     grid = Image.new("RGB", size=(cols * w, rows * h))
@@ -72,9 +224,9 @@ def make_grid(images):
 
 # https://colab.research.google.com/github/huggingface/notebooks/blob/main/diffusers/training_example.ipynb
 def evaluate(
-    cfg: Configuration,
+    cfg: DiffusionConfiguration,
     epoch: int,
-    pipeline: DDPMPipeline,
+    pipeline: DiffusionPipeline,
     loader: DataLoader,
     device: torch.device,
     num_samples: int = 32,
@@ -87,10 +239,10 @@ def evaluate(
     eval_transforms = datasets.create_transforms(cfg, use_transforms=False)
     eval_loader: DataLoader = deepcopy(loader)
     eval_loader.dataset.transform = eval_transforms
-    metrics = instantiate_torch_metrics(cfg)
+    metrics = instantiate_torch_metrics(cfg.torchmetrics)
     fid_metric: FrechetInceptionDistance = metrics["fid"]
     inception_metric: InceptionScore = metrics["inception"]
-    ms_ssim_metric: MultiScaleStructuralSimilarityIndexMeasure = metrics["ms-ssim"]
+    ssim_metric: StructuralSimilarityIndexMeasure = metrics["ssim"]
     # ms_ssims = []
 
     # get `num_samples` real images from dataset
@@ -130,14 +282,14 @@ def evaluate(
 
     inception_metric.update(fake_images)
     inception_m, inception_s = inception_metric.compute()
-    ms_ssim = ms_ssim_metric(fake_images, real_images)
+    ssim = ssim_metric(fake_images, real_images)
 
     # Log metrics
     logged_metrics = {
         "fid": fid,
         "inception_mean": inception_m,
         "inception_std": inception_s,
-        "ms_ssim": ms_ssim,
+        "ssim": ssim,
     }
     cfg.datasets.dim = old_dim
 
@@ -147,7 +299,7 @@ def evaluate(
 
 def generate_samples(
     cfg: Configuration,
-    pipeline: DDPMPipeline,
+    pipeline: DiffusionPipeline,
     device: torch.device,
     epoch: int = 0,
     generator: torch.Generator = None,

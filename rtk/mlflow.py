@@ -62,7 +62,7 @@ def create_run_name(cfg: Configuration, random_state: int, **kwargs):
     return run_name
 
 
-def get_base_params(cfg: Configuration, **kwargs):
+def get_base_params(cfg:BaseConfiguration, **kwargs):
     params = dict()
     params["date"] = cfg.date
     params["postfix"] = cfg.postfix
@@ -122,7 +122,7 @@ def get_params(cfg: Configuration, **kwargs):
     return params
 
 
-def log_mlflow_params(cfg: Configuration, **kwargs):
+def log_mlflow_params(cfg: BaseConfiguration, **kwargs):
     """
     Log the parameters to MLFlow.
     """
@@ -132,7 +132,7 @@ def log_mlflow_params(cfg: Configuration, **kwargs):
     mlflow.log_params(params)
 
 
-def prepare_mlflow(cfg: Configuration):
+def prepare_mlflow(cfg: BaseConfiguration):
     logger.info("Preparing MLflow run...")
     mlflow_cfg = cfg.mlflow
     logger.debug("Using AzureML for experiment tracking...")

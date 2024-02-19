@@ -46,6 +46,8 @@ class DatasetConfiguration:
     )
     # encoding
     encoding: dict = field(default_factory=lambda: {})
+    # text prompts
+    text_prompts: dict = field(default_factory=lambda: {})
 
     # dimension to resize the images to
     dim: int = 224
@@ -84,9 +86,7 @@ class DatasetConfiguration:
 @dataclass
 class MLflowConfiguration:
     experiment_name: str = "Default"
-    tracking_uri: str = (
-        "file:///home/nicoleg/workspaces/ResearchToolKit/outputs/mlruns/"
-    )
+    tracking_uri: str = "file:///home/nicoleg/mlruns/"
     start_run: dict = field(default_factory=lambda: {})
 
 
@@ -98,7 +98,12 @@ class BaseConfiguration:
     date: str = ""
     postfix: str = ""
     timestamp: str = ""
+    # the mode for the run
     mode: str = "train"
+    # the path to the output directory
+    output_dir: str = "outputs"
+    # the path to the log directory. appended to `output_dir`
+    log_dir: str = "logs"
     # the gpu device to use
     device: str = "cpu"
     # whether to use transforms or not
@@ -256,9 +261,49 @@ class Configuration(BaseConfiguration):
 
 
 @dataclass
+class TorchMetricsConfiguration:
+    """
+    Configuration for the `torchmetrics` python library.
+
+    ## Attributes:
+    * `metrics` (`ListConfig`): The metrics to use from `torchmetrics`.
+    """
+
+    metrics: ListConfig = field(default_factory=lambda: ListConfig([]))
+    remap: DictConfig = field(default_factory=lambda: DictConfig({}))
+
+
+@dataclass
+class TextPromptConfiguration:
+    class_prompts: dict = field(default_factory=lambda: {})
+    negative_prompts: list = field(default_factory=lambda: [])
+
+
+@dataclass
+class DiffusionConfiguration(Configuration):
+    text_prompts: TextPromptConfiguration = field(
+        default_factory=TextPromptConfiguration
+    )
+    torchmetrics: TorchMetricsConfiguration = field(
+        default_factory=TorchMetricsConfiguration
+    )
+
+
+@dataclass
+class HuggingFaceConfiguration:
+    pipeline: dict = field(default_factory=lambda: {})
+    unet: dict = field(default_factory=lambda: {})
+    scheduler: dict = field(default_factory=lambda: {})
+    tokenizer: dict = field(default_factory=lambda: {})
+    text_encoder: dict = field(default_factory=lambda: {})
+    vae: dict = field(default_factory=lambda: {})
+
+
+@dataclass
 class TextToImageConfiguration(BaseConfiguration):
+    huggingface: HuggingFaceConfiguration = field(default_factory=HuggingFaceConfiguration)
     # The scale of input perturbation. Recommended 0.1.
-    input_perturbation: float = 0.0
+    input_perturbation: float = 0.1
     # Path to pretrained model or model identifier from huggingface.co/models.
     pretrained_model_name_or_path: str = ""
     # Revision of pretrained model identifier from huggingface.co/models.
@@ -292,8 +337,9 @@ class TextToImageConfiguration(BaseConfiguration):
     #
     max_train_steps: int = 400
     # Whether or not to use gradient checkpointing to save memory at the expense of slower backward pass.
-    gradient_accumulation_steps: bool = True
+    gradient_accumulation_steps: int = 1
     # Initial learning rate (after the potential warmup period) to use.
+    gradient_checkpointing: bool = True
     learning_rate: float = -1.0
     #
     scale_lr: bool = False
@@ -344,4 +390,4 @@ class TextToImageConfiguration(BaseConfiguration):
     #
     validation_epochs: int = 5
     #
-    tracker_project_name: str = "text2image-fine-tune"
+    tracker_project_name: str = "text2image-fine-tuning"

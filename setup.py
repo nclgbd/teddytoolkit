@@ -24,7 +24,7 @@ setup(
     entry_points={
         "console_scripts": [
             f"rtk-job=scripts.run_job:main",
-            f"rtk-diffusion=scripts.run_diffusion:main",
+            "check-cuda=scripts.check_cuda:main",
         ],
     },
     long_description="",
