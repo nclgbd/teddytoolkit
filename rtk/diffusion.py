@@ -86,22 +86,25 @@ def instantiate_torch_metrics(tm_cfg: TorchMetricsConfiguration, remap=True, **k
 
 
 def compile_huggingface_pipeline(
-    cfg: TextToImageConfiguration, accelerator: Accelerator, device: torch.device
+    cfg: TextToImageConfiguration,
+    accelerator: Accelerator,
+    device: torch.device = None,
+    weight_dtype: torch.dtype = torch.float16,
 ):
     logger.info("Compiling HuggingFace pipeline...")
     hf_cfg = cfg.huggingface
 
-    unet: UNet2DConditionModel = hydra_instantiate(
-        hf_cfg.unet, torch_dtype=torch.float16
-    )
+    device = device if device is not None else accelerator.device
+
+    unet: UNet2DConditionModel = hydra_instantiate(hf_cfg.unet).to(device)
     scheduler: DDPMScheduler = hydra_instantiate(
-        hf_cfg.scheduler, torch_dtype=torch.float16
+        hf_cfg.scheduler, torch_dtype=weight_dtype
     )
     tokenizer: CLIPTokenizer = hydra_instantiate(
-        hf_cfg.tokenizer, torch_dtype=torch.float16
+        hf_cfg.tokenizer, torch_dtype=weight_dtype
     )
     pipeline: DiffusionPipeline = hydra_instantiate(
-        hf_cfg.pipeline, torch_dtype=torch.float16
+        hf_cfg.pipeline, torch_dtype=weight_dtype
     )
 
     def deepspeed_zero_init_disabled_context_manager():
@@ -130,8 +133,10 @@ def compile_huggingface_pipeline(
     with ContextManagers(deepspeed_zero_init_disabled_context_manager()):
         text_encoder: CLIPTextModel = hydra_instantiate(
             hf_cfg.text_encoder, torch_dtype=torch.float16
-        )
-        vae: AutoencoderKL = hydra_instantiate(hf_cfg.vae, torch_dtype=torch.float16)
+        ).to(device)
+        vae: AutoencoderKL = hydra_instantiate(
+            hf_cfg.vae, torch_dtype=torch.float16
+        ).to(device)
 
     logger.info("Freezing vae and text encoder and setting unet to trainable")
 
@@ -229,72 +234,91 @@ def evaluate(
     pipeline: DiffusionPipeline,
     loader: DataLoader,
     device: torch.device,
-    num_samples: int = 32,
+    num_samples: int = None,
 ):
     logger.info("Evaluating model...")
-    job_cfg = cfg.job
-    old_dim = cfg.datasets.dim
-    cfg.datasets.dim = 299
+    if True:
+        logger.warn("Skipping metric evaluation")
 
-    eval_transforms = datasets.create_transforms(cfg, use_transforms=False)
-    eval_loader: DataLoader = deepcopy(loader)
-    eval_loader.dataset.transform = eval_transforms
-    metrics = instantiate_torch_metrics(cfg.torchmetrics)
-    fid_metric: FrechetInceptionDistance = metrics["fid"]
-    inception_metric: InceptionScore = metrics["inception"]
-    ssim_metric: StructuralSimilarityIndexMeasure = metrics["ssim"]
-    # ms_ssims = []
+        num_samples = (
+            num_samples
+            if num_samples is not None
+            else cfg.datasets.dataloader.batch_size
+        )
+        generator = torch.Generator(device=device).manual_seed(cfg.random_state)
+        fake_images = generate_samples(
+            cfg,
+            pipeline,
+            device=device,
+            epoch=epoch,
+            generator=generator,
+            num_samples=num_samples,
+            save_images=True,
+        )
 
-    # get `num_samples` real images from dataset
-    logger.info("Getting real images...")
-    real_images = []
-    for batch in eval_loader:
-        b_images = list(batch[0].to("cpu"))
-        real_images.extend(b_images)
+    else:
+        job_cfg = cfg.job
+        old_dim = cfg.datasets.dim
+        cfg.datasets.dim = 299
+        eval_transforms = datasets.create_transforms(cfg, use_transforms=False)
+        eval_loader: DataLoader = deepcopy(loader)
+        eval_loader.dataset.transform = eval_transforms
+        metrics = instantiate_torch_metrics(cfg.torchmetrics)
+        fid_metric: FrechetInceptionDistance = metrics["fid"]
+        inception_metric: InceptionScore = metrics["inception"]
+        ssim_metric: StructuralSimilarityIndexMeasure = metrics["ssim"]
+        # ms_ssims = []
 
-        if len(real_images) >= num_samples:
-            break
+        # get `num_samples` real images from dataset
+        logger.info("Getting real images...")
+        real_images = []
+        for batch in eval_loader:
+            b_images = list(batch[0].to("cpu"))
+            real_images.extend(b_images)
 
-    # get `num_samples` fake images from dataset
-    generator = torch.Generator(device=device).manual_seed(cfg.random_state)
-    fake_images = generate_samples(
-        cfg,
-        pipeline,
-        device=device,
-        epoch=epoch,
-        generator=generator,
-        num_samples=num_samples,
-        save_images=True,
-    )
-    fake_img_transforms = [transforms.PILToTensor()]
-    fake_img_transforms.extend(eval_transforms.transforms)
-    eval_transforms.transforms = fake_img_transforms
-    fake_images = [eval_transforms(img) for img in fake_images]
-    # fake_images = torch.Tensor(fake_images)
+            if len(real_images) >= num_samples:
+                break
 
-    # Compute metrics
-    real_images = torch.stack(real_images)
-    fake_images = torch.stack(fake_images)
+        # get `num_samples` fake images from dataset
+        generator = torch.Generator(device=device).manual_seed(cfg.random_state)
+        fake_images = generate_samples(
+            cfg,
+            pipeline,
+            device=device,
+            epoch=epoch,
+            generator=generator,
+            num_samples=num_samples,
+            save_images=True,
+        )
+        fake_img_transforms = [transforms.PILToTensor()]
+        fake_img_transforms.extend(eval_transforms.transforms)
+        eval_transforms.transforms = fake_img_transforms
+        fake_images = [eval_transforms(img) for img in fake_images]
+        # fake_images = torch.Tensor(fake_images)
 
-    fid_metric.update(real_images, real=True)
-    fid_metric.update(fake_images, real=False)
-    fid = fid_metric.compute()
+        # Compute metrics
+        real_images = torch.stack(real_images)
+        fake_images = torch.stack(fake_images)
 
-    inception_metric.update(fake_images)
-    inception_m, inception_s = inception_metric.compute()
-    ssim = ssim_metric(fake_images, real_images)
+        fid_metric.update(real_images, real=True)
+        fid_metric.update(fake_images, real=False)
+        fid = fid_metric.compute()
 
-    # Log metrics
-    logged_metrics = {
-        "fid": fid,
-        "inception_mean": inception_m,
-        "inception_std": inception_s,
-        "ssim": ssim,
-    }
-    cfg.datasets.dim = old_dim
+        inception_metric.update(fake_images)
+        inception_m, inception_s = inception_metric.compute()
+        ssim = ssim_metric(fake_images, real_images)
 
-    if job_cfg.use_azureml:
-        mlflow.log_metrics(logged_metrics, step=epoch)
+        # Log metrics
+        logged_metrics = {
+            "fid": fid,
+            "inception_mean": inception_m,
+            "inception_std": inception_s,
+            "ssim": ssim,
+        }
+        cfg.datasets.dim = old_dim
+
+        if job_cfg.use_azureml:
+            mlflow.log_metrics(logged_metrics, step=epoch)
 
 
 def generate_samples(
@@ -357,7 +381,7 @@ def forward_diffusion(
     # Sample a random timestep for each image
     timesteps = torch.randint(
         0,
-        model_cfg.scheduler.num_train_timesteps,
+        noise_scheduler.config.num_train_timesteps,
         (bs,),
         device=clean_images.device,
     ).long()

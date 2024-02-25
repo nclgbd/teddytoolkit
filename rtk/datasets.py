@@ -255,9 +255,7 @@ def create_subset(df: pd.DataFrame, target: str, labels: list = []) -> pd.DataFr
     return df[subset_condition]
 
 
-def convert_labels_to_prompts(
-    cfg: DiffusionConfiguration, dataset: ImageDataset, **kwargs
-):
+def convert_labels_to_prompts(cfg: BaseConfiguration, dataset: ImageDataset, **kwargs):
     dataset_cfg = cfg.datasets
     base_prompt = "An image of a frontal chest x-ray depicting"
 
