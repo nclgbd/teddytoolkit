@@ -23,7 +23,7 @@ from torchmetrics.image.ssim import StructuralSimilarityIndexMeasure
 import accelerate
 from accelerate import Accelerator
 from accelerate.state import AcceleratorState
-from diffusers.training_utils import EMAModel
+from diffusers.training_utils import EMAModel, cast_training_params
 from diffusers import (
     UNet2DConditionModel,
     DiffusionPipeline,
@@ -36,6 +36,10 @@ from diffusers.utils.import_utils import is_xformers_available
 from transformers import CLIPTokenizer
 from transformers.models.clip.modeling_clip import CLIPTextModel
 from transformers.utils import ContextManagers
+
+# peft
+from peft import LoraConfig
+from peft.utils import get_peft_model_state_dict
 
 # mlflow
 import mlflow
@@ -54,14 +58,6 @@ def instantiate_torch_metrics(tm_cfg: TorchMetricsConfiguration, remap=True, **k
     for metric_cfg in _metrics:
         metric = hydra_instantiate(metric_cfg, **kwargs)
         target_name = _strip_target(metric_cfg, lower=False)
-        # if target_name == "FrechetInceptionDistance":
-        #     new_target_name = "fid"
-
-        # elif target_name == "InceptionScore":
-        #     new_target_name = "inception"
-
-        # elif target_name == "MultiScaleStructuralSimilarityIndexMeasure":
-        #     new_target_name = "ms-ssim"
         if remap:
             try:
                 target_name: str = tm_cfg.remap[target_name]
@@ -96,7 +92,7 @@ def compile_huggingface_pipeline(
 
     device = device if device is not None else accelerator.device
 
-    unet: UNet2DConditionModel = hydra_instantiate(hf_cfg.unet).to(device)
+    unet: UNet2DConditionModel = hydra_instantiate(hf_cfg.unet)
     scheduler: DDPMScheduler = hydra_instantiate(
         hf_cfg.scheduler, torch_dtype=weight_dtype
     )
@@ -121,29 +117,48 @@ def compile_huggingface_pipeline(
 
         return [deepspeed_plugin.zero3_init_context_manager(enable=False)]
 
-    # Currently Accelerate doesn't know how to handle multiple models under Deepspeed ZeRO stage 3.
-    # For this to work properly all models must be run through `accelerate.prepare`. But accelerate
-    # will try to assign the same optimizer with the same weights to all models during
-    # `deepspeed.initialize`, which of course doesn't work.
-    #
-    # For now the following workaround will partially support Deepspeed ZeRO-3, by excluding the 2
-    # frozen models from being partitioned during `zero.Init` which gets called during
-    # `from_pretrained` So CLIPTextModel and AutoencoderKL will not enjoy the parameter sharding
-    # across multiple gpus and only UNet2DConditionModel will get ZeRO sharded.
     with ContextManagers(deepspeed_zero_init_disabled_context_manager()):
+        # Currently Accelerate doesn't know how to handle multiple models under Deepspeed ZeRO stage 3.
+        # For this to work properly all models must be run through `accelerate.prepare`. But accelerate
+        # will try to assign the same optimizer with the same weights to all models during
+        # `deepspeed.initialize`, which of course doesn't work.
+        #
+        # For now the following workaround will partially support Deepspeed ZeRO-3, by excluding the 2
+        # frozen models from being partitioned during `zero.Init` which gets called during
+        # `from_pretrained` So CLIPTextModel and AutoencoderKL will not enjoy the parameter sharding
+        # across multiple gpus and only UNet2DConditionModel will get ZeRO sharded.
         text_encoder: CLIPTextModel = hydra_instantiate(
-            hf_cfg.text_encoder, torch_dtype=torch.float16
-        ).to(device)
-        vae: AutoencoderKL = hydra_instantiate(
-            hf_cfg.vae, torch_dtype=torch.float16
-        ).to(device)
-
-    logger.info("Freezing vae and text encoder and setting unet to trainable")
+            hf_cfg.text_encoder, torch_dtype=weight_dtype
+        )
+        vae: AutoencoderKL = hydra_instantiate(hf_cfg.vae, torch_dtype=weight_dtype)
 
     # Freeze vae and text_encoder and set unet to trainable
+    unet.requires_grad_(False)
     vae.requires_grad_(False)
     text_encoder.requires_grad_(False)
-    unet.train()
+
+    # Prepare the LoRA adapter for the UNet
+    # Freeze the unet parameters before adding adapters
+    for param in unet.parameters():
+        param.requires_grad_(False)
+
+    unet_lora_config = LoraConfig(
+        r=cfg.rank,
+        lora_alpha=cfg.rank,
+        init_lora_weights="gaussian",
+        target_modules=["to_k", "to_q", "to_v", "to_out.0"],
+    )
+
+    # Move unet, vae and text_encoder to device and cast to weight_dtype
+    unet.to(device, dtype=weight_dtype)
+    vae.to(device, dtype=weight_dtype)
+    text_encoder.to(device, dtype=weight_dtype)
+
+    # Add adapter and make sure the trainable params are in float32.
+    unet.add_adapter(unet_lora_config)
+    if cfg.mixed_precision == "fp16":
+        # only upcast trainable parameters (LoRA) into fp32
+        cast_training_params(unet, dtype=torch.float32)
 
     # Create EMA for the unet.
     ema_unet: torch.nn.Module = None

@@ -301,7 +301,9 @@ class HuggingFaceConfiguration:
 
 @dataclass
 class TextToImageConfiguration(BaseConfiguration):
-    huggingface: HuggingFaceConfiguration = field(default_factory=HuggingFaceConfiguration)
+    huggingface: HuggingFaceConfiguration = field(
+        default_factory=HuggingFaceConfiguration
+    )
     # The scale of input perturbation. Recommended 0.1.
     input_perturbation: float = 0.1
     # Path to pretrained model or model identifier from huggingface.co/models.
@@ -375,6 +377,8 @@ class TextToImageConfiguration(BaseConfiguration):
     logging_dir: str = "outputs/logs"
     #
     mixed_precision: str = "fp16"
+    #
+    rank: int = 4
     #
     local_rank: int = -1
     #
