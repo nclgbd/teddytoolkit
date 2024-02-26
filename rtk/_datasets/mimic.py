@@ -26,10 +26,19 @@ def load_mimic_dataset(cfg: BaseConfiguration, save_metadata=False, **kwargs):
         dataset_cfg = cfg.datasets
 
     index = dataset_cfg.index
+    target = dataset_cfg.target
     preprocessing_cfg = dataset_cfg.preprocessing
     positive_class = preprocessing_cfg.get("positive_class", "Pneumonia")
 
     patient_data = pd.read_csv(dataset_cfg.patient_data).set_index(index)
+
+    # remove all of the negative class for diffusion
+    if target != "class_conditioned_labels" and "diffusion" in cfg.mode:
+        logger.info("Removing all negative classes...")
+        class_encoding = dataset_cfg.encoding
+        patient_data = patient_data[
+            patient_data[target] == class_encoding[positive_class]
+        ]
 
     train_data = patient_data[patient_data["split"] == "train"]
     val_data = patient_data[patient_data["split"] == "validate"]
@@ -54,9 +63,9 @@ def load_mimic_dataset(cfg: BaseConfiguration, save_metadata=False, **kwargs):
     def __build_mimic_data_split(cfg: BaseConfiguration, data: pd.DataFrame, split=""):
         dataset_cfg = cfg.datasets
         image_files = [
-            os.path.join(dataset_cfg.scan_data, f) for f in data[IMAGE_KEYNAME]
+            os.path.join(dataset_cfg.scan_data, f) for f in data[IMAGE_KEYNAME].values
         ]
-        labels = data[dataset_cfg.target]
+        labels = data[dataset_cfg.target].values
         transforms = create_transforms(
             cfg, use_transforms=cfg.use_transforms if split == "train" else False
         )
@@ -65,7 +74,7 @@ def load_mimic_dataset(cfg: BaseConfiguration, save_metadata=False, **kwargs):
             dataset_cfg.instantiate,
             image_files=image_files,
             labels=labels,
-            transforms=transforms,
+            transform=transforms,
         )
         return dataset
 

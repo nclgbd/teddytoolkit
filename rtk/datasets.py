@@ -23,6 +23,7 @@ from imblearn.over_sampling import RandomOverSampler
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
+from torchvision.io import read_image
 
 # monai
 import monai
@@ -545,11 +546,15 @@ def convert_image_dataset(
         dataset_list.append({IMAGE_KEYNAME: image_file, LABEL_KEYNAME: label})
 
     transform = dataset.transform if transform is None else transform
+    # load_image = re
+    transforms_list = list(transform.transforms)
+    transforms_list.insert(0, read_image)
+    new_transforms = monai_transforms.Compose(transforms_list)
 
-    new_dataset: monai.data.Dataset = PersistentDataset(
+    new_dataset: monai.data.Dataset = CacheDataset(
         data=dataset_list,
-        transform=transform,
-        cache_dir=CACHE_DIR,
+        transform=new_transforms,
+        # cache_dir=CACHE_DIR,
         **kwargs,
     )
     return new_dataset

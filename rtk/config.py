@@ -255,7 +255,7 @@ class Configuration(BaseConfiguration):
     models: ModelConfiguration = field(default_factory=ModelConfiguration())
 
     # module specific configurations
-    ignite: IgniteConfiguration = field(default_factory=IgniteConfiguration())
+    ignite: IgniteConfiguration = field(default_factory=lambda: IgniteConfiguration())
     mlflow: DictConfig = field(default_factory=lambda: DictConfig({}))
     sklearn: SklearnConfiguration = field(default_factory=SklearnConfiguration())
 
