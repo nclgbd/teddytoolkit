@@ -3,6 +3,7 @@ For quick debugging and testing.
 """
 
 from rich import pretty, traceback
+from rich import inspect as rich_inspect
 
 from rtk.utils import get_console
 
@@ -38,3 +39,7 @@ def prepare_console(**kwargs):
     console.clear()
 
     return ws, console
+
+
+def inspect(private=True, methods=True, *args, **kwargs):
+    rich_inspect(private=private, methods=methods, *args, **kwargs)

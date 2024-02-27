@@ -250,6 +250,7 @@ def evaluate(
     loader: DataLoader,
     device: torch.device,
     num_samples: int = None,
+    **kwargs,
 ):
     logger.info("Evaluating model...")
     if True:
@@ -260,7 +261,7 @@ def evaluate(
             if num_samples is not None
             else cfg.datasets.dataloader.batch_size
         )
-        generator = torch.Generator(device=device).manual_seed(cfg.random_state)
+        generator = torch.Generator(device=device).manual_seed(epoch)
         fake_images = generate_samples(
             cfg,
             pipeline,
@@ -269,6 +270,7 @@ def evaluate(
             generator=generator,
             num_samples=num_samples,
             save_images=True,
+            **kwargs,
         )
 
     else:
@@ -379,7 +381,9 @@ def generate_samples(
         # Save the images
         test_dir = os.path.join("artifacts", "samples")
         os.makedirs(test_dir, exist_ok=True)
-        image_grid.save(f"{test_dir}/{(epoch+1):04d}.png")
+        img_path = f"{test_dir}/{(epoch+1):04d}.png"
+        image_grid.save(img_path)
+        mlflow.log_artifact(img_path)
 
     return samples_images
 
