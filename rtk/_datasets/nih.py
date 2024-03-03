@@ -24,7 +24,7 @@ def chest_xray14_get_target_counts(df: pd.DataFrame, target: str = ""):
     return Counter(",".join(df[target]).replace("|", ",").split(","))
 
 
-def load_cxr14_dataset(
+def load_nih_dataset(
     cfg: Configuration = None,
     save_metadata=True,
     return_metadata=False,
@@ -47,7 +47,10 @@ def load_cxr14_dataset(
     ).set_index(dataset_cfg.index)
 
     # remove all of the negative class for diffusion
-    if target != "class_conditioned_labels" and "diffusion" in cfg.mode:
+    if (
+        target not in set(["class_conditioned_labels", "text_prompts"])
+        and "diffusion" in cfg.mode
+    ):
         logger.info("Removing all negative classes...")
         class_encoding = dataset_cfg.encoding
         cxr_metadata = cxr_metadata[
@@ -59,29 +62,35 @@ def load_cxr14_dataset(
         train_val_list = [idx.strip() for idx in f.readlines()]
 
     train_metadata = cxr_metadata[cxr_metadata.index.isin(train_val_list)]
-    train_transforms = create_transforms(cfg, use_transforms=cfg.use_transforms)
+    train_transforms = create_transforms(
+        cfg,
+        use_transforms=cfg.use_transforms,
+    )
     train_image_files = np.array(
         [os.path.join(scan_path, filename) for filename in train_metadata.index.values]
     )
-    train_labels = train_metadata[target].values
+    train_labels = list(train_metadata[target].values.tolist())
     train_dataset: monai.data.Dataset = instantiate(
         config=dataset_cfg.instantiate,
         image_files=train_image_files,
         labels=train_labels,
         transform=train_transforms,
-        **kwargs,
+        # **kwargs,
     )
 
     # test split
     with open(os.path.join(scan_path, "test_list.txt"), "r") as f:
         test_list = [idx.strip() for idx in f.readlines()]
 
-    eval_transforms = create_transforms(cfg, use_transforms=False)
+    eval_transforms = create_transforms(
+        cfg,
+        use_transforms=False,
+    )
     test_metadata = cxr_metadata[cxr_metadata.index.isin(test_list)]
     test_image_files = np.array(
         [os.path.join(scan_path, filename) for filename in test_metadata.index.values]
     )
-    test_labels = test_metadata[target].values
+    test_labels = test_metadata[target].values.tolist()
 
     if preprocessing_cfg.get("name", "") == "icu-preprocessing":
         logger.info("Subsetting test set to 'ICU' configuration...")
@@ -115,14 +124,14 @@ def load_cxr14_dataset(
         image_files=test_image_files,
         labels=test_labels,
         transform=eval_transforms,
-        **kwargs,
+        # **kwargs,
     )
     if save_metadata:
         train_metadata.to_csv(
-            os.path.join(DEFAULT_DATA_PATH, "patients", "cxr14_train_metadata.csv")
+            os.path.join(DEFAULT_DATA_PATH, "patients", "nih_train_metadata.csv")
         )
         test_metadata.to_csv(
-            os.path.join(DEFAULT_DATA_PATH, "patients", "cxr14_test_metadata.csv")
+            os.path.join(DEFAULT_DATA_PATH, "patients", "nih_test_metadata.csv")
         )
 
     return (

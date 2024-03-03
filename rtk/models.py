@@ -93,6 +93,10 @@ def instantiate_model(
         model = DDP(model, device_ids=device_ids, output_device=0)
         return model
 
+    if cfg.models.get("last_layer", False):
+        model.op_threshs = None  # prevent pre-trained model calibration
+        model.classifier = hydra_instantiate(cfg.models.last_layer)
+
     return model.to(device)
 
 

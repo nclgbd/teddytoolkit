@@ -124,7 +124,7 @@ def main(cfg: Configuration) -> None:
     logger.info(f"Using seed:\t{random_state}")
 
     device = torch.device(cfg.device)
-    logger.info(f"Using device:\t{device}")
+    logger.info(f"Using device:\t'{device}'")
 
     run_name = create_run_name(cfg=cfg, random_state=random_state)
     logger.info(f"Run name:\t'{run_name}'")

@@ -3,6 +3,7 @@ import hydra
 import numpy as np
 import os
 import pandas as pd
+from PIL import Image
 from collections import Counter
 from copy import deepcopy
 from matplotlib import pyplot as plt
@@ -33,9 +34,9 @@ from monai.data import ImageDataset, ThreadDataLoader, CacheDataset, PersistentD
 # rtk
 from rtk import *
 from rtk._datasets import create_transforms
-from rtk._datasets.cxr14 import load_cxr14_dataset
 from rtk._datasets.ixi import load_ixi_dataset
 from rtk._datasets.mimic import load_mimic_dataset
+from rtk._datasets.nih import load_nih_dataset
 from rtk._datasets.pediatrics import load_pediatrics_dataset
 from rtk.config import *
 from rtk.utils import (
@@ -116,8 +117,8 @@ def get_images_and_classes(dataset: ImageDataset, **kwargs):
     Get the images and classes from a dataset.
     """
     try:
-        images = dataset.image_files
-        classes = dataset.labels
+        images = list(dataset.image_files)
+        classes = list(dataset.labels)
     except AttributeError:
         dataset: CacheDataset = dataset
         datalist = dataset.data
@@ -256,18 +257,41 @@ def create_subset(df: pd.DataFrame, target: str, labels: list = []) -> pd.DataFr
     return df[subset_condition]
 
 
-def convert_labels_to_prompts(cfg: BaseConfiguration, dataset: ImageDataset, **kwargs):
-    dataset_cfg = cfg.datasets
-    base_prompt = "An image of a frontal chest x-ray depicting"
+# def convert_labels_to_prompts(
+#     cfg: BaseConfiguration, dataset: ImageDataset, base_prompt: str = None, **kwargs
+# ):
+#     dataset_cfg = cfg.datasets
+#     base_prompt = "An photo of a lung x-ray depicting"
 
-    class_prompts: dict = dict(dataset_cfg.text_prompts["class_prompts"])
-    caption_labels = []
-    for label in dataset.labels:
-        new_label = f"{base_prompt} {class_prompts[label]}"
-        caption_labels.append(new_label)
+#     class_prompts: dict = dict(dataset_cfg.text_prompts["class_prompts"])
+#     caption_labels = []
+#     for label in dataset.labels:
+#         new_label = f"{base_prompt} {class_prompts[label]}"
+#         caption_labels.append(new_label)
 
-    dataset.labels = caption_labels
-    return caption_labels
+#     dataset.labels = caption_labels
+#     return caption_labels
+
+
+def apply_label_to_text_prompts(x, base: list = None):
+    if base == None:
+        base = "A photo of a lung xray".split(" ")
+    if x["No Finding"] == 1:
+        return " ".join(base).lower()
+
+    prompt = base.copy()
+    prompt.extend(["depicting", "visibile"])
+
+    classes = []
+    for i, s in enumerate(x):
+
+        if s == 1:
+            classes.append(x.index[i])
+    if len(classes) >= 2:
+        classes.insert(-1, "and")
+
+    prompt.extend(classes)
+    return " ".join(prompt).lower()
 
 
 def instantiate_image_dataset(
@@ -288,8 +312,10 @@ def instantiate_image_dataset(
             return_metadata=return_metadata,
         )
 
-    elif dataset_name == "cxr14":
-        loaded_datasets = load_cxr14_dataset(cfg=cfg, save_metadata=save_metadata)
+    elif dataset_name == "nih" or dataset_name == "cxr14":
+        loaded_datasets = load_nih_dataset(
+            cfg=cfg, save_metadata=save_metadata, **kwargs
+        )
 
     elif dataset_name == "mimic-cxr":
         loaded_datasets = load_mimic_dataset(cfg, save_metadata=save_metadata)
@@ -336,7 +362,7 @@ def instantiate_train_val_test_datasets(
             random_state=random_state,
             **train_test_split_kwargs,
         )
-        X_train = X_train.reshape(-1)
+        # X_train = X_train.reshape(-1)
         train_df = pd.DataFrame({IMAGE_KEYNAME: X_train, LABEL_KEYNAME: y_train})
 
         sampling_method = preprocessing_cfg.sampling_method
