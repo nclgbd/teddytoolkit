@@ -257,41 +257,33 @@ def create_subset(df: pd.DataFrame, target: str, labels: list = []) -> pd.DataFr
     return df[subset_condition]
 
 
-# def convert_labels_to_prompts(
-#     cfg: BaseConfiguration, dataset: ImageDataset, base_prompt: str = None, **kwargs
-# ):
-#     dataset_cfg = cfg.datasets
-#     base_prompt = "An photo of a lung x-ray depicting"
-
-#     class_prompts: dict = dict(dataset_cfg.text_prompts["class_prompts"])
-#     caption_labels = []
-#     for label in dataset.labels:
-#         new_label = f"{base_prompt} {class_prompts[label]}"
-#         caption_labels.append(new_label)
-
-#     dataset.labels = caption_labels
-#     return caption_labels
-
-
 def apply_label_to_text_prompts(x, base: list = None):
     if base == None:
         base = "A photo of a lung xray".split(" ")
-    if x["No Finding"] == 1:
+    if x["No Finding"] == 1 or sum(x.values) == 0:
         return " ".join(base).lower()
 
     prompt = base.copy()
-    prompt.extend(["depicting", "visibile"])
+    prompt.extend(["depicting", "visible"])
 
     classes = []
     for i, s in enumerate(x):
-
         if s == 1:
-            classes.append(x.index[i])
+            clss = x.index[i] + ","
+            classes.append(clss)
+
     if len(classes) >= 2:
         classes.insert(-1, "and")
 
     prompt.extend(classes)
-    return " ".join(prompt).lower()
+    prompt = " ".join(prompt).lower()
+
+    len_prompt = len(prompt.split(","))
+    if len_prompt == 3:
+        prompt = prompt.replace(",", "")
+        return prompt
+
+    return prompt[:-1]  # remove the last comma
 
 
 def instantiate_image_dataset(
@@ -302,6 +294,7 @@ def instantiate_image_dataset(
     dataset_cfg: DatasetConfiguration = kwargs.get(
         "dataset_cfg", cfg.datasets if cfg is not None else None
     )
+    preprocessing_cfg = dataset_cfg.preprocessing
     set_labels_from_encoding(cfg=cfg)
 
     dataset_name = dataset_cfg.name
@@ -328,8 +321,55 @@ def instantiate_image_dataset(
             f"Dataset '{dataset_name}' is not recognized not supported. Please use ['cxr14'|'pediatrics'|'ixi'|'mimic']."
         )
 
+    if "additional_datasets" in dataset_cfg:
+        logger.info("Adding additional datasets...")
+        train_dataset, test_dataset = loaded_datasets[0], loaded_datasets[-1]
+        train_dataset, test_dataset = combine_datasets(
+            dataset_cfg=dataset_cfg,
+            train_dataset=train_dataset,
+            test_dataset=test_dataset,
+            positive_class=preprocessing_cfg.positive_class,
+        )
+        if len(loaded_datasets) == 3:
+            loaded_datasets = [train_dataset, loaded_datasets[1], test_dataset]
+        else:
+            loaded_datasets = [train_dataset, test_dataset]
+
     logger.info("Image dataset instantiated.\n")
     return loaded_datasets
+
+
+def combine_datasets(
+    dataset_cfg: DatasetConfiguration,
+    train_dataset: ImageDataset,
+    test_dataset: ImageDataset,
+    val_dataset: ImageDataset = None,
+    positive_class: str = "Pneumonia",
+    **kwargs,
+):
+    dataset_configs = list(dataset_cfg.additional_datasets.dataset_configs)
+    for dc in dataset_configs:
+        d_cfg = OmegaConf.load(dc["filepath"])
+        loader = hydra_instantiate(dc["loader"])
+        add_datasets = loader(
+            dataset_cfg=d_cfg,
+            positive_class=positive_class,
+            train_transforms=train_dataset.transform,
+            eval_transforms=test_dataset.transform,
+        )
+        a_train_data, a_test_data = add_datasets
+        train_dataset = ImageDataset(
+            image_files=list(train_dataset.image_files)
+            + list(a_train_data.image_files),
+            labels=list(train_dataset.labels) + list(a_train_data.labels),
+            transform=train_dataset.transform,
+        )
+        test_dataset = ImageDataset(
+            image_files=list(test_dataset.image_files) + list(a_test_data.image_files),
+            labels=list(test_dataset.labels) + list(a_test_data.labels),
+            transform=test_dataset.transform,
+        )
+    return train_dataset, test_dataset
 
 
 def instantiate_train_val_test_datasets(
@@ -584,112 +624,3 @@ def convert_image_dataset(
         **kwargs,
     )
     return new_dataset
-
-
-def combine_datasets(
-    train_dataset: monai.data.Dataset,
-    test_dataset: monai.data.Dataset,
-    cfg: BaseConfiguration = None,
-    dataset_cfg: DatasetConfiguration = None,
-    dataset_configs: list = [],
-    # transform: monai.transforms.Compose = None,
-    **kwargs,
-):
-    """
-    Combine a list of datasets.
-    """
-    logger.info("Adding additional datasets...")
-    if cfg is None:
-        dataset_cfg: DatasetConfiguration = dataset_cfg
-    else:
-        dataset_cfg: DatasetConfiguration = cfg.datasets
-
-    preprocessing_cfg = dataset_cfg.preprocessing
-
-    additional_datasets: dict = dataset_cfg.get(
-        "additional_datasets", {"dataset_configs": []}
-    )
-    dataset_configs: list = (
-        dataset_configs
-        if any(dataset_configs)
-        else additional_datasets["dataset_configs"]
-    )
-
-    c_train_dataset = deepcopy(train_dataset)
-    c_test_dataset = deepcopy(test_dataset)
-
-    encoding: int = dataset_cfg.encoding[preprocessing_cfg["positive_class"]]
-    X_train, y_train = get_images_and_classes(c_train_dataset)
-    # X_test, y_test = get_images_and_classes(c_test_dataset)
-    train_metadata = pd.DataFrame({IMAGE_KEYNAME: X_train, LABEL_KEYNAME: y_train})
-    orig_size = len(train_metadata[train_metadata[LABEL_KEYNAME] == encoding])
-    logger.info(f"Original class size: {orig_size}\n")
-
-    # num_add_datasets = len(dataset_configs)
-
-    for additional_dataset in dataset_configs:
-        additional_dataset_name = os.path.splitext(
-            additional_dataset["filepath"].split("/")[-1]
-        )[0]
-        logger.info(f"Adding additional dataset: '{additional_dataset_name}'...")
-        filepath: os.PathLike = additional_dataset["filepath"]
-        marshaller: callable = globals()[additional_dataset["loader"]]
-        _dataset_cfg: DatasetConfiguration = yaml_to_configuration(filepath)
-        additional_dataset_splits = marshaller(
-            dataset_cfg=_dataset_cfg,
-            return_metadata=True,
-        )
-        add_train_metadata, add_test_metadata = (
-            additional_dataset_splits[2],
-            additional_dataset_splits[3],
-        )
-
-        # metadata preprocessing
-        train_metadata_subset = add_train_metadata[
-            add_train_metadata[LABEL_KEYNAME] == encoding
-        ]
-        if preprocessing_cfg.get("use_sampling", False):
-            train_metadata_subset = train_metadata_subset.groupby(LABEL_KEYNAME).apply(
-                lambda x: x.sample(orig_size, replace=True)
-            )
-
-        test_metadata_subset = add_test_metadata[
-            add_test_metadata[LABEL_KEYNAME] == encoding
-        ]
-
-        train_image_files = np.hstack(
-            (
-                c_train_dataset.image_files,
-                train_metadata_subset[IMAGE_KEYNAME],
-            )
-        )
-        test_image_files = np.hstack(
-            (
-                c_test_dataset.image_files,
-                test_metadata_subset[IMAGE_KEYNAME],
-            )
-        )
-        train_labels = np.hstack(
-            (c_train_dataset.labels, train_metadata_subset[LABEL_KEYNAME])
-        )
-        test_labels = np.hstack(
-            (c_test_dataset.labels, test_metadata_subset[LABEL_KEYNAME])
-        )
-
-        c_train_dataset = hydra_instantiate(
-            cfg=dataset_cfg.instantiate,
-            image_files=train_image_files,
-            labels=train_labels,
-            transform=c_train_dataset.transform,
-        )
-        c_test_dataset = hydra_instantiate(
-            cfg=dataset_cfg.instantiate,
-            image_files=test_image_files,
-            labels=test_labels,
-            transform=c_test_dataset.transform,
-        )
-    logger.info("Additional datasets added.")
-    logger.info(f"Train dataset:\t{Counter(c_train_dataset.labels)}")
-    logger.info(f"Test dataset:\t{Counter(c_test_dataset.labels)}\n")
-
-    return c_train_dataset, c_test_dataset

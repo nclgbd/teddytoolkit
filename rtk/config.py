@@ -79,7 +79,7 @@ class DatasetConfiguration:
     )
     #
     additional_datasets: DictConfig = field(
-        default_factory=lambda: DictConfig({"dataset_configs": []})
+        default_factory=lambda: DictConfig({"dataset_configs": [], "loader": None})
     )
 
 
@@ -249,18 +249,6 @@ class DiffusionModelConfiguration(ModelConfiguration):
 
 
 @dataclass
-class Configuration(BaseConfiguration):
-
-    job: JobConfiguration = field(default_factory=JobConfiguration())
-    models: ModelConfiguration = field(default_factory=ModelConfiguration())
-
-    # module specific configurations
-    ignite: IgniteConfiguration = field(default_factory=lambda: IgniteConfiguration())
-    mlflow: DictConfig = field(default_factory=lambda: DictConfig({}))
-    sklearn: SklearnConfiguration = field(default_factory=SklearnConfiguration())
-
-
-@dataclass
 class TorchMetricsConfiguration:
     """
     Configuration for the `torchmetrics` python library.
@@ -274,16 +262,19 @@ class TorchMetricsConfiguration:
 
 
 @dataclass
-class TextPromptConfiguration:
-    class_prompts: dict = field(default_factory=lambda: {})
-    negative_prompts: list = field(default_factory=lambda: [])
+class Configuration(BaseConfiguration):
+
+    job: JobConfiguration = field(default_factory=JobConfiguration())
+    models: ModelConfiguration = field(default_factory=ModelConfiguration())
+
+    # module specific configurations
+    ignite: IgniteConfiguration = field(default_factory=lambda: IgniteConfiguration())
+    mlflow: DictConfig = field(default_factory=lambda: DictConfig({}))
+    sklearn: SklearnConfiguration = field(default_factory=SklearnConfiguration())
 
 
 @dataclass
 class DiffusionConfiguration(Configuration):
-    text_prompts: TextPromptConfiguration = field(
-        default_factory=TextPromptConfiguration
-    )
     torchmetrics: TorchMetricsConfiguration = field(
         default_factory=TorchMetricsConfiguration
     )

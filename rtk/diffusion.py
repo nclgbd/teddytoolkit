@@ -100,7 +100,7 @@ def compile_huggingface_pipeline(
         hf_cfg.tokenizer, torch_dtype=weight_dtype
     )
     pipeline: DiffusionPipeline = hydra_instantiate(
-        hf_cfg.pipeline, torch_dtype=weight_dtype
+        hf_cfg.pipeline, torch_dtype=weight_dtype,
     )
 
     def deepspeed_zero_init_disabled_context_manager():

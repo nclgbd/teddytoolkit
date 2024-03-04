@@ -63,7 +63,10 @@ def download_model_weights(
 
 
 def instantiate_model(
-    cfg: Configuration, device: torch.device = torch.device("cpu"), **kwargs
+    cfg: Configuration,
+    device: torch.device = torch.device("cpu"),
+    use_huggingface=False,
+    **kwargs,
 ):
     """
     Instantiates a model from the given configuration.
@@ -85,7 +88,10 @@ def instantiate_model(
 
         ws = login()
         model_path = download_model_weights(ws, **pretrained_weights)
-        model.load_state_dict(torch.load(model_path))
+        if use_huggingface:
+            model = model.from_pretrained(model_path)
+        else:
+            model.load_state_dict(torch.load(model_path))
 
     if cfg.job.get("use_multi_gpu", False):
         logger.info("Using multi-GPU...")
