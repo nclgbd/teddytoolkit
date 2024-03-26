@@ -1,0 +1,23 @@
+# job: test-diffusion
+
+device: 2
+dry_run: true
+epoch_length: null
+max_epochs: 2
+mode: diffusion
+perform_validation: true
+random_state: 42
+set_track_meta: false
+use_autocast: true
+use_azureml: true
+use_mlflow: true
+use_multi_gpu: false
+use_pretrained: true
+use_transforms: false
+
+# function kwargs
+prepare_function:
+  _target_: rtk.ignite.prepare_diffusion_run
+
+tags:
+  type: diffusion

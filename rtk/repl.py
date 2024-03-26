@@ -1,7 +1,9 @@
 """
 For quick debugging and testing.
 """
+
 from rich import pretty, traceback
+from rich import inspect as rich_inspect
 
 from rtk.utils import get_console
 
@@ -31,9 +33,13 @@ def install(
 def prepare_console(**kwargs):
     from rtk.utils import login
 
-    install()
+    install(**kwargs)
     ws = login()
-    console = get_console(**kwargs)
+    console = get_console()
     console.clear()
 
     return ws, console
+
+
+def inspect(private=True, methods=True, *args, **kwargs):
+    rich_inspect(private=private, methods=methods, *args, **kwargs)

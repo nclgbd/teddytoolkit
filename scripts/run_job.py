@@ -47,6 +47,7 @@ def run_trainer(
         job_cfg["prepare_function"], _partial_=True
     )
     trainer, _ = prepare_func(loaders=loaders, device=device, cfg=cfg)
+    cfg.datasets.labels = datasets.set_labels_from_encoding(cfg)
     state = trainer.run(
         data=train_loader,
         max_epochs=job_cfg.max_epochs,
@@ -111,30 +112,25 @@ def run_eval(
     return
 
 
-def run_diffusion():
-    pass
-
-
 @hydra.main(version_base=None, config_path="", config_name="")
 def main(cfg: Configuration) -> None:
     dataset_cfg: DatasetConfiguration = cfg.datasets
     # before we run....
     logger.debug(OmegaConf.to_yaml(cfg))
-    job_cfg = cfg.job
-    mode: str = job_cfg.get("mode", "train")
-    random_state: int = job_cfg.get("random_state", random.randint(0, _MAX_RAND_INT))
+    mode: str = cfg.get("mode", "train")
+    random_state: int = cfg.get("random_state", random.randint(0, _MAX_RAND_INT))
 
     monai.utils.set_determinism(seed=random_state)
     logger.info(f"Using seed:\t{random_state}")
 
-    device = torch.device(job_cfg.device)
-    logger.info(f"Using device:\t{job_cfg.device}")
+    device = torch.device(cfg.device)
+    logger.info(f"Using device:\t'{device}'")
 
     run_name = create_run_name(cfg=cfg, random_state=random_state)
     logger.info(f"Run name:\t'{run_name}'")
 
     # prepare data
-    loaders = datasets.prepare_data(cfg)
+    loaders = datasets.prepare_validation_dataloaders(cfg)
     train_loader = loaders[0]
     test_loader = loaders[-1]
 

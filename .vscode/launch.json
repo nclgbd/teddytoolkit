@@ -6,7 +6,7 @@
     "configurations": [
         {
             "name": "Debug run_job.py: tests conf",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "scripts/run_job.py",
             "console": "integratedTerminal",
@@ -23,7 +23,7 @@
         },
         {
             "name": "Debug run_diffusion.py: tests conf",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "scripts/run_diffusion.py",
             "console": "integratedTerminal",

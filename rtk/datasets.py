@@ -1,10 +1,11 @@
 # imports
+import hydra
 import numpy as np
 import os
 import pandas as pd
+from PIL import Image
 from collections import Counter
 from copy import deepcopy
-from hydra.utils import instantiate
 from matplotlib import pyplot as plt
 from omegaconf import OmegaConf
 from random import randint
@@ -23,6 +24,7 @@ from imblearn.over_sampling import RandomOverSampler
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
+from torchvision.io import read_image
 
 # monai
 import monai
@@ -30,20 +32,20 @@ import monai.transforms as monai_transforms
 from monai.data import ImageDataset, ThreadDataLoader, CacheDataset, PersistentDataset
 
 # rtk
-from rtk import DEFAULT_CACHE_DIR, DEFAULT_DATA_PATH
-from rtk.config import Configuration, JobConfiguration, DatasetConfiguration
-from rtk.utils import get_logger, hydra_instantiate, yaml_to_configuration
+from rtk import *
+from rtk._datasets import create_transforms
+from rtk._datasets.ixi import load_ixi_dataset
+from rtk._datasets.mimic import load_mimic_dataset
+from rtk._datasets.nih import load_nih_dataset
+from rtk._datasets.pediatrics import load_pediatrics_dataset
+from rtk.config import *
+from rtk.utils import (
+    get_logger,
+    hydra_instantiate,
+    yaml_to_configuration,
+)
 
 logger = get_logger(__name__)
-
-_CHEST_XRAY_TRAIN_DATASET_SIZE = 5232
-_CHEST_XRAY_TEST_DATASET_SIZE = 624
-_IXI_MRI_DATASET_SIZE = 538
-
-_IMAGE_KEYNAME = "image_files"
-_LABEL_KEYNAME = "labels"
-_COLUMN_NAMES = [_IMAGE_KEYNAME, _LABEL_KEYNAME]
-_CACHE_DIR = os.path.join(DEFAULT_CACHE_DIR, "tmp")
 
 
 def visualize_scan(
@@ -51,127 +53,29 @@ def visualize_scan(
     index: int = None,
     scan: torch.Tensor = None,
     label: torch.Tensor = None,
+    display: bool = True,
 ):
     """"""
 
-    if scan is None or label is None:
+    if scan is None and label is None:
         scan, label = next(iterator)
         index = randint(0, len(scan) - 1) if index is None else index
         scan = scan[index]
         label = label[index]
 
-    _filename = scan._meta["filename_or_obj"].split("/")[-1]
-    patient_id = _filename.split(".")[0]
+    try:
+        _filename = scan._meta["filename_or_obj"].split("/")[-1]
+        patient_id = _filename.split(".")[0]
+    except AttributeError:
+        patient_id = None
 
     plt.title(f"Patient ID: {patient_id}; Label: {label}")
-    display_scan = scan.numpy()
+    display_scan = scan.cpu().numpy()
     display_scan = np.transpose(display_scan, (1, 2, 0))
-    plt.imshow(display_scan, cmap="bone")
+    if display:
+        plt.imshow(display_scan, cmap="bone")
 
-    return scan, label
-
-
-def create_transforms(
-    cfg: Configuration = None,
-    dataset_cfg: DatasetConfiguration = None,
-    use_transforms: bool = None,
-    transform_dicts: dict = None,
-    **kwargs,
-):
-    """
-    Get transforms for the model based on the model configuration.
-    ## Args
-    * `cfg` (`Configuration`, optional): The configuration. Defaults to `None`.
-    * `dataset_cfg` (`DatasetConfiguration`, optional): The dataset configuration. Defaults to `None`.
-    * `use_transforms` (`bool`, optional): Whether or not to use the transforms. Defaults to `False`.
-    * `transform_dicts` (`dict`, optional): The dictionary of transforms to use. Defaults to `None`.
-    * `mode` (`str`, optional): The mode to use. Add in kwargs.
-    ## Returns
-    * `torchvision.transforms.Compose`: The transforms for the model in the form of a `torchvision.transforms.Compose`
-    object.
-    """
-    dataset_cfg = cfg.datasets if cfg is not None else dataset_cfg
-    use_transforms = (
-        use_transforms
-        if use_transforms is not None
-        else cfg.job.get("use_transforms", False)
-    )
-    if use_transforms:
-        logger.info("Creating 'train' transforms...")
-    else:
-        logger.info("Creating 'eval' transforms...")
-
-    transform_dicts: dict = (
-        transform_dicts
-        if dataset_cfg is None
-        else dataset_cfg.get("transforms", transform_dicts)
-    )
-
-    if transform_dicts is None:
-        return None
-
-    # transforms specific to loading the data. These are always used
-    transforms: list = deepcopy(transform_dicts["load"])
-
-    # If we're using transforms, we need to load the training dictionaries as well
-    if use_transforms:
-        transforms += transform_dicts["train"]
-
-    def __get_monai_transforms(
-        transforms: list,
-    ):
-        _ret_transforms = []
-        for transform in transforms:
-            logger.debug(
-                "Adding transform: '{}'".format(transform["_target_"].split(".")[-1])
-            )
-            transform_fn = instantiate(transform)
-            _ret_transforms.append(transform_fn)
-
-        # diffusion transforms
-        if kwargs.get("mode", "") == "diffusion":
-            if use_transforms:
-                rand_lambda_transform = monai_transforms.RandLambdad(
-                    keys=[_LABEL_KEYNAME],
-                    prob=0.15,
-                    func=lambda x: -1 * torch.ones_like(x),
-                )
-                _ret_transforms.append(rand_lambda_transform)
-            lambda_transform = monai_transforms.Lambdad(
-                keys=[_LABEL_KEYNAME],
-                func=lambda x: torch.tensor(x, dtype=torch.float32)
-                .unsqueeze(0)
-                .unsqueeze(0),
-            )
-            _ret_transforms.append(lambda_transform)
-            # _ret_transforms.appent(monai_transforms.EnsureType(dtype=torch.float32))
-
-        # always convert to tensor at the end
-        _ret_transforms.append(monai_transforms.ToTensor())
-        return _ret_transforms
-
-    ret_transforms = __get_monai_transforms(transforms)
-
-    return monai_transforms.Compose(ret_transforms)
-
-
-def _filter_scan_paths(
-    filter_function: callable, scan_paths: list, exclude: list = ["_mask.nii.gz"]
-):
-    """
-    Filter a list of scan paths using a filter function.
-
-    ## Args
-    * `filter_function` (`callable`): The filter function to use.
-    * `scan_paths` (`list`): The list of scan paths to filter.
-    * `exclude` (`list`, optional): The list of strings to exclude from the scan paths. Defaults to `["_mask.nii.gz"]`.
-    """
-    filtered_scan_paths = [
-        scan_path
-        for scan_path in scan_paths
-        if filter_function(scan_path) and not any(x in scan_path for x in exclude)
-    ]
-    return filtered_scan_paths
+    return display_scan, label
 
 
 def resample_to_value(cfg: Configuration, metadata: pd.DataFrame, **kwargs):
@@ -180,21 +84,21 @@ def resample_to_value(cfg: Configuration, metadata: pd.DataFrame, **kwargs):
     """
     dataset_cfg = cfg.datasets
     preprocessing_cfg = dataset_cfg.preprocessing
-    label_encoding = sorted(metadata[_LABEL_KEYNAME].unique())
+    label_encoding = sorted(metadata[LABEL_KEYNAME].unique())
     sample_to_value: int = preprocessing_cfg.get(
         "sample_to_value", kwargs.get("sample_to_value", 3500)
     )
     new_metadata = deepcopy(metadata)
     for label in label_encoding:
-        class_subset = metadata[metadata[_LABEL_KEYNAME] == label]
+        class_subset = metadata[metadata[LABEL_KEYNAME] == label]
         offset_size = sample_to_value - len(class_subset)
         resampled_image_files = np.random.choice(
-            class_subset[_IMAGE_KEYNAME].values, size=offset_size
+            class_subset[IMAGE_KEYNAME].values, size=offset_size
         )
         resampled_labels = np.array([label] * offset_size)
         resampled_dict = {
-            _IMAGE_KEYNAME: resampled_image_files,
-            _LABEL_KEYNAME: resampled_labels,
+            IMAGE_KEYNAME: resampled_image_files,
+            LABEL_KEYNAME: resampled_labels,
         }
         new_metadata = pd.concat(
             [
@@ -213,24 +117,72 @@ def get_images_and_classes(dataset: ImageDataset, **kwargs):
     Get the images and classes from a dataset.
     """
     try:
-        images = dataset.image_files
-        classes = dataset.labels
+        images = list(dataset.image_files)
+        classes = list(dataset.labels)
     except AttributeError:
         dataset: CacheDataset = dataset
         datalist = dataset.data
-        images = [d[_IMAGE_KEYNAME] for d in datalist]
-        classes = [d[_LABEL_KEYNAME] for d in datalist]
+        images = [d[IMAGE_KEYNAME] for d in datalist]
+        classes = [d[LABEL_KEYNAME] for d in datalist]
     return images, classes
 
 
-def subset_to_class(cfg: Configuration, data_df: pd.DataFrame, **kwargs):
+def subset_to_class(cfg: BaseConfiguration, data_df: pd.DataFrame, **kwargs):
     dataset_cfg: DatasetConfiguration = cfg.datasets
     preprocessing_cfg = dataset_cfg.preprocessing
     subset: list = preprocessing_cfg.get("subset", kwargs.get("subset", []))
     if len(subset) > 0:
-        data_df = data_df[data_df[_LABEL_KEYNAME].isin(subset)]
+        data_df = data_df[data_df[LABEL_KEYNAME].isin(subset)]
         logger.debug(f"Subset dataframe:/n{data_df.head()}")
     return data_df
+
+
+def get_target_breakdown(cfg: BaseConfiguration, datasets: list):
+    dataset_cfg = cfg.datasets
+    train_dataset, test_dataset = datasets[0], datasets[-1]
+    class_encoding = {v: k for k, v in dataset_cfg.encoding.items()}
+    concats = []
+
+    # train split
+    train_dataset_counts = Counter(train_dataset.labels)
+    train_target_breakdown = pd.DataFrame.from_dict(
+        train_dataset_counts, orient="index", columns=["Train split"]
+    )
+    train_target_breakdown.index = train_target_breakdown.index.map(class_encoding)
+    concats.append(train_target_breakdown)
+
+    # validation split
+    if len(datasets) == 3:
+        val_dataset_counts = Counter(datasets[1].labels)
+        val_target_breakdown = pd.DataFrame.from_dict(
+            val_dataset_counts, orient="index", columns=["Validation split"]
+        )
+        val_target_breakdown.index = val_target_breakdown.index.map(class_encoding)
+        concats.append(val_target_breakdown)
+
+    # test split
+    test_dataset_counts = Counter(test_dataset.labels)
+    test_target_breakdown = pd.DataFrame.from_dict(
+        test_dataset_counts, orient="index", columns=["Test split"]
+    )
+    test_target_breakdown.index = test_target_breakdown.index.map(class_encoding)
+    concats.append(test_target_breakdown)
+
+    target_breakdown = pd.concat(concats, axis=1)
+    target_breakdown["Total"] = target_breakdown.sum(axis=1)
+    split_totals = target_breakdown.sum(axis=0)
+    split_totals.name = "Total"
+    target_breakdown = pd.concat([target_breakdown, split_totals.to_frame().T], axis=0)
+    return target_breakdown
+
+
+def set_labels_from_encoding(cfg: BaseConfiguration, encoding: dict = None):
+    dataset_cfg = cfg.datasets
+    encoding = dataset_cfg.encoding if encoding is None else encoding
+    if dataset_cfg.labels is not None and not any(dataset_cfg.labels):
+        cfg.datasets.labels = list(encoding.keys())
+
+    return list(encoding.keys())
 
 
 def transform_labels_to_metaclass(
@@ -273,192 +225,27 @@ def transform_labels_to_metaclass(
     return df
 
 
-# def transform_labels_to_one_vs_all(
-#     df: pd.DataFrame,
-#     target_name: str,
-#     positive_class: str,
-#     negative_class: str = None,
-# ):
-#     """
-#     Transform the labels to one vs all.
-#     """
-#     logger.info("Tranforming labels...")
-#     old_target_name = f"old_{target_name}"
-#     df[old_target_name] = df[target_name]
-#     negative_class = (
-#         f"non-{positive_class}" if negative_class is None else negative_class
-#     )
-
-#     def _transform_to_positive_class(x, positive_class: str, negative_class: str):
-#         """
-#         Transform the label to the positive class.
-#         """
-#         return negative_class if x != positive_class else positive_class
-
-#     df[target_name] = df[old_target_name].apply(
-#         _transform_to_positive_class,
-#         positive_class=positive_class,
-#         negative_class=negative_class,
-#     )
-#     logger.info("Labels transformed.\n")
-#     df.drop(columns=[old_target_name], inplace=True)
-#     logger.debug(f"Dataframe:\n\n{df.head()}\n")
-
-#     return df
-
-
 def preprocess_dataset(
-    cfg: Configuration,
+    cfg: BaseConfiguration,
     dataset: ImageDataset,
     **kwargs,
 ):
     preprocessing_cfg = cfg.datasets.preprocessing
     X, y = get_images_and_classes(dataset=dataset)
-    data_df = pd.DataFrame({_IMAGE_KEYNAME: X, _LABEL_KEYNAME: y})
+    data_df = pd.DataFrame({IMAGE_KEYNAME: X, LABEL_KEYNAME: y})
 
     # 1. subset to class
     if preprocessing_cfg.use_subset:
         data_df = subset_to_class(cfg=cfg, data_df=data_df, **kwargs)
-        X, y = data_df[_IMAGE_KEYNAME].values, data_df[_LABEL_KEYNAME].values
+        X, y = data_df[IMAGE_KEYNAME].values, data_df[LABEL_KEYNAME].values
 
     # . convert to persistent dataset for faster lookup time
     new_dataset = PersistentDataset(
         data=data_df.to_dict(orient="records"),
         transform=dataset.transform,
-        cache_dir=_CACHE_DIR,
+        cache_dir=CACHE_DIR,
     )
     return new_dataset
-
-
-# TODO: pd.Series are saved in the dataframe for some reason, so we need to convert them to ints
-def build_ixi_metadata_dataframe(
-    cfg: Configuration, image_files: list, labels: list = None
-):
-    dataset_cfg: DatasetConfiguration = cfg.datasets
-    index_name = dataset_cfg.index
-    target_name = dataset_cfg.target
-    patient_data = dataset_cfg.patient_data
-
-    # create temporary dataset and dataloader to get the metadata
-    patient_df = pd.read_excel(patient_data).set_index(index_name)
-    tmp_dataset = ImageDataset(image_files=image_files, labels=labels, transform=None)
-    tmp_dataloader = iter(
-        ThreadDataLoader(
-            tmp_dataset,
-            batch_size=dataset_cfg.dataloader.batch_size,
-            num_workers=dataset_cfg.dataloader.num_workers,
-        )
-    )
-
-    _metadata = {}
-    missing_counter = 0
-    logger.info("Building metadata dataframe. This may take a while...")
-    for scan in tqdm(tmp_dataloader, total=len(image_files)):
-        meta = scan._meta
-        filename = meta["filename_or_obj"][0].split("/")[-1]
-        patient = int(filename.split(".")[0].split("-")[0][-3:])
-        try:
-            target = int(patient_df.loc[patient, target_name])
-            _metadata[patient] = filename, target
-        except Exception as e:
-            # missing patient in metadata
-            if isinstance(e, KeyError):
-                missing_counter += 1
-                logger.debug(
-                    f"Patient '{patient}' not found in metadata. Missing counter increased to: {missing_counter} patients."
-                )
-                continue
-            # target is not an integer
-            elif isinstance(e, TypeError):
-                logger.debug(
-                    f"{target}. is not an integer. Skipping patient '{patient}'..."
-                )
-                continue
-
-    metadata = (
-        pd.DataFrame.from_dict(
-            _metadata, orient="index", columns=["filename", target_name]
-        )
-        .rename_axis("IXI_ID")
-        .dropna()
-        .dropna(subset=[target_name])
-    )
-    return metadata
-
-
-def build_chest_xray_metadata_dataframe(
-    cfg: Configuration = None, split: str = "", **kwargs
-):
-    logger.info(f"Building chest x-ray metadata dataframe for split: '{split}'...\n")
-    dataset_cfg: DatasetConfiguration = kwargs.get(
-        "dataset_cfg", cfg.datasets if cfg is not None else None
-    )
-    resample_value: int = dataset_cfg.get("resample_value", 1)
-    IGNORE = ".DS_Store"
-    scan_data = dataset_cfg.scan_data
-    split_dir = os.path.join(scan_data, split)
-    split_metadata = []
-    classes = sorted(os.listdir(split_dir))
-    try:
-        classes.remove(IGNORE)
-    except ValueError:
-        pass
-    label_encoding = 0
-
-    for label in classes:
-        class_dir = os.path.join(split_dir, label)
-        class_files = os.listdir(class_dir)
-        try:
-            class_files.remove(IGNORE)
-        except ValueError:
-            pass
-        for f in class_files:
-            split_metadata.append((os.path.join(class_dir, f), label_encoding))
-
-        if resample_value > 1 and split == "train" and label_encoding == 0:
-            original_metadata = deepcopy(split_metadata)
-            for _ in range(resample_value - 1):
-                split_metadata += original_metadata
-        label_encoding += 1
-
-    return pd.DataFrame(split_metadata, columns=_COLUMN_NAMES)
-
-
-def build_cxr14_metadata_dataframe(cfg: Configuration, version: float = 2.0):
-    dataset_cfg: DatasetConfiguration = cfg.datasets
-    index = dataset_cfg.index
-    patient_path = dataset_cfg.patient_data
-    scan_path = dataset_cfg.scan_data
-
-    patient_df = pd.read_csv(patient_path).set_index(index)
-    filename_matches = {_IMAGE_KEYNAME: [], index: []}
-    if version == 1.0:
-        for n in range(1, 13):
-            label_path = os.path.join(scan_path, f"images_{n:03}", "images")
-
-            for filename in os.listdir(label_path):
-                filename_matches[index].append(filename)
-                filename_matches[_IMAGE_KEYNAME].append(
-                    os.path.join(label_path, filename)
-                )
-    elif version == 2.0:
-        for filename in os.listdir(scan_path):
-            if filename.endswith(".png"):
-                filename_matches[index].append(filename)
-                filename_matches[_IMAGE_KEYNAME].append(
-                    os.path.join(scan_path, filename)
-                )
-
-    filename_matches = pd.DataFrame.from_dict(
-        filename_matches, orient="columns"
-    ).set_index(index)
-    patient_df = patient_df.merge(filename_matches, on=index, how="inner")
-
-    return patient_df
-
-
-def chest_xray14_get_target_counts(df: pd.DataFrame, target: str = ""):
-    return Counter(",".join(df[target]).replace("|", ",").split(","))
 
 
 def create_subset(df: pd.DataFrame, target: str, labels: list = []) -> pd.DataFrame:
@@ -470,273 +257,123 @@ def create_subset(df: pd.DataFrame, target: str, labels: list = []) -> pd.DataFr
     return df[subset_condition]
 
 
-def load_ixi_dataset(cfg: Configuration, save_metadata=False, **kwargs):
-    dataset_cfg: DatasetConfiguration = cfg.datasets
-    target_name = dataset_cfg.target
-    scan_data = dataset_cfg.scan_data
-    scan_paths = [os.path.join(scan_data, f) for f in os.listdir(scan_data)]
-    filtered_scan_paths = _filter_scan_paths(
-        filter_function=lambda x: x.split("/")[-1], scan_paths=scan_paths
-    )
-    metadata = build_ixi_metadata_dataframe(cfg=cfg, image_files=filtered_scan_paths)
-    image_files = metadata["filename"].values
-    labels = metadata[target_name].values
-    dataset: monai.data.Dataset = instantiate(
-        config=dataset_cfg.instantiate,
-        image_files=[os.path.join(scan_data, f) for f in image_files],
-        labels=labels,
-        **kwargs,
-    )
-    if save_metadata:
-        metadata.to_csv(
-            os.path.join(
-                DEFAULT_DATA_PATH, "patients", "ixi_image_dataset_metadata.csv"
-            )
-        )
-    return dataset
+def apply_label_to_text_prompts(x, base: list = None):
+    if base == None:
+        base = "A photo of a lung xray".split(" ")
+    if x["No Finding"] == 1 or sum(x.values) == 0:
+        return " ".join(base).lower()
 
+    prompt = base.copy()
+    prompt.extend(["depicting", "visible"])
 
-def load_pediatrics_dataset(
-    cfg: Configuration = None, save_metadata=False, return_metadata=False, **kwargs
-):
-    dataset_cfg: DatasetConfiguration = kwargs.get(
-        "dataset_cfg", cfg.datasets if cfg is not None else None
-    )
-    use_transforms = kwargs.get(
-        "use_transforms", cfg.job if cfg is not None else {"use_transforms": True}
-    )
+    classes = []
+    for i, s in enumerate(x):
+        if s == 1:
+            clss = x.index[i] + ","
+            classes.append(clss)
 
-    train_transforms = create_transforms(cfg, use_transforms=use_transforms)
-    test_transforms = create_transforms(cfg, use_transforms=False)
-    train_metadata = build_chest_xray_metadata_dataframe(
-        cfg=cfg, split="train", **kwargs
-    )
-    test_metadata = build_chest_xray_metadata_dataframe(cfg=cfg, split="test", **kwargs)
-    train_dataset = monai.data.Dataset = instantiate(
-        config=dataset_cfg.instantiate,
-        image_files=train_metadata[_IMAGE_KEYNAME].values,
-        labels=train_metadata[_LABEL_KEYNAME].values,
-        transform=train_transforms,
-    )
-    # train_dataset: monai.data.Dataset = convert_image_dataset(train_dataset)
-    test_dataset = monai.data.Dataset = instantiate(
-        config=dataset_cfg.instantiate,
-        image_files=test_metadata[_IMAGE_KEYNAME].values,
-        labels=test_metadata[_LABEL_KEYNAME].values,
-        transform=test_transforms,
-    )
-    # test_dataset: monai.data.Dataset = convert_image_dataset(test_dataset)
-    if save_metadata:
-        train_metadata.to_csv(
-            os.path.join(DEFAULT_DATA_PATH, "patients", "chest_xray_train_metadata.csv")
-        )
-        test_metadata.to_csv(
-            os.path.join(DEFAULT_DATA_PATH, "patients", "chest_xray_test_metadata.csv")
-        )
+    if len(classes) >= 2:
+        classes.insert(-1, "and")
 
-    return (
-        (train_dataset, test_dataset, train_metadata, test_metadata)
-        if return_metadata
-        else (train_dataset, test_dataset)
-    )
+    prompt.extend(classes)
+    prompt = " ".join(prompt).lower()
 
+    len_prompt = len(prompt.split(","))
+    if len_prompt == 3:
+        prompt = prompt.replace(",", "")
+        return prompt
 
-def load_cxr14_dataset(
-    cfg: Configuration, save_metadata=True, return_metadata=False, **kwargs
-):
-    dataset_cfg: DatasetConfiguration = cfg.datasets
-    target = dataset_cfg.target
-    scan_path = dataset_cfg.scan_data
-    preprocessing_cfg = dataset_cfg.preprocessing
-    positive_class = preprocessing_cfg.get("positive_class", "Pneumonia")
-    version: int = preprocessing_cfg.get("version", 1.0)
-
-    metadata = build_cxr14_metadata_dataframe(cfg=cfg)
-
-    def build_multiclass_dataframe(cfg: Configuration, df: pd.DataFrame, **kwargs):
-        """"""
-        dataset_cfg = kwargs.get("dataset_cfg", cfg.datasets)
-
-        mlb = MultiLabelBinarizer()
-        labels = dataset_cfg.labels
-        logger.info(f"Positive class: '{positive_class}'")
-        logger.info(f"New labels:\n{labels}")
-        logger.debug(f"{Counter(df[target])}")
-
-        multi_target = f"multi_{target}"
-        metadata[multi_target] = metadata[target].apply(lambda x: x.split("|"))
-        mlb.fit(df[multi_target])
-        class_encoding = {label: i for i, label in enumerate(mlb.classes_)}
-        logger.info(f"Dataset class encoding:\n{class_encoding}")
-
-        logger.info(f"Transforming labels to multiclass. This may take a while...")
-        _transforms = df[multi_target].apply(lambda x: mlb.transform([x])[0])
-        multiclass_df = pd.DataFrame.from_records(
-            _transforms, index=df.index, columns=mlb.classes_
-        )
-
-        return multiclass_df, class_encoding
-
-    multiclass_df, class_encoding = build_multiclass_dataframe(cfg, metadata)
-    target = f"multi_{target}"
-    positive_df = multiclass_df[multiclass_df[positive_class] == 1]
-    positive_df[_LABEL_KEYNAME] = pd.Series(
-        np.ones(len(positive_df), dtype=int), index=positive_df.index
-    )
-    negative_df = multiclass_df.drop(positive_df.index)
-    negative_df[_LABEL_KEYNAME] = pd.Series(
-        np.zeros(len(negative_df), dtype=int), index=negative_df.index
-    )
-
-    if version == 2.0:
-        negative_columns = list(set(multiclass_df.columns) - set([positive_class]))
-        _drop_indices = []
-
-        for column in negative_columns:
-            _drop_indices.extend(list(positive_df[positive_df[column] == 1].index))
-
-        drop_indices = pd.Index(_drop_indices)
-        positive_df = positive_df.drop(index=drop_indices)
-
-    logger.info(f"Number of '{positive_class.lower()}' cases: {len(positive_df)}")
-    logger.info(f"Number of 'non-{positive_class.lower()}' cases: {len(negative_df)}")
-
-    multiclass_df = pd.concat([positive_df, negative_df])
-    if save_metadata:
-        multiclass_df.to_csv(
-            os.path.join(
-                DEFAULT_DATA_PATH, "patients", f"cxr14_multiclass_{version}.csv"
-            )
-        )
-    assert len(multiclass_df) == len(positive_df) + len(negative_df)
-
-    # train split
-    with open(os.path.join(scan_path, "train_val_list.txt"), "r") as f:
-        train_val_list = [idx.strip() for idx in f.readlines()]
-
-    patient_df = metadata.loc[multiclass_df.index]
-    patient_df = pd.concat([patient_df, multiclass_df[_LABEL_KEYNAME]], axis=1)
-
-    # remove all of the negative class for diffusion
-    if "diffusion" in cfg.job.mode:
-        logger.info("Removing all negative class for mode='diffusion'...")
-        patient_df = patient_df[patient_df[_LABEL_KEYNAME] == 1]
-
-    train_metadata = patient_df[patient_df.index.isin(train_val_list)]
-    train_transforms = create_transforms(cfg, use_transforms=cfg.job.use_transforms)
-    train_dataset: monai.data.Dataset = instantiate(
-        config=dataset_cfg.instantiate,
-        image_files=train_metadata[_IMAGE_KEYNAME].values,
-        labels=train_metadata[_LABEL_KEYNAME].values,
-        transform=train_transforms,
-        **kwargs,
-    )
-
-    # test split
-    with open(os.path.join(scan_path, "test_list.txt"), "r") as f:
-        test_list = [idx.strip() for idx in f.readlines()]
-
-    eval_transforms = create_transforms(cfg, use_transforms=False)
-    test_metadata = patient_df[patient_df.index.isin(test_list)]
-
-    if preprocessing_cfg.get("name", "") == "icu-preprocessing":
-        logger.info("Subsetting test set to 'ICU' configuration...")
-        subset = preprocessing_cfg["subset"]
-        dropped_labels = list(set(class_encoding.keys()) - set(subset))
-        logger.info(f"Dropping labels:\n{dropped_labels}")
-
-        test_multiclass_df = multiclass_df.loc[test_metadata.index]
-        _icu_query = [test_multiclass_df[column] == 1 for column in dropped_labels]
-
-        icu_query = pd.Series(
-            np.zeros(len(test_multiclass_df), dtype=bool),
-            index=test_multiclass_df.index,
-        )
-
-        for query in _icu_query:
-            icu_query = icu_query | query
-
-        icu_test_metadata = test_multiclass_df.drop(
-            index=icu_query[icu_query == True].index
-        )
-        test_metadata = test_metadata.loc[icu_test_metadata.index]
-
-        logger.info(
-            f"Number in ICU test cases: {len(icu_test_metadata)}, {len(icu_test_metadata) / len(test_metadata) * 100:.4f}%"
-        )
-        logger.info(
-            f"Number of occurrences for 'Pneumonia' class: \n{Counter(icu_test_metadata[_LABEL_KEYNAME])}"
-        )
-
-    test_dataset = monai.data.Dataset = instantiate(
-        config=dataset_cfg.instantiate,
-        image_files=test_metadata[_IMAGE_KEYNAME].values,
-        labels=test_metadata[_LABEL_KEYNAME].values,
-        transform=eval_transforms,
-        **kwargs,
-    )
-    if save_metadata:
-        train_metadata.to_csv(
-            os.path.join(DEFAULT_DATA_PATH, "patients", "cxr14_train_metadata.csv")
-        )
-        test_metadata.to_csv(
-            os.path.join(DEFAULT_DATA_PATH, "patients", "cxr14_test_metadata.csv")
-        )
-
-    return (
-        (
-            train_dataset,
-            test_dataset,
-            train_metadata,
-            test_metadata,
-        )
-        if return_metadata
-        else (train_dataset, test_dataset)
-    )
+    return prompt[:-1]  # remove the last comma
 
 
 def instantiate_image_dataset(
-    cfg: Configuration = None, save_metadata=False, return_metadata=False, **kwargs
+    cfg: BaseConfiguration = None, save_metadata=False, return_metadata=False, **kwargs
 ):
-    """
-    Instantiates a MONAI image dataset given a hydra configuration. This uses the `hydra.utils.instantiate` function to instantiate the dataset from the MONAI python package.
-
-    ## Args
-    * `cfg` (`Configuration`): The configuration.
-    ## Returns
-    * `monai.data.Dataset`: The instantiated dataset.
-    """
+    """ """
     logger.info("Instantiating image dataset...")
     dataset_cfg: DatasetConfiguration = kwargs.get(
         "dataset_cfg", cfg.datasets if cfg is not None else None
     )
+    preprocessing_cfg = dataset_cfg.preprocessing
+    set_labels_from_encoding(cfg=cfg)
 
     dataset_name = dataset_cfg.name
     if dataset_name == "pediatrics":
-        train_dataset, test_dataset = load_pediatrics_dataset(
+        loaded_datasets = load_pediatrics_dataset(
             cfg=cfg,
             save_metadata=save_metadata,
             return_metadata=return_metadata,
         )
 
-    elif dataset_name == "cxr14":
-        train_dataset, test_dataset = load_cxr14_dataset(
-            cfg=cfg, save_metadata=save_metadata
+    elif dataset_name == "nih" or dataset_name == "cxr14":
+        loaded_datasets = load_nih_dataset(
+            cfg=cfg, save_metadata=save_metadata, **kwargs
         )
+
+    elif dataset_name == "mimic-cxr":
+        loaded_datasets = load_mimic_dataset(cfg, save_metadata=save_metadata)
 
     elif dataset_name == "ixi":
-        train_dataset = load_ixi_dataset(cfg, save_metadata=save_metadata)
+        loaded_datasets = load_ixi_dataset(cfg, save_metadata=save_metadata)
+
     else:
         raise ValueError(
-            f"Dataset '{dataset_name}' is not recognized not supported. Please use ['cxr14'|'pediatrics'|'ixi']."
+            f"Dataset '{dataset_name}' is not recognized not supported. Please use ['cxr14'|'pediatrics'|'ixi'|'mimic']."
         )
 
+    if "additional_datasets" in dataset_cfg:
+        logger.info("Adding additional datasets...")
+        train_dataset, test_dataset = loaded_datasets[0], loaded_datasets[-1]
+        train_dataset, test_dataset = combine_datasets(
+            dataset_cfg=dataset_cfg,
+            train_dataset=train_dataset,
+            test_dataset=test_dataset,
+            positive_class=preprocessing_cfg.positive_class,
+        )
+        if len(loaded_datasets) == 3:
+            loaded_datasets = [train_dataset, loaded_datasets[1], test_dataset]
+        else:
+            loaded_datasets = [train_dataset, test_dataset]
+
     logger.info("Image dataset instantiated.\n")
+    return loaded_datasets
+
+
+def combine_datasets(
+    dataset_cfg: DatasetConfiguration,
+    train_dataset: ImageDataset,
+    test_dataset: ImageDataset,
+    val_dataset: ImageDataset = None,
+    positive_class: str = "Pneumonia",
+    **kwargs,
+):
+    dataset_configs = list(dataset_cfg.additional_datasets.dataset_configs)
+    for dc in dataset_configs:
+        d_cfg = OmegaConf.load(dc["filepath"])
+        loader = hydra_instantiate(dc["loader"])
+        add_datasets = loader(
+            dataset_cfg=d_cfg,
+            positive_class=positive_class,
+            train_transforms=train_dataset.transform,
+            eval_transforms=test_dataset.transform,
+        )
+        a_train_data, a_test_data = add_datasets
+        train_dataset = ImageDataset(
+            image_files=list(train_dataset.image_files)
+            + list(a_train_data.image_files),
+            labels=list(train_dataset.labels) + list(a_train_data.labels),
+            transform=train_dataset.transform,
+        )
+        test_dataset = ImageDataset(
+            image_files=list(test_dataset.image_files) + list(a_test_data.image_files),
+            labels=list(test_dataset.labels) + list(a_test_data.labels),
+            transform=test_dataset.transform,
+        )
     return train_dataset, test_dataset
 
 
 def instantiate_train_val_test_datasets(
-    cfg: Configuration,
+    cfg: BaseConfiguration,
     dataset: monai.data.Dataset,
     train_transforms: monai.transforms.Compose,
     eval_transforms: monai.transforms.Compose,
@@ -747,10 +384,9 @@ def instantiate_train_val_test_datasets(
     """
     dataset_cfg: DatasetConfiguration = cfg.datasets
     preprocessing_cfg = dataset_cfg.preprocessing
-    positive_class: str = preprocessing_cfg.get("positive_class", "Pneumonia")
-    job_cfg: JobConfiguration = cfg.job
-    random_state = job_cfg.get("random_state", kwargs.get("random_state", 0))
+    positive_class: str = preprocessing_cfg.get("positive_class", "Pneumonia (m)")
     sklearn_cfg = cfg.sklearn
+    random_state = cfg.random_state
 
     train_val_test_split_dict = {}
     train_test_split_kwargs: dict = sklearn_cfg.model_selection.train_test_split
@@ -766,13 +402,14 @@ def instantiate_train_val_test_datasets(
             random_state=random_state,
             **train_test_split_kwargs,
         )
-        X_train = X_train.reshape(-1)
-        train_df = pd.DataFrame({_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train})
+        # X_train = X_train.reshape(-1)
+        train_df = pd.DataFrame({IMAGE_KEYNAME: X_train, LABEL_KEYNAME: y_train})
 
         sampling_method = preprocessing_cfg.sampling_method
-        if isinstance(sampling_method.method["__target__"], (str, os.PathLike)):
+        # if isinstance(sampling_method.method["__target__"], (os.PathLike)):
+        if "_dir_" in sampling_method.method.keys():
             logger.info("Loading additional generated images...")
-            gen_path = sampling_method.method["__target__"]
+            gen_path = sampling_method.method["_dir_"]
             target_encoding = dataset_cfg.encoding[positive_class]
 
             generated_image_files = [
@@ -781,15 +418,15 @@ def instantiate_train_val_test_datasets(
             generated_labels = [target_encoding] * len(generated_image_files)
             generated_df = pd.DataFrame(
                 {
-                    _IMAGE_KEYNAME: generated_image_files,
-                    _LABEL_KEYNAME: generated_labels,
+                    IMAGE_KEYNAME: generated_image_files,
+                    LABEL_KEYNAME: generated_labels,
                 }
             )
 
-            positive_df = train_df[train_df[_LABEL_KEYNAME] == 1]
+            positive_df = train_df[train_df[LABEL_KEYNAME] == 1]
             offset = abs(len(positive_df) - len(generated_df))
             sampled_generated_df: pd.DataFrame = generated_df.sample(
-                offset, random_state=cfg.job.random_state
+                offset, random_state=cfg.random_state
             )
             logger.info(
                 f"Number of sampled generated images: {len(sampled_generated_df)}"
@@ -799,12 +436,12 @@ def instantiate_train_val_test_datasets(
         if preprocessing_cfg.get("use_sampling", False):
             sample_to_value: int = preprocessing_cfg.sampling_method["sample_to_value"]
 
-            X_train = train_df[_IMAGE_KEYNAME].values.reshape(-1)
-            y_train = train_df[_LABEL_KEYNAME].values
-            # train_df = pd.DataFrame({_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train})
+            X_train = train_df[IMAGE_KEYNAME].values.reshape(-1)
+            y_train = train_df[LABEL_KEYNAME].values
+            # train_df = pd.DataFrame({IMAGE_KEYNAME: X_train, LABEL_KEYNAME: y_train})
 
             sampling_method = preprocessing_cfg.sampling_method
-            if isinstance(sampling_method.method["__target__"], (str, os.PathLike)):
+            if "_dir_" in sampling_method.method.keys():
                 from imblearn.under_sampling import RandomUnderSampler
 
                 sampler = RandomUnderSampler(
@@ -814,31 +451,29 @@ def instantiate_train_val_test_datasets(
                 X_train = X_train.reshape(-1)
                 # y_train = y_train
                 train_df = pd.DataFrame(
-                    {_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train}
+                    {IMAGE_KEYNAME: X_train, LABEL_KEYNAME: y_train}
                 )
             else:
-                train_df = train_df.groupby(_LABEL_KEYNAME).apply(
+                train_df = train_df.groupby(LABEL_KEYNAME).apply(
                     lambda x: x.sample(sample_to_value, replace=True)
                 )
-            X_train = train_df[_IMAGE_KEYNAME].values
-            y_train = train_df[_LABEL_KEYNAME].values
+            X_train = train_df[IMAGE_KEYNAME].values
+            y_train = train_df[LABEL_KEYNAME].values
 
-        train_dataset: monai.data.Dataset = instantiate(
+        train_dataset: monai.data.Dataset = hydra.utils.instantiate(
             config=dataset_cfg.instantiate,
             image_files=X_train,
             labels=y_train,
             transform=train_transforms,
-            **kwargs,
         )
         train_val_test_split_dict["train"] = train_dataset
 
-        if cfg.job.perform_validation:
-            val_dataset: monai.data.Dataset = instantiate(
+        if kwargs.get("perform_validation", True):
+            val_dataset: monai.data.Dataset = hydra.utils.instantiate(
                 config=dataset_cfg.instantiate,
                 image_files=X_val,
                 labels=y_val,
                 transform=eval_transforms,
-                **kwargs,
             )
             train_val_test_split_dict["val"] = val_dataset
 
@@ -858,7 +493,7 @@ def instantiate_train_val_test_datasets(
             **train_test_split_kwargs,
         )
         ## create test dataset
-        test_dataset: monai.data.Dataset = instantiate(
+        test_dataset: monai.data.Dataset = hydra.utils.instantiate(
             config=dataset_cfg.instantiate,
             image_files=X_test,
             labels=y_test,
@@ -866,7 +501,7 @@ def instantiate_train_val_test_datasets(
             **kwargs,
         )
         train_val_test_split_dict["test"] = test_dataset
-        if job_cfg.perform_validation:
+        if kwargs.get("perform_validation", False):
             ## create the train/val splits
             X_train, X_val, y_train, y_val = train_test_split(
                 X_train,
@@ -875,7 +510,7 @@ def instantiate_train_val_test_datasets(
                 random_state=random_state,
                 **train_test_split_kwargs,
             )
-            val_dataset: monai.data.Dataset = instantiate(
+            val_dataset: monai.data.Dataset = hydra.utils.instantiate(
                 config=dataset_cfg.instantiate,
                 image_files=X_val,
                 labels=y_val,
@@ -885,7 +520,7 @@ def instantiate_train_val_test_datasets(
             train_val_test_split_dict["val"] = val_dataset
 
         ## create train and val datasets
-        train_dataset: monai.data.Dataset = instantiate(
+        train_dataset: monai.data.Dataset = hydra.utils.instantiate(
             config=dataset_cfg.instantiate,
             image_files=X_train,
             labels=y_train,
@@ -902,38 +537,27 @@ def instantiate_train_val_test_datasets(
 
     logger.info("Train/val/test splits created.")
     logger.info("Train dataset:\t{}".format(Counter(train_dataset.labels)))
-    logger.info("Val dataset:\t{}".format(Counter(val_dataset.labels)))
-    # logger.info("Test dataset:\t{}\n\n".format(Counter(test_dataset.labels)))
-
-    # if job_cfg.mode == "diffusion":
-    #     for split, dataset in train_val_test_split_dict.items():
-    #         logger.info("Converting '{}' dataset for 'diffusion' mode...".format(split))
-    #         train_val_test_split_dict[split] = convert_image_dataset(dataset)
+    if kwargs.get("perform_validation", True):
+        logger.info("Val dataset:\t{}".format(Counter(val_dataset.labels)))
 
     return train_val_test_split_dict
 
 
-def prepare_data(cfg: Configuration = None, **kwargs):
-    """Prepare the data by creating the train/val/test splits."""
+def prepare_validation_dataloaders(cfg: BaseConfiguration = None, **kwargs):
     logger.info("Preparing data...")
     dataset_cfg: DatasetConfiguration = kwargs.get(
         "dataset_cfg", cfg.datasets if cfg else None
     )
-    job_cfg: JobConfiguration = kwargs.get(
-        "job_cfg",
-        cfg.job,
-    )
-    use_transforms = job_cfg["use_transforms"]
+    use_transforms = cfg.use_transforms
     train_transform = create_transforms(cfg, use_transforms=use_transforms)
     eval_transform = create_transforms(cfg, use_transforms=False)
     dataset = instantiate_image_dataset(cfg=cfg, transform=train_transform)
-    train_dataset, test_dataset = dataset[0], dataset[1]
+    train_dataset, test_dataset = dataset[0], dataset[-1]
 
     # NOTE: combined datasets here
     if len(dataset_cfg.get("additional_datasets", [])) > 0:
-        train_dataset, test_dataset = combine_datasets(
-            train_dataset, test_dataset, cfg=cfg
-        )
+        combined_datasets = combine_datasets(train_dataset, test_dataset, cfg=cfg)
+        train_dataset, test_dataset = combined_datasets[0], combined_datasets[-1]
 
     # split the dataset into train/val/test
     train_val_test_split_dict = instantiate_train_val_test_datasets(
@@ -949,33 +573,23 @@ def prepare_data(cfg: Configuration = None, **kwargs):
     train_dataset.transform = train_transform
     test_dataset.transform = eval_transform
 
-    use_multi_gpu: bool = job_cfg.get("use_multi_gpu", False)
     train_loader: DataLoader = hydra_instantiate(
         cfg=dataset_cfg.dataloader,
         dataset=train_dataset,
         pin_memory=torch.cuda.is_available() if torch.cuda.is_available() else False,
-        shuffle=False if use_multi_gpu else True,
-        sampler=DistributedSampler(train_dataset, seed=job_cfg.random_state)
-        if use_multi_gpu
-        else None,
+        shuffle=True,
     )
     val_loader: DataLoader = hydra_instantiate(
         cfg=dataset_cfg.dataloader,
         dataset=val_dataset,
         pin_memory=torch.cuda.is_available(),
-        shuffle=False if use_multi_gpu else True,
-        sampler=DistributedSampler(val_dataset, seed=job_cfg.random_state)
-        if use_multi_gpu
-        else None,
+        shuffle=True,
     )
     test_loader: DataLoader = hydra_instantiate(
         cfg=dataset_cfg.dataloader,
         dataset=test_dataset,
         pin_memory=torch.cuda.is_available(),
         shuffle=False,
-        sampler=DistributedSampler(test_dataset, seed=job_cfg.random_state)
-        if use_multi_gpu
-        else None,
     )
 
     logger.info("Data prepared.\n\n")
@@ -995,123 +609,18 @@ def convert_image_dataset(
     items = list(zip(images, classes))
 
     for image_file, label in items:
-        dataset_list.append({_IMAGE_KEYNAME: image_file, _LABEL_KEYNAME: label})
+        dataset_list.append({IMAGE_KEYNAME: image_file, LABEL_KEYNAME: label})
 
     transform = dataset.transform if transform is None else transform
+    # load_image = re
+    transforms_list = list(transform.transforms)
+    transforms_list.insert(0, read_image)
+    new_transforms = monai_transforms.Compose(transforms_list)
 
-    new_dataset: monai.data.Dataset = PersistentDataset(
+    new_dataset: monai.data.Dataset = CacheDataset(
         data=dataset_list,
-        transform=transform,
-        cache_dir=_CACHE_DIR,
+        transform=new_transforms,
+        # cache_dir=CACHE_DIR,
         **kwargs,
     )
     return new_dataset
-
-
-def combine_datasets(
-    train_dataset: monai.data.Dataset,
-    test_dataset: monai.data.Dataset,
-    cfg: Configuration = None,
-    dataset_cfg: DatasetConfiguration = None,
-    dataset_configs: list = [],
-    # transform: monai.transforms.Compose = None,
-    **kwargs,
-):
-    """
-    Combine a list of datasets.
-    """
-    logger.info("Adding additional datasets...")
-    if cfg is None:
-        dataset_cfg: DatasetConfiguration = dataset_cfg
-    else:
-        dataset_cfg: DatasetConfiguration = cfg.datasets
-
-    preprocessing_cfg = dataset_cfg.preprocessing
-
-    additional_datasets: dict = dataset_cfg.get(
-        "additional_datasets", {"dataset_configs": []}
-    )
-    dataset_configs: list = (
-        dataset_configs
-        if any(dataset_configs)
-        else additional_datasets["dataset_configs"]
-    )
-
-    c_train_dataset = deepcopy(train_dataset)
-    c_test_dataset = deepcopy(test_dataset)
-
-    encoding: int = dataset_cfg.encoding[preprocessing_cfg["positive_class"]]
-    X_train, y_train = get_images_and_classes(c_train_dataset)
-    # X_test, y_test = get_images_and_classes(c_test_dataset)
-    train_metadata = pd.DataFrame({_IMAGE_KEYNAME: X_train, _LABEL_KEYNAME: y_train})
-    orig_size = len(train_metadata[train_metadata[_LABEL_KEYNAME] == encoding])
-    logger.info(f"Original class size: {orig_size}\n")
-
-    # num_add_datasets = len(dataset_configs)
-
-    for additional_dataset in dataset_configs:
-        additional_dataset_name = os.path.splitext(
-            additional_dataset["filepath"].split("/")[-1]
-        )[0]
-        logger.info(f"Adding additional dataset: '{additional_dataset_name}'...")
-        filepath: os.PathLike = additional_dataset["filepath"]
-        marshaller: callable = globals()[additional_dataset["loader"]]
-        _dataset_cfg: DatasetConfiguration = yaml_to_configuration(filepath)
-        additional_dataset_splits = marshaller(
-            dataset_cfg=_dataset_cfg,
-            return_metadata=True,
-        )
-        add_train_metadata, add_test_metadata = (
-            additional_dataset_splits[2],
-            additional_dataset_splits[3],
-        )
-
-        # metadata preprocessing
-        train_metadata_subset = add_train_metadata[
-            add_train_metadata[_LABEL_KEYNAME] == encoding
-        ]
-        if preprocessing_cfg.get("use_sampling", False):
-            train_metadata_subset = train_metadata_subset.groupby(_LABEL_KEYNAME).apply(
-                lambda x: x.sample(orig_size, replace=True)
-            )
-
-        test_metadata_subset = add_test_metadata[
-            add_test_metadata[_LABEL_KEYNAME] == encoding
-        ]
-
-        train_image_files = np.hstack(
-            (
-                c_train_dataset.image_files,
-                train_metadata_subset[_IMAGE_KEYNAME],
-            )
-        )
-        test_image_files = np.hstack(
-            (
-                c_test_dataset.image_files,
-                test_metadata_subset[_IMAGE_KEYNAME],
-            )
-        )
-        train_labels = np.hstack(
-            (c_train_dataset.labels, train_metadata_subset[_LABEL_KEYNAME])
-        )
-        test_labels = np.hstack(
-            (c_test_dataset.labels, test_metadata_subset[_LABEL_KEYNAME])
-        )
-
-        c_train_dataset = hydra_instantiate(
-            cfg=dataset_cfg.instantiate,
-            image_files=train_image_files,
-            labels=train_labels,
-            transform=c_train_dataset.transform,
-        )
-        c_test_dataset = hydra_instantiate(
-            cfg=dataset_cfg.instantiate,
-            image_files=test_image_files,
-            labels=test_labels,
-            transform=c_test_dataset.transform,
-        )
-    logger.info("Additional datasets added.")
-    logger.info(f"Train dataset:\t{Counter(c_train_dataset.labels)}")
-    logger.info(f"Test dataset:\t{Counter(c_test_dataset.labels)}\n")
-
-    return c_train_dataset, c_test_dataset
