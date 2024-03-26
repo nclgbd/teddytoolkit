@@ -1,23 +1,17 @@
 """Custom transforms for the datasets."""
 
 # torch
-from torchvision.transforms import PILToTensor, Lambda
+from torchvision.transforms import PILToTensor, Lambda, ToPILImage
 import torch
 import torchxrayvision as xrv
 
 
-def __convert_rgb_to_single_channel(x):
-    # return Image.fromarray(np.asarray(x)[:, :, 0], mode="L")
+def __convert_rgb_to_grayscale(x):
     return x.mean(2)[None, ...]
 
 
-def RGBToSingleChannel():
-    return Lambda(__convert_rgb_to_single_channel)
-
-
-# class RGBToSingleChannel(Lambda):
-#     def __init__(self):
-#         super().__init__(lambd=__convert_rgb_to_single_channel)
+def RGBToGrayscale():
+    return Lambda(__convert_rgb_to_grayscale)
 
 
 def __apply_xrv_normalize(x, maxval=255.0):
@@ -28,6 +22,11 @@ def XRVNormalize():
     return Lambda(__apply_xrv_normalize)
 
 
-# class XRVNormalize(Lambda):
-#     def __init__(self):
-#         super().__init__(lambd=__apply_xrv_normalize)
+def __convert_grayscale_to_rgb(x: torch.Tensor):
+    x = ToPILImage()(x)
+    x = x.convert("RGB")
+    return PILToTensor()(x)
+
+
+def GrayscaleToRGB():
+    return Lambda(__convert_grayscale_to_rgb)

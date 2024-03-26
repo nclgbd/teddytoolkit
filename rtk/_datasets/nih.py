@@ -74,8 +74,8 @@ def load_nih_dataset(
     train_labels = list(train_metadata[target].values.tolist())
     train_dataset: monai.data.Dataset = instantiate(
         config=dataset_cfg.instantiate,
-        image_files=train_image_files,
-        labels=train_labels,
+        image_files=list(train_image_files),
+        labels=list(train_labels),
         transform=train_transforms,
     )
 
@@ -127,8 +127,8 @@ def load_nih_dataset(
 
     test_dataset = monai.data.Dataset = instantiate(
         config=dataset_cfg.instantiate,
-        image_files=test_image_files,
-        labels=test_labels,
+        image_files=list(test_image_files),
+        labels=list(test_labels),
         transform=eval_transforms,
     )
     if save_metadata:

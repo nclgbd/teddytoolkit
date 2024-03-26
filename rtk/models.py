@@ -81,6 +81,10 @@ def instantiate_model(
     )
     model: nn.Module = hydra_instantiate(cfg=model_cfg.model, **kwargs)
 
+    if cfg.models.get("last_layer", False):
+        model.op_threshs = None  # prevent pre-trained model calibration
+        model.classifier = hydra_instantiate(cfg.models.last_layer)
+
     pretrained_weights = model_cfg.get("pretrained_weights", None)
     if pretrained_weights is not None:
         logger.info("Loading model weights...")
@@ -98,10 +102,6 @@ def instantiate_model(
         device_ids = kwargs.get("device_ids", [device])
         model = DDP(model, device_ids=device_ids, output_device=0)
         return model
-
-    if cfg.models.get("last_layer", False):
-        model.op_threshs = None  # prevent pre-trained model calibration
-        model.classifier = hydra_instantiate(cfg.models.last_layer)
 
     return model.to(device)
 
