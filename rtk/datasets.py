@@ -298,20 +298,21 @@ def instantiate_image_dataset(
     set_labels_from_encoding(cfg=cfg)
 
     dataset_name = dataset_cfg.name
-    if dataset_name == "pediatrics":
-        loaded_datasets = load_pediatrics_dataset(
-            cfg=cfg,
-            save_metadata=save_metadata,
-            return_metadata=return_metadata,
-        )
 
-    elif dataset_name == "nih" or dataset_name == "cxr14":
+    if dataset_name == "nih" or dataset_name == "cxr14":
         loaded_datasets = load_nih_dataset(
             cfg=cfg, save_metadata=save_metadata, **kwargs
         )
 
     elif dataset_name == "mimic-cxr":
-        loaded_datasets = load_mimic_dataset(cfg, save_metadata=save_metadata)
+        loaded_datasets = load_mimic_dataset(cfg, save_metadata=save_metadata, **kwargs)
+
+    elif dataset_name == "pediatrics":
+        loaded_datasets = load_pediatrics_dataset(
+            cfg=cfg,
+            save_metadata=save_metadata,
+            return_metadata=return_metadata,
+        )
 
     elif dataset_name == "ixi":
         loaded_datasets = load_ixi_dataset(cfg, save_metadata=save_metadata)

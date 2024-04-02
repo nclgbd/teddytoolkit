@@ -28,6 +28,7 @@ def load_nih_dataset(
     cfg: Configuration = None,
     save_metadata=True,
     return_metadata=False,
+    subset_to_positive_class=False,
     **kwargs,
 ):
     dataset_cfg: DatasetConfiguration = kwargs.get("dataset_cfg", None)
@@ -49,8 +50,7 @@ def load_nih_dataset(
     ).set_index(dataset_cfg.index)
 
     # remove all of the negative class for diffusion
-    mode = "diffusion" if cfg == None else cfg.mode
-    if target not in set(["class_conditioned_labels"]) and "diffusion" in mode:
+    if subset_to_positive_class:
         logger.info("Removing all negative classes...")
         nih_metadata = nih_metadata[nih_metadata[positive_class] == 1]
 
@@ -66,7 +66,7 @@ def load_nih_dataset(
     if train_transforms is None:
         train_transforms = create_transforms(
             cfg,
-            use_transforms=True,
+            use_transforms=cfg.use_transforms,
         )
     train_image_files = np.array(
         [os.path.join(scan_path, filename) for filename in train_metadata.index.values]
@@ -88,7 +88,7 @@ def load_nih_dataset(
         None,
     )
     if eval_transforms is None:
-        create_transforms(
+        eval_transforms = create_transforms(
             cfg,
             use_transforms=False,
         )

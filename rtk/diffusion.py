@@ -33,8 +33,7 @@ from diffusers import (
 from diffusers.utils.import_utils import is_xformers_available
 
 # transformers
-from transformers import CLIPTokenizer
-from transformers.models.clip.modeling_clip import CLIPTextModel
+from transformers import AutoTokenizer, AutoModel
 from transformers.utils import ContextManagers
 
 # peft
@@ -96,11 +95,8 @@ def compile_huggingface_pipeline(
     scheduler: DDPMScheduler = hydra_instantiate(
         hf_cfg.scheduler, torch_dtype=weight_dtype
     )
-    tokenizer: CLIPTokenizer = hydra_instantiate(
+    tokenizer: AutoTokenizer = hydra_instantiate(
         hf_cfg.tokenizer, torch_dtype=weight_dtype
-    )
-    pipeline: DiffusionPipeline = hydra_instantiate(
-        hf_cfg.pipeline, torch_dtype=weight_dtype,
     )
 
     def deepspeed_zero_init_disabled_context_manager():
@@ -127,7 +123,7 @@ def compile_huggingface_pipeline(
         # frozen models from being partitioned during `zero.Init` which gets called during
         # `from_pretrained` So CLIPTextModel and AutoencoderKL will not enjoy the parameter sharding
         # across multiple gpus and only UNet2DConditionModel will get ZeRO sharded.
-        text_encoder: CLIPTextModel = hydra_instantiate(
+        text_encoder: AutoModel = hydra_instantiate(
             hf_cfg.text_encoder, torch_dtype=weight_dtype
         )
         vae: AutoencoderKL = hydra_instantiate(hf_cfg.vae, torch_dtype=weight_dtype)
@@ -228,7 +224,7 @@ def compile_huggingface_pipeline(
                 "xformers is not available. Make sure it is installed correctly"
             )
 
-    return pipeline, unet, scheduler, tokenizer, text_encoder, vae, ema_unet
+    return unet, scheduler, tokenizer, text_encoder, vae, ema_unet
 
 
 # https://colab.research.google.com/github/huggingface/notebooks/blob/main/diffusers/training_example.ipynb

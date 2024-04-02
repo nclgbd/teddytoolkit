@@ -9,6 +9,7 @@ from sklearn.preprocessing import LabelEncoder, MultiLabelBinarizer
 
 # monai
 import monai
+import monai.transforms as monai_transforms
 from monai.data import ImageDataset
 
 # rtk
@@ -27,7 +28,12 @@ from rtk.utils import (
 logger = get_logger(__name__)
 
 
-def load_mimic_dataset(cfg: BaseConfiguration, save_metadata=False, **kwargs):
+def load_mimic_dataset(
+    cfg: BaseConfiguration,
+    save_metadata=False,
+    subset_to_positive_class=False,
+    **kwargs,
+):
     dataset_cfg: DatasetConfiguration = kwargs.get("dataset_cfg", None)
     if dataset_cfg is None:
         dataset_cfg = cfg.datasets
@@ -38,13 +44,11 @@ def load_mimic_dataset(cfg: BaseConfiguration, save_metadata=False, **kwargs):
     positive_class = preprocessing_cfg.get("positive_class", "Pneumonia")
 
     ws = login()
-    # pd.read_csv(dataset_cfg.patient_data).set_index(index)
     patient_data = load_patient_dataset(ws, dataset_cfg.patient_data).set_index(index)
 
     # remove all of the negative class for diffusion
-    if target != "class_conditioned_labels" and "diffusion" in cfg.mode:
+    if subset_to_positive_class:
         logger.info("Removing all negative classes...")
-        class_encoding = dataset_cfg.encoding
         patient_data = patient_data[patient_data[positive_class] == 1]
 
     train_data = patient_data[patient_data["split"] == "train"]
@@ -67,15 +71,14 @@ def load_mimic_dataset(cfg: BaseConfiguration, save_metadata=False, **kwargs):
             os.path.join(patient_metadata_path, f"{dataset_cfg.name}_test_metadata.csv")
         )
 
-    def __build_mimic_data_split(cfg: BaseConfiguration, data: pd.DataFrame, split=""):
+    def __build_mimic_data_split(
+        cfg: BaseConfiguration, data: pd.DataFrame, transforms: monai_transforms.Compose
+    ):
         dataset_cfg = cfg.datasets
         image_files = [
             os.path.join(dataset_cfg.scan_data, f) for f in data[IMAGE_KEYNAME].values
         ]
-        labels = data[dataset_cfg.target].values
-        transforms = create_transforms(
-            cfg, use_transforms=cfg.use_transforms if split == "train" else False
-        )
+        labels = list(data[dataset_cfg.target].values)
 
         dataset = hydra_instantiate(
             dataset_cfg.instantiate,
@@ -85,8 +88,10 @@ def load_mimic_dataset(cfg: BaseConfiguration, save_metadata=False, **kwargs):
         )
         return dataset
 
-    train_dataset = __build_mimic_data_split(cfg, train_data, split="train")
-    val_dataset = __build_mimic_data_split(cfg, val_data)
-    test_dataset = __build_mimic_data_split(cfg, test_data)
+    train_transforms = create_transforms(cfg, use_transforms=cfg.use_transforms)
+    eval_transforms = create_transforms(cfg, use_transforms=False)
+    train_dataset = __build_mimic_data_split(cfg, train_data, train_transforms)
+    val_dataset = __build_mimic_data_split(cfg, val_data, eval_transforms)
+    test_dataset = __build_mimic_data_split(cfg, test_data, eval_transforms)
 
     return [train_dataset, val_dataset, test_dataset]
