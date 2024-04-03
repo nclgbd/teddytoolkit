@@ -23,13 +23,15 @@ from torchmetrics.image.ssim import StructuralSimilarityIndexMeasure
 import accelerate
 from accelerate import Accelerator
 from accelerate.state import AcceleratorState
+from accelerate.utils import ProjectConfiguration, set_seed
 from diffusers.training_utils import EMAModel, cast_training_params
 from diffusers import (
-    UNet2DConditionModel,
-    DiffusionPipeline,
-    DDPMScheduler,
     AutoencoderKL,
+    DDPMScheduler,
+    DiffusionPipeline,
+    UNet2DConditionModel,
 )
+from diffusers.utils import deprecate
 from diffusers.utils.import_utils import is_xformers_available
 
 # transformers
@@ -78,6 +80,60 @@ def instantiate_torch_metrics(tm_cfg: TorchMetricsConfiguration, remap=True, **k
         metrics[target_name] = metric
 
     return metrics
+
+
+def prepare_accelerator(args: TextToImageConfiguration, device_placement: bool = False):
+    if args.non_ema_revision is not None:
+        deprecate(
+            "non_ema_revision!=None",
+            "0.15.0",
+            message=(
+                "Downloading 'non_ema' weights from revision branches of the Hub is deprecated. Please make sure to"
+                " use `--variant=non_ema` instead."
+            ),
+        )
+
+    logging_dir = os.path.join(args.output_dir, args.logging_dir)
+    accelerator_project_config = ProjectConfiguration(
+        project_dir=args.output_dir, logging_dir=logging_dir
+    )
+
+    # device_placement = False
+    accelerator: Accelerator = Accelerator(
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        mixed_precision=args.mixed_precision,
+        project_config=accelerator_project_config,
+        device_placement=device_placement,
+    )
+    device: torch.device = (
+        accelerator.device if device_placement else torch.device(args.device)
+    )
+
+    logger.info(f"Accelerator state:\n{accelerator.state}")
+    logger.info(f"Using device:\t'{device}'")
+
+    # If passed along, set the training seed now.
+    if args.seed is not None:
+        set_seed(args.seed)
+
+    logger.info(f"Using seed:\t{args.seed}")
+
+    # Handle the repository creation
+    if accelerator.is_main_process:
+        if args.output_dir is not None:
+            os.makedirs(args.output_dir, exist_ok=True)
+
+    # For mixed precision training we cast all non-trainable weigths (vae, non-lora text_encoder and non-lora unet) to half-precision
+    # as these weights are only used for inference, keeping weights in full precision is not required.
+    weight_dtype: torch.dtype = torch.float32
+    if accelerator.mixed_precision == "fp16":
+        weight_dtype = torch.float16
+        args.mixed_precision = accelerator.mixed_precision
+    elif accelerator.mixed_precision == "bf16":
+        weight_dtype = torch.bfloat16
+        args.mixed_precision = accelerator.mixed_precision
+
+    return accelerator, weight_dtype, device
 
 
 def compile_huggingface_pipeline(
@@ -377,7 +433,7 @@ def generate_samples(
         # Save the images
         test_dir = os.path.join("artifacts", "samples")
         os.makedirs(test_dir, exist_ok=True)
-        img_path = f"{test_dir}/{(epoch+1):04d}.png"
+        img_path = f"{test_dir}/{(epoch+1):05d}.png"
         image_grid.save(img_path)
         mlflow.log_artifact(img_path)
 
