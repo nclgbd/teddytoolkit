@@ -17,7 +17,7 @@ from generative.networks.schedulers import Scheduler
 
 # rtk
 from rtk import DEFAULT_MODEL_PATH
-from rtk.config import Configuration, ModelConfiguration, DiffusionModelConfiguration
+from rtk.config import ImageClassificationConfiguration, ModelConfiguration, DiffusionModelConfiguration
 from rtk.utils import get_logger, hydra_instantiate
 
 logger = get_logger(__name__)
@@ -63,7 +63,7 @@ def download_model_weights(
 
 
 def instantiate_model(
-    cfg: Configuration,
+    cfg: ImageClassificationConfiguration,
     device: torch.device = torch.device("cpu"),
     use_huggingface=False,
     **kwargs,
@@ -107,7 +107,7 @@ def instantiate_model(
 
 
 def instantiate_criterion(
-    cfg: Configuration, device: torch.device = torch.device("cpu"), **kwargs
+    cfg: ImageClassificationConfiguration, device: torch.device = torch.device("cpu"), **kwargs
 ):
     """
     Instantiates the criterion (loss function) from a given configuration.
@@ -120,7 +120,7 @@ def instantiate_criterion(
     return criterion.to(device)
 
 
-def instantiate_optimizer(cfg: Configuration, model: nn.Module, **kwargs):
+def instantiate_optimizer(cfg: ImageClassificationConfiguration, model: nn.Module, **kwargs):
     """
     Instantiates the optimizer from a given configuration.
 
@@ -147,7 +147,7 @@ def instantiate_diffusion_scheduler(cfg: DiffusionModelConfiguration, **kwargs):
     return scheduler
 
 
-def instantiate_diffusion_inferer(cfg: Configuration, scheduler: Scheduler, **kwargs):
+def instantiate_diffusion_inferer(cfg: ImageClassificationConfiguration, scheduler: Scheduler, **kwargs):
     """
     Instantiates the inferer from a given configuration.
 

@@ -1,11 +1,11 @@
 """
 Tests for the `rtk.config` module.
 """
-from rtk.config import Configuration
+from rtk.config import ImageClassificationConfiguration
 
 
 class TestConfig:
-    def test_config(self, test_cfg: Configuration):
+    def test_config(self, test_cfg: ImageClassificationConfiguration):
         assert test_cfg is not None
         # dataset checks
         assert test_cfg.datasets is not None

@@ -39,6 +39,23 @@ COLOR_LOGGER_FORMAT: logging.Formatter = ColoredFormatter(
 )
 
 
+def get_params(cfg, **kwargs):
+    params = dict(cfg)
+    del params["datasets"]
+    del params["huggingface"]
+    del params["mlflow"]
+
+    dataset_cfg = cfg.datasets
+    params["dataset_name"] = dataset_cfg.name
+    params["target"] = dataset_cfg.target
+    params["dim"] = dataset_cfg.dim
+    params["batch_size"] = dataset_cfg.dataloader.batch_size
+    params["patient_data"] = dataset_cfg.patient_data
+    params["patient_data_version"] = dataset_cfg.patient_data_version
+
+    return params
+
+
 def login(
     from_config=True,
     **kwargs,
@@ -220,6 +237,19 @@ def yaml_to_configuration(file_path: str):
     del cfg["defaults"]
     cfg = DictConfig(cfg)
     return cfg
+
+
+def parse_args(args):
+    # Handle the environment variables for distributed training.
+    env_local_rank = int(os.environ.get("LOCAL_RANK", -1))
+    if env_local_rank != -1 and env_local_rank != args.local_rank:
+        args.local_rank = env_local_rank
+
+    # default to using the same revision for the non-ema model if not specified
+    if args.non_ema_revision is None:
+        args.non_ema_revision = args.revision
+
+    return args
 
 
 def _strip_target(_dict: dict, lower=False):

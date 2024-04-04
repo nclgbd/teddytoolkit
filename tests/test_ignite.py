@@ -17,8 +17,8 @@ from ignite.contrib.handlers import ProgressBar
 # rtk
 from rtk import datasets, models
 from rtk.config import (
-    Configuration,
-    DatasetConfiguration,
+    ImageClassificationConfiguration,
+    ImageDatasetConfiguration,
     DiffusionModelConfiguration,
     IgniteConfiguration,
     JobConfiguration,
@@ -40,9 +40,9 @@ TRAINER_RUN_KWARGS = {"epoch_length": EPOCH_LENGTH, "max_epochs": MAX_EPOCHS}
 
 class TestIgnite:
     @pytest.fixture
-    def loaders(self, test_cfg: Configuration):
+    def loaders(self, test_cfg: ImageClassificationConfiguration):
         """Fixture for the train loader."""
-        dataset_cfg: DatasetConfiguration = test_cfg.datasets
+        dataset_cfg: ImageDatasetConfiguration = test_cfg.datasets
         job_cfg: JobConfiguration = test_cfg.job
         use_transforms = job_cfg.use_transforms
         transform = datasets.create_transforms(test_cfg, use_transforms=use_transforms)
@@ -80,13 +80,13 @@ class TestIgnite:
         )
         return train_loader, val_loader, test_loader
 
-    def test_create_default_trainer_args(self, test_cfg: Configuration):
+    def test_create_default_trainer_args(self, test_cfg: ImageClassificationConfiguration):
         """Test the `rtk.ignite.create_default_trainer_args` function."""
         trainer_args = create_default_trainer_args(test_cfg)
         trainer = create_supervised_trainer(**trainer_args)
         assert trainer is not None
 
-    def test_create_metrics(self, test_cfg: Configuration):
+    def test_create_metrics(self, test_cfg: ImageClassificationConfiguration):
         """Test the `rtk.ignite.create_metrics` function."""
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         criterion = models.instantiate_criterion(test_cfg, device=device)
@@ -94,7 +94,7 @@ class TestIgnite:
         assert metrics is not None
 
     @pytest.mark.requires_live_test
-    def test_prepare_run(self, test_cfg: Configuration, loaders: tuple):
+    def test_prepare_run(self, test_cfg: ImageClassificationConfiguration, loaders: tuple):
         """Test the `rtk.ignite.prepare_run` function."""
         device = torch.device(test_cfg.job.device)
         trainer, _ = prepare_run(cfg=test_cfg, loaders=loaders, device=device)

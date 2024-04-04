@@ -16,9 +16,9 @@ from rtk.config import *
 
 # TODO: pd.Series are saved in the dataframe for some reason, so we need to convert them to ints
 def build_ixi_metadata_dataframe(
-    cfg: Configuration, image_files: list, labels: list = None
+    cfg: ImageClassificationConfiguration, image_files: list, labels: list = None
 ):
-    dataset_cfg: DatasetConfiguration = cfg.datasets
+    dataset_cfg: ImageDatasetConfiguration = cfg.datasets
     index_name = dataset_cfg.index
     target_name = dataset_cfg.target
     patient_data = dataset_cfg.patient_data
@@ -91,8 +91,8 @@ def _filter_scan_paths(
     return filtered_scan_paths
 
 
-def load_ixi_dataset(cfg: Configuration, save_metadata=False, **kwargs):
-    dataset_cfg: DatasetConfiguration = cfg.datasets
+def load_ixi_dataset(cfg: ImageClassificationConfiguration, save_metadata=False, **kwargs):
+    dataset_cfg: ImageDatasetConfiguration = cfg.datasets
     target_name = dataset_cfg.target
     scan_data = dataset_cfg.scan_data
     scan_paths = [os.path.join(scan_data, f) for f in os.listdir(scan_data)]

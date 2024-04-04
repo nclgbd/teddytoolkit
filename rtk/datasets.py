@@ -4,7 +4,7 @@ import numpy as np
 import os
 import pandas as pd
 from PIL import Image
-from collections import Counter
+from collections import Counter, OrderedDict
 from copy import deepcopy
 from matplotlib import pyplot as plt
 from omegaconf import OmegaConf
@@ -34,9 +34,9 @@ from monai.data import ImageDataset, ThreadDataLoader, CacheDataset, PersistentD
 # rtk
 from rtk import *
 from rtk._datasets import create_transforms
-from rtk._datasets.ixi import load_ixi_dataset
-from rtk._datasets.mimic import load_mimic_dataset
-from rtk._datasets.nih import load_nih_dataset
+from rtk._datasets.ixi import *
+from rtk._datasets.mimic import *
+from rtk._datasets.nih import *
 from rtk._datasets.pediatrics import load_pediatrics_dataset
 from rtk.config import *
 from rtk.utils import (
@@ -78,26 +78,48 @@ def visualize_scan(
     return display_scan, label
 
 
-def resample_to_value(cfg: Configuration, metadata: pd.DataFrame, **kwargs):
+def resample_to_value(
+    cfg: ImageClassificationConfiguration,
+    metadata: pd.DataFrame,
+    text_encoding: dict,
+    **kwargs,
+):
     """
     Resample a dataset by duplicating the data.
     """
     dataset_cfg = cfg.datasets
     preprocessing_cfg = dataset_cfg.preprocessing
-    label_encoding = sorted(metadata[LABEL_KEYNAME].unique())
-    sample_to_value: int = preprocessing_cfg.get(
+    positive_class = preprocessing_cfg.positive_class
+
+    # we have to recheck the size of the data since the data has already been split into training
+    subsample_size = len(metadata[metadata[positive_class] == 1])
+    label_encoding = sorted(metadata.columns.unique())
+    label_encoding = label_encoding[:-5]
+    sample_to_value: int = preprocessing_cfg.sampling_method.get(
         "sample_to_value", kwargs.get("sample_to_value", 3500)
     )
-    new_metadata = deepcopy(metadata)
+    new_metadata = pd.DataFrame(columns=metadata.columns, index=metadata.index)
     for label in label_encoding:
-        class_subset = metadata[metadata[LABEL_KEYNAME] == label]
-        offset_size = sample_to_value - len(class_subset)
-        resampled_image_files = np.random.choice(
-            class_subset[IMAGE_KEYNAME].values, size=offset_size
-        )
-        resampled_labels = np.array([label] * offset_size)
+        class_subset = metadata[metadata[label] == 1]
+
+        # offset_size = sample_to_value - len(class_subset)
+
+        # # if the class is already less than desired value, skip
+        # if offset_size < 1:
+        #     continue
+
+        if sample_to_value - len(class_subset) < 1:
+            features = class_subset[dataset_cfg.target]
+            # resampled_features = np.random.choice(
+            #     features, size=subsample_size, replace=False
+            # )
+            resampled_features = features.sample(n=sample_to_value, replace=False)
+            resampled_labels = [text_encoding[text] for text in resampled_features]
+            # resampled_labels = np.array([label] * sample_to_value)
+
         resampled_dict = {
-            IMAGE_KEYNAME: resampled_image_files,
+            "index": class_subset.index,
+            FEATURE_KEYNAME: resampled_features,
             LABEL_KEYNAME: resampled_labels,
         }
         new_metadata = pd.concat(
@@ -127,8 +149,8 @@ def get_images_and_classes(dataset: ImageDataset, **kwargs):
     return images, classes
 
 
-def subset_to_class(cfg: BaseConfiguration, data_df: pd.DataFrame, **kwargs):
-    dataset_cfg: DatasetConfiguration = cfg.datasets
+def subset_to_class(cfg: BaseImageConfiguration, data_df: pd.DataFrame, **kwargs):
+    dataset_cfg: ImageDatasetConfiguration = cfg.datasets
     preprocessing_cfg = dataset_cfg.preprocessing
     subset: list = preprocessing_cfg.get("subset", kwargs.get("subset", []))
     if len(subset) > 0:
@@ -137,7 +159,7 @@ def subset_to_class(cfg: BaseConfiguration, data_df: pd.DataFrame, **kwargs):
     return data_df
 
 
-def get_target_breakdown(cfg: BaseConfiguration, datasets: list):
+def get_target_breakdown(cfg: BaseImageConfiguration, datasets: list):
     dataset_cfg = cfg.datasets
     train_dataset, test_dataset = datasets[0], datasets[-1]
     class_encoding = {v: k for k, v in dataset_cfg.encoding.items()}
@@ -176,7 +198,7 @@ def get_target_breakdown(cfg: BaseConfiguration, datasets: list):
     return target_breakdown
 
 
-def set_labels_from_encoding(cfg: BaseConfiguration, encoding: dict = None):
+def set_labels_from_encoding(cfg: BaseImageConfiguration, encoding: dict = None):
     dataset_cfg = cfg.datasets
     encoding = dataset_cfg.encoding if encoding is None else encoding
     if dataset_cfg.labels is not None and not any(dataset_cfg.labels):
@@ -226,7 +248,7 @@ def transform_labels_to_metaclass(
 
 
 def preprocess_dataset(
-    cfg: BaseConfiguration,
+    cfg: BaseImageConfiguration,
     dataset: ImageDataset,
     **kwargs,
 ):
@@ -286,12 +308,54 @@ def apply_label_to_text_prompts(x, base: list = None):
     return prompt[:-1]  # remove the last comma
 
 
+def instantiate_text_dataset(
+    cfg: BaseConfiguration,
+    subset_to_positive_class=False,
+    **kwargs,
+):
+    dataset_cfg: DatasetConfiguration = kwargs.get("dataset_cfg", None)
+    if dataset_cfg is None:
+        dataset_cfg = cfg.datasets
+    index = dataset_cfg.index
+    target = dataset_cfg.target
+    data_path = dataset_cfg.scan_data
+    positive_class = kwargs.get("positive_class", None)
+    if positive_class is None:
+        preprocessing_cfg = dataset_cfg.preprocessing
+        positive_class = preprocessing_cfg.get("positive_class", "Pneumonia")
+
+    if dataset_cfg.name == "nih" or dataset_cfg.name == "cxr14":
+        metadata = load_metadata(
+            index,
+            dataset_cfg.patient_data,
+            dataset_cfg.patient_data_version,
+        )
+
+        # remove all of the negative class for diffusion
+        if subset_to_positive_class:
+            logger.info("Removing all negative classes...")
+            metadata = metadata[metadata[positive_class] == 1]
+
+        unique_texts = sorted(metadata[target].unique())
+        text_encoding = {text: i for i, text in enumerate(unique_texts)}
+
+        # train split
+        with open(os.path.join(data_path, "train_val_list.txt"), "r") as f:
+            train_val_list = [idx.strip() for idx in f.readlines()]
+
+        train_metadata = metadata[metadata.index.isin(train_val_list)]
+        train_metadata = resample_to_value(cfg, train_metadata, text_encoding)
+
+
 def instantiate_image_dataset(
-    cfg: BaseConfiguration = None, save_metadata=False, return_metadata=False, **kwargs
+    cfg: BaseImageConfiguration = None,
+    save_metadata=False,
+    return_metadata=False,
+    **kwargs,
 ):
     """ """
     logger.info("Instantiating image dataset...")
-    dataset_cfg: DatasetConfiguration = kwargs.get(
+    dataset_cfg: ImageDatasetConfiguration = kwargs.get(
         "dataset_cfg", cfg.datasets if cfg is not None else None
     )
     preprocessing_cfg = dataset_cfg.preprocessing
@@ -319,7 +383,7 @@ def instantiate_image_dataset(
 
     else:
         raise ValueError(
-            f"Dataset '{dataset_name}' is not recognized not supported. Please use ['cxr14'|'pediatrics'|'ixi'|'mimic']."
+            f"Dataset '{dataset_name}' is not recognized not supported. Please use ['nih'|'cxr14'|'pediatrics'|'ixi'|'mimic']."
         )
 
     if "additional_datasets" in dataset_cfg:
@@ -331,17 +395,25 @@ def instantiate_image_dataset(
             test_dataset=test_dataset,
             positive_class=preprocessing_cfg.positive_class,
         )
-        if len(loaded_datasets) == 3:
-            loaded_datasets = [train_dataset, loaded_datasets[1], test_dataset]
-        else:
-            loaded_datasets = [train_dataset, test_dataset]
+    if len(loaded_datasets) == 3:
+        ret_datasets: OrderedDict = OrderedDict(
+            {
+                "train": train_dataset,
+                "val": loaded_datasets[1],
+                "test": test_dataset,
+            }
+        )
+    else:
+        ret_datasets: OrderedDict = OrderedDict(
+            {"train": train_dataset, "test": test_dataset}
+        )
 
     logger.info("Image dataset instantiated.\n")
-    return loaded_datasets
+    return ret_datasets
 
 
 def combine_datasets(
-    dataset_cfg: DatasetConfiguration,
+    dataset_cfg: ImageDatasetConfiguration,
     train_dataset: ImageDataset,
     test_dataset: ImageDataset,
     val_dataset: ImageDataset = None,
@@ -374,8 +446,8 @@ def combine_datasets(
 
 
 def instantiate_train_val_test_datasets(
-    cfg: BaseConfiguration,
-    dataset: monai.data.Dataset,
+    cfg: BaseImageConfiguration,
+    dataset: monai.data.ImageDataset,
     train_transforms: monai.transforms.Compose,
     eval_transforms: monai.transforms.Compose,
     **kwargs,
@@ -383,9 +455,9 @@ def instantiate_train_val_test_datasets(
     """
     Create train/test splits for the data.
     """
-    dataset_cfg: DatasetConfiguration = cfg.datasets
+    dataset_cfg: ImageDatasetConfiguration = cfg.datasets
     preprocessing_cfg = dataset_cfg.preprocessing
-    positive_class: str = preprocessing_cfg.get("positive_class", "Pneumonia (m)")
+    positive_class: str = preprocessing_cfg.get("positive_class", "Pneumonia")
     sklearn_cfg = cfg.sklearn
     random_state = cfg.random_state
 
@@ -403,43 +475,36 @@ def instantiate_train_val_test_datasets(
             random_state=random_state,
             **train_test_split_kwargs,
         )
-        # X_train = X_train.reshape(-1)
-        train_df = pd.DataFrame({IMAGE_KEYNAME: X_train, LABEL_KEYNAME: y_train})
+        train_data = pd.DataFrame({IMAGE_KEYNAME: X_train, LABEL_KEYNAME: y_train})
 
         sampling_method = preprocessing_cfg.sampling_method
-        # if isinstance(sampling_method.method["__target__"], (os.PathLike)):
         if "_dir_" in sampling_method.method.keys():
             logger.info("Loading additional generated images...")
-            gen_path = sampling_method.method["_dir_"]
+            gen_path: str = sampling_method.method["_dir_"]
             target_encoding = dataset_cfg.encoding[positive_class]
 
-            generated_image_files = [
-                os.path.join(gen_path, p) for p in os.listdir(gen_path)
-            ]
-            generated_labels = [target_encoding] * len(generated_image_files)
-            generated_df = pd.DataFrame(
+            gen_image_files = [os.path.join(gen_path, p) for p in os.listdir(gen_path)]
+            gen_labels = [target_encoding] * len(gen_image_files)
+            gen_data = pd.DataFrame(
                 {
-                    IMAGE_KEYNAME: generated_image_files,
-                    LABEL_KEYNAME: generated_labels,
+                    IMAGE_KEYNAME: gen_image_files,
+                    LABEL_KEYNAME: gen_labels,
                 }
             )
 
-            positive_df = train_df[train_df[LABEL_KEYNAME] == 1]
-            offset = abs(len(positive_df) - len(generated_df))
-            sampled_generated_df: pd.DataFrame = generated_df.sample(
+            pos_data = train_data[train_data[LABEL_KEYNAME] == 1]
+            offset = abs(len(pos_data) - len(gen_data))
+            sampled_gen_data: pd.DataFrame = gen_data.sample(
                 offset, random_state=cfg.random_state
             )
-            logger.info(
-                f"Number of sampled generated images: {len(sampled_generated_df)}"
-            )
-            train_df = pd.concat([train_df, sampled_generated_df])
+            logger.info(f"Number of sampled generated images: {len(sampled_gen_data)}")
+            train_data = pd.concat([train_data, sampled_gen_data])
 
         if preprocessing_cfg.get("use_sampling", False):
             sample_to_value: int = preprocessing_cfg.sampling_method["sample_to_value"]
 
-            X_train = train_df[IMAGE_KEYNAME].values.reshape(-1)
-            y_train = train_df[LABEL_KEYNAME].values
-            # train_df = pd.DataFrame({IMAGE_KEYNAME: X_train, LABEL_KEYNAME: y_train})
+            X_train = train_data[IMAGE_KEYNAME].values.reshape(-1)
+            y_train = train_data[LABEL_KEYNAME].values
 
             sampling_method = preprocessing_cfg.sampling_method
             if "_dir_" in sampling_method.method.keys():
@@ -451,15 +516,15 @@ def instantiate_train_val_test_datasets(
                 X_train, y_train = sampler.fit_resample(X_train.reshape(-1, 1), y_train)
                 X_train = X_train.reshape(-1)
                 # y_train = y_train
-                train_df = pd.DataFrame(
+                train_data = pd.DataFrame(
                     {IMAGE_KEYNAME: X_train, LABEL_KEYNAME: y_train}
                 )
             else:
-                train_df = train_df.groupby(LABEL_KEYNAME).apply(
+                train_data = train_data.groupby(LABEL_KEYNAME).apply(
                     lambda x: x.sample(sample_to_value, replace=True)
                 )
-            X_train = train_df[IMAGE_KEYNAME].values
-            y_train = train_df[LABEL_KEYNAME].values
+            X_train = train_data[IMAGE_KEYNAME].values
+            y_train = train_data[LABEL_KEYNAME].values
 
         train_dataset: monai.data.Dataset = hydra.utils.instantiate(
             config=dataset_cfg.instantiate,
@@ -544,9 +609,9 @@ def instantiate_train_val_test_datasets(
     return train_val_test_split_dict
 
 
-def prepare_validation_dataloaders(cfg: BaseConfiguration = None, **kwargs):
+def prepare_validation_dataloaders(cfg: BaseImageConfiguration = None, **kwargs):
     logger.info("Preparing data...")
-    dataset_cfg: DatasetConfiguration = kwargs.get(
+    dataset_cfg: ImageDatasetConfiguration = kwargs.get(
         "dataset_cfg", cfg.datasets if cfg else None
     )
     use_transforms = cfg.use_transforms

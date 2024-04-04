@@ -12,12 +12,15 @@ import monai
 
 # rtk
 from rtk import *
-from rtk._datasets import create_transforms
+from rtk._datasets import create_transforms, load_metadata
 from rtk.config import *
-from rtk.utils import login, get_logger, load_patient_dataset
+from rtk.utils import get_logger
 
 
 logger = get_logger(__name__)
+
+MINORITY_CLASS = "Hernia"
+MINORITY_CLASS_COUNT = 227
 
 
 def chest_xray14_get_target_counts(df: pd.DataFrame, target: str = ""):
@@ -25,13 +28,13 @@ def chest_xray14_get_target_counts(df: pd.DataFrame, target: str = ""):
 
 
 def load_nih_dataset(
-    cfg: Configuration = None,
+    cfg: ImageClassificationConfiguration = None,
     save_metadata=True,
     return_metadata=False,
     subset_to_positive_class=False,
     **kwargs,
 ):
-    dataset_cfg: DatasetConfiguration = kwargs.get("dataset_cfg", None)
+    dataset_cfg: ImageDatasetConfiguration = kwargs.get("dataset_cfg", None)
     if dataset_cfg is None:
         dataset_cfg = cfg.datasets
 
@@ -42,12 +45,11 @@ def load_nih_dataset(
         preprocessing_cfg = dataset_cfg.preprocessing
         positive_class = preprocessing_cfg.get("positive_class", "Pneumonia")
 
-    ws = login()
-    nih_metadata = load_patient_dataset(
-        ws=ws,
-        patient_dataset_name=dataset_cfg.patient_data,
-        patient_dataset_version=dataset_cfg.patient_data_version,
-    ).set_index(dataset_cfg.index)
+    nih_metadata = load_metadata(
+        dataset_cfg.index,
+        dataset_cfg.patient_dataset_name,
+        dataset_cfg.patient_dataset_version,
+    )
 
     # remove all of the negative class for diffusion
     if subset_to_positive_class:

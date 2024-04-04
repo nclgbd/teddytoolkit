@@ -21,13 +21,13 @@ from rtk.datasets import (
     _IMAGE_KEYNAME,
     _LABEL_KEYNAME,
 )
-from rtk.config import Configuration, DatasetConfiguration, JobConfiguration
+from rtk.config import ImageClassificationConfiguration, ImageDatasetConfiguration, JobConfiguration
 
 
 class TestDatasets:
-    def test_create_transforms(self, test_cfg: Configuration):
+    def test_create_transforms(self, test_cfg: ImageClassificationConfiguration):
         """Tests the `rtk.datasets.create_transforms` function."""
-        dataset_cfg: DatasetConfiguration = test_cfg.datasets
+        dataset_cfg: ImageDatasetConfiguration = test_cfg.datasets
         transforms = datasets.create_transforms(test_cfg, use_transforms=False)
 
         # without transforms
@@ -44,9 +44,9 @@ class TestDatasets:
             == len(load_transforms) + len(eval_transforms) + 1
         )
 
-    def test_instantiate_image_dataset(self, test_cfg: Configuration):
+    def test_instantiate_image_dataset(self, test_cfg: ImageClassificationConfiguration):
         """Tests the `rtk.datasets.instantiate_image_dataset` function."""
-        dataset_cfg: DatasetConfiguration = test_cfg.datasets
+        dataset_cfg: ImageDatasetConfiguration = test_cfg.datasets
         transform_cfg: DictConfig = dataset_cfg.transforms
         transform = datasets.create_transforms(cfg=test_cfg)
         dataset = datasets.instantiate_image_dataset(
@@ -62,9 +62,9 @@ class TestDatasets:
         scan_shape = scan.shape[1:]
         assert scan_shape == tuple(transform_cfg["load"][-1]["spatial_size"])
 
-    def test_instantiate_train_val_test_datasets(self, test_cfg: Configuration):
+    def test_instantiate_train_val_test_datasets(self, test_cfg: ImageClassificationConfiguration):
         """Tests the `rtk.datasets.instantiate_train_val_test_datasets` function."""
-        dataset_cfg: DatasetConfiguration = test_cfg.datasets
+        dataset_cfg: ImageDatasetConfiguration = test_cfg.datasets
         job_cfg: JobConfiguration = test_cfg.job
 
         transform = datasets.create_transforms(test_cfg)
@@ -97,7 +97,7 @@ class TestDatasets:
 
     def test_transform_image_dataset_to_cache_dataset(self, test_cfg):
         """Tests the `rtk.datasets.transform_image_dataset_to_cache_dataset` function."""
-        dataset_cfg: DatasetConfiguration = test_cfg.datasets
+        dataset_cfg: ImageDatasetConfiguration = test_cfg.datasets
         transform_cfg = dataset_cfg.transforms
         transform = datasets.create_transforms(test_cfg)
         _datasets = datasets.instantiate_image_dataset(

@@ -13,7 +13,7 @@ from rtk.config import *
 _logger = get_logger(__name__)
 
 
-def _determine_model_name(cfg: Configuration, **kwargs):
+def _determine_model_name(cfg: ImageClassificationConfiguration, **kwargs):
     model_cfg = cfg.models
     model_name: str = _strip_target(model_cfg.model, lower=True)
     if model_name == "from_pretrained":
@@ -22,7 +22,7 @@ def _determine_model_name(cfg: Configuration, **kwargs):
     return model_name
 
 
-def create_run_name(cfg: Configuration, random_state: int, **kwargs):
+def create_run_name(cfg: ImageClassificationConfiguration, random_state: int, **kwargs):
     """Create a run name."""
     dataset_cfg = cfg.datasets
     preprocessing_cfg = dataset_cfg.preprocessing
@@ -62,7 +62,7 @@ def create_run_name(cfg: Configuration, random_state: int, **kwargs):
     return run_name
 
 
-def get_base_params(cfg:BaseConfiguration, **kwargs):
+def get_base_params(cfg:BaseImageConfiguration, **kwargs):
     params = dict()
     params["date"] = cfg.date
     params["postfix"] = cfg.postfix
@@ -72,11 +72,11 @@ def get_base_params(cfg:BaseConfiguration, **kwargs):
     return params
 
 
-def get_params(cfg: Configuration, **kwargs):
+def get_params(cfg: ImageClassificationConfiguration, **kwargs):
     """
     Get the parameters of this run.
     """
-    dataset_cfg: DatasetConfiguration = kwargs.get("dataset_cfg", cfg.datasets)
+    dataset_cfg: ImageDatasetConfiguration = kwargs.get("dataset_cfg", cfg.datasets)
     model_cfg: ModelConfiguration = kwargs.get("model_cfg", cfg.models)
     preprocessing_cfg: PreprocessingConfiguration = kwargs.get(
         "preprocessing_cfg", dataset_cfg.preprocessing
@@ -122,7 +122,7 @@ def get_params(cfg: Configuration, **kwargs):
     return params
 
 
-def log_mlflow_params(cfg: BaseConfiguration, **kwargs):
+def log_mlflow_params(cfg: BaseImageConfiguration, **kwargs):
     """
     Log the parameters to MLFlow.
     """
@@ -132,7 +132,7 @@ def log_mlflow_params(cfg: BaseConfiguration, **kwargs):
     mlflow.log_params(params)
 
 
-def prepare_mlflow(cfg: BaseConfiguration):
+def prepare_mlflow(cfg: BaseImageConfiguration):
     logger.info("Preparing MLflow run...")
     mlflow_cfg = cfg.mlflow
     logger.debug("Using AzureML for experiment tracking...")

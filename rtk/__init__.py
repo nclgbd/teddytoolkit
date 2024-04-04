@@ -6,6 +6,7 @@ DEFAULT_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".c
 CACHE_DIR = os.path.join(DEFAULT_CACHE_DIR, "tmp")
 
 DEFAULT_DATA_PATH = os.path.join(DEFAULT_CACHE_DIR, "datasets")
+FEATURE_KEYNAME = "inputs"
 IMAGE_KEYNAME = "image_files"
 LABEL_KEYNAME = "labels"
 COLUMN_NAMES = [IMAGE_KEYNAME, LABEL_KEYNAME]

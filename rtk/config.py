@@ -32,41 +32,19 @@ class PreprocessingConfiguration:
 
 @dataclass
 class DatasetConfiguration:
-
     # name of the dataset
     name: str = ""
-
     # preprocessing configuration
     preprocessing: PreprocessingConfiguration = field(
         default_factory=PreprocessingConfiguration
     )
-    # transforms
-    transforms: DictConfig = field(
-        default_factory=lambda: DictConfig({"load": [], "train": []})
-    )
-    # encoding
-    encoding: dict = field(default_factory=lambda: {})
-    # text prompts
-    text_prompts: dict = field(default_factory=lambda: {})
-
-    # dimension to resize the images to
-    dim: int = 224
+    # the path to the metadata of the dataset
+    patient_data: str = ""
+    patient_data_version: str = "latest"
     # the name of the index column in the metadata
     index: str = ""
     # the name of the target column in the metadata
     target: str = ""
-    # # integer representation of how many times to expand the dataset
-    # # i.e.: if the dataset has 100 samples and resample_value is 3, then the dataset will be expanded to 300 samples.
-    # # default is 1, which means no expansion.
-    # resample_value: int = 1
-    # the path to the metadata of the dataset
-    patient_data: str = ""
-    patient_data_version: str = "latest"
-    # the path to the scan of the dataset
-    scan_data: str = ""
-    scan_dataset_version: str = "latest"
-    # the extension of the scan files
-    extension: str = ".png"
     # the names for each label in alphabetical order
     labels: list = field(default_factory=lambda: [])
     # the kind of dataset to instantiate
@@ -81,6 +59,38 @@ class DatasetConfiguration:
     additional_datasets: DictConfig = field(
         default_factory=lambda: DictConfig({"dataset_configs": [], "loader": None})
     )
+
+
+@dataclass
+class ImageDatasetConfiguration(DatasetConfiguration):
+
+    # # name of the dataset
+    # name: str = ""
+
+    # # preprocessing configuration
+    # preprocessing: PreprocessingConfiguration = field(
+    #     default_factory=PreprocessingConfiguration
+    # )
+    # transforms
+    transforms: DictConfig = field(
+        default_factory=lambda: DictConfig({"load": [], "train": []})
+    )
+    # encoding
+    encoding: dict = field(default_factory=lambda: {})
+    # text prompts
+    text_prompts: dict = field(default_factory=lambda: {})
+
+    # dimension to resize the images to
+    dim: int = 224
+    # # integer representation of how many times to expand the dataset
+    # # i.e.: if the dataset has 100 samples and resample_value is 3, then the dataset will be expanded to 300 samples.
+    # # default is 1, which means no expansion.
+    # resample_value: int = 1
+    # the path to the scan of the dataset
+    scan_data: str = ""
+    scan_dataset_version: str = "latest"
+    # the extension of the scan files
+    extension: str = ".png"
 
 
 @dataclass
@@ -106,36 +116,17 @@ class BaseConfiguration:
     log_dir: str = "logs"
     # the gpu device to use
     device: str = "cpu"
-    # whether to use transforms or not
-    use_transforms: bool = False
     # the random seed for reproducibility
     random_state: int = random.randint(0, 8192)
 
 
-def set_hydra_configuration(
-    config_name: str,
-    ConfigurationInstance: BaseConfiguration,
-    init_method: callable = initialize_config_dir,
-    init_method_kwargs: dict = {},
-    **compose_kwargs,
-):
-    """
-    Creates and returns a hydra configuration.
-
-    ## Args:
-    * `config_name` (`str`, optional): The name of the config (usually the file name without the .yaml extension).
-    * `init_method` (`function`, optional): The initialization method to use. Should be either [`initialize`, `initialize_config_module`, `initialize_config_dir`].
-    Defaults to `initialize_config_dir`.
-    * `kwargs` (`dict`, optional): Keyword arguments for the `init_method` function.
-
-    ## Returns:
-    * `DictConfig`: The hydra configuration.
-    """
-    logger.info(f"Creating configuration: '{config_name}'\n")
-    GlobalHydra.instance().clear()
-    init_method(version_base="1.1", **init_method_kwargs)
-    cfg: DictConfig = compose(config_name=config_name, **compose_kwargs)
-    return ConfigurationInstance(**cfg)
+@dataclass
+class BaseImageConfiguration(BaseConfiguration):
+    datasets: ImageDatasetConfiguration = field(
+        default_factory=ImageDatasetConfiguration()
+    )
+    # whether to use transforms or not
+    use_transforms: bool = False
 
 
 @dataclass
@@ -262,7 +253,7 @@ class TorchMetricsConfiguration:
 
 
 @dataclass
-class Configuration(BaseConfiguration):
+class ImageClassificationConfiguration(BaseImageConfiguration):
 
     job: JobConfiguration = field(default_factory=JobConfiguration())
     models: ModelConfiguration = field(default_factory=ModelConfiguration())
@@ -274,12 +265,14 @@ class Configuration(BaseConfiguration):
 
 
 @dataclass
-class DiffusionConfiguration(Configuration):
+class DiffusionConfiguration(ImageClassificationConfiguration):
     torchmetrics: TorchMetricsConfiguration = field(
         default_factory=TorchMetricsConfiguration
     )
 
 
+# TODO: reorganize this so that it is more modular. HugggingFaceConfiguration should be a dataclass that TextToImageConfiguration and
+# TODO: NLPTConfiguration inherit from.
 @dataclass
 class HuggingFaceConfiguration:
     pipeline: dict = field(default_factory=lambda: {})
@@ -291,7 +284,7 @@ class HuggingFaceConfiguration:
 
 
 @dataclass
-class TextToImageConfiguration(BaseConfiguration):
+class TextToImageConfiguration(BaseImageConfiguration):
     huggingface: HuggingFaceConfiguration = field(
         default_factory=HuggingFaceConfiguration
     )
@@ -386,3 +379,39 @@ class TextToImageConfiguration(BaseConfiguration):
     validation_epochs: int = 5
     #
     tracker_project_name: str = "text2image-fine-tuning"
+
+
+@dataclass
+class NLPTConfiguration(BaseConfiguration):
+    huggingface: HuggingFaceConfiguration = field(
+        default_factory=HuggingFaceConfiguration
+    )
+    pretrained_model_name_or_path: str = ""
+    learning_rate: float = 3e-5
+    num_train_epochs: int = 3
+
+
+def set_hydra_configuration(
+    config_name: str,
+    ConfigurationInstance: BaseImageConfiguration,
+    init_method: callable = initialize_config_dir,
+    init_method_kwargs: dict = {},
+    **compose_kwargs,
+):
+    """
+    Creates and returns a hydra configuration.
+
+    ## Args:
+    * `config_name` (`str`, optional): The name of the config (usually the file name without the .yaml extension).
+    * `init_method` (`function`, optional): The initialization method to use. Should be either [`initialize`, `initialize_config_module`, `initialize_config_dir`].
+    Defaults to `initialize_config_dir`.
+    * `kwargs` (`dict`, optional): Keyword arguments for the `init_method` function.
+
+    ## Returns:
+    * `DictConfig`: The hydra configuration.
+    """
+    logger.info(f"Creating configuration: '{config_name}'\n")
+    GlobalHydra.instance().clear()
+    init_method(version_base="1.1", **init_method_kwargs)
+    cfg: DictConfig = compose(config_name=config_name, **compose_kwargs)
+    return ConfigurationInstance(**cfg)

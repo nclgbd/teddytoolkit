@@ -1,5 +1,6 @@
 import hydra
 import numpy as np
+import pandas as pd
 import skimage
 from copy import deepcopy
 from PIL import Image
@@ -10,11 +11,12 @@ import monai.transforms as monai_transforms
 # rtk
 from rtk import *
 from rtk.config import *
+from rtk.utils import load_patient_dataset, login
 
 
 def create_transforms(
-    cfg: BaseConfiguration = None,
-    dataset_cfg: DatasetConfiguration = None,
+    cfg: BaseImageConfiguration = None,
+    dataset_cfg: ImageDatasetConfiguration = None,
     use_transforms: bool = None,
     transform_dicts: dict = None,
 ):
@@ -63,3 +65,9 @@ def create_transforms(
     ret_transforms = __get_transforms(transforms)
 
     return monai_transforms.Compose(ret_transforms)
+
+
+def load_metadata(index: str, *args, **kwargs) -> pd.DataFrame:
+    ws = login()
+    metadata: pd.DataFrame = load_patient_dataset(ws, *args, **kwargs).set_index(index)
+    return metadata

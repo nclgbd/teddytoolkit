@@ -83,7 +83,8 @@ def instantiate_torch_metrics(tm_cfg: TorchMetricsConfiguration, remap=True, **k
 
 
 def prepare_accelerator(args: TextToImageConfiguration, device_placement: bool = False):
-    if args.non_ema_revision is not None:
+    non_ema_revision = None if "non_ema_revision" not in args else args.non_ema_revision
+    if non_ema_revision is not None:
         deprecate(
             "non_ema_revision!=None",
             "0.15.0",
@@ -93,7 +94,7 @@ def prepare_accelerator(args: TextToImageConfiguration, device_placement: bool =
             ),
         )
 
-    logging_dir = os.path.join(args.output_dir, args.logging_dir)
+    logging_dir = os.path.join(args.output_dir, args.log_dir)
     accelerator_project_config = ProjectConfiguration(
         project_dir=args.output_dir, logging_dir=logging_dir
     )
@@ -391,7 +392,7 @@ def evaluate(
 
 
 def generate_samples(
-    cfg: Configuration,
+    cfg: ImageClassificationConfiguration,
     pipeline: DiffusionPipeline,
     device: torch.device,
     epoch: int = 0,
@@ -442,7 +443,7 @@ def generate_samples(
 
 def forward_diffusion(
     clean_images: torch.Tensor,
-    model_cfg: Configuration,
+    model_cfg: ImageClassificationConfiguration,
     noise_scheduler: DDPMScheduler,
 ):
     # Sample noise to add to the images
