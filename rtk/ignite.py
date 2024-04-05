@@ -76,7 +76,7 @@ logger = get_logger(__name__)
 
 
 def create_default_trainer_args(
-    cfg: BaseImageConfiguration,
+    cfg: ImageConfiguration,
     **kwargs,
 ):
     """

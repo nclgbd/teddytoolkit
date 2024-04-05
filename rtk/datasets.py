@@ -4,7 +4,7 @@ import numpy as np
 import os
 import pandas as pd
 from PIL import Image
-from collections import Counter, OrderedDict
+from collections import Counter
 from copy import deepcopy
 from matplotlib import pyplot as plt
 from omegaconf import OmegaConf
@@ -149,7 +149,7 @@ def get_images_and_classes(dataset: ImageDataset, **kwargs):
     return images, classes
 
 
-def subset_to_class(cfg: BaseImageConfiguration, data_df: pd.DataFrame, **kwargs):
+def subset_to_class(cfg: ImageConfiguration, data_df: pd.DataFrame, **kwargs):
     dataset_cfg: ImageDatasetConfiguration = cfg.datasets
     preprocessing_cfg = dataset_cfg.preprocessing
     subset: list = preprocessing_cfg.get("subset", kwargs.get("subset", []))
@@ -159,7 +159,7 @@ def subset_to_class(cfg: BaseImageConfiguration, data_df: pd.DataFrame, **kwargs
     return data_df
 
 
-def get_target_breakdown(cfg: BaseImageConfiguration, datasets: list):
+def get_target_breakdown(cfg: ImageConfiguration, datasets: list):
     dataset_cfg = cfg.datasets
     train_dataset, test_dataset = datasets[0], datasets[-1]
     class_encoding = {v: k for k, v in dataset_cfg.encoding.items()}
@@ -198,7 +198,7 @@ def get_target_breakdown(cfg: BaseImageConfiguration, datasets: list):
     return target_breakdown
 
 
-def set_labels_from_encoding(cfg: BaseImageConfiguration, encoding: dict = None):
+def set_labels_from_encoding(cfg: ImageConfiguration, encoding: dict = None):
     dataset_cfg = cfg.datasets
     encoding = dataset_cfg.encoding if encoding is None else encoding
     if dataset_cfg.labels is not None and not any(dataset_cfg.labels):
@@ -248,7 +248,7 @@ def transform_labels_to_metaclass(
 
 
 def preprocess_dataset(
-    cfg: BaseImageConfiguration,
+    cfg: ImageConfiguration,
     dataset: ImageDataset,
     **kwargs,
 ):
@@ -308,9 +308,13 @@ def apply_label_to_text_prompts(x, base: list = None):
     return prompt[:-1]  # remove the last comma
 
 
+from transformers import AutoTokenizer
+
+
 def instantiate_text_dataset(
-    cfg: BaseConfiguration,
+    cfg: TextConfiguration,
     subset_to_positive_class=False,
+    tokenizer: AutoTokenizer = None,
     **kwargs,
 ):
     dataset_cfg: DatasetConfiguration = kwargs.get("dataset_cfg", None)
@@ -324,31 +328,93 @@ def instantiate_text_dataset(
         preprocessing_cfg = dataset_cfg.preprocessing
         positive_class = preprocessing_cfg.get("positive_class", "Pneumonia")
 
+    metadata = load_metadata(
+        index,
+        dataset_cfg.patient_data,
+        dataset_cfg.patient_data_version,
+    )
+
     if dataset_cfg.name == "nih" or dataset_cfg.name == "cxr14":
-        metadata = load_metadata(
-            index,
-            dataset_cfg.patient_data,
-            dataset_cfg.patient_data_version,
-        )
+        from rtk._datasets.nih import NIH_CLASS_NAMES, DATA_ENTRY_PATH
 
         # remove all of the negative class for diffusion
         if subset_to_positive_class:
             logger.info("Removing all negative classes...")
             metadata = metadata[metadata[positive_class] == 1]
 
-        unique_texts = sorted(metadata[target].unique())
-        text_encoding = {text: i for i, text in enumerate(unique_texts)}
+        class_names = NIH_CLASS_NAMES
+        id2label = {i: l for i, l in enumerate(class_names)}
+        label2id = {l: i for i, l in enumerate(class_names)}
+        encodings = {"id2label": id2label, "label2id": label2id}
 
-        # train split
-        with open(os.path.join(data_path, "train_val_list.txt"), "r") as f:
-            train_val_list = [idx.strip() for idx in f.readlines()]
+        data_entry = pd.read_csv(DATA_ENTRY_PATH).set_index("Image Index")
+        finding_labels = data_entry["Finding Labels"]
+        metadata = metadata.join(finding_labels, on="Image Index")
+        metadata["multiclass_labels"] = metadata["Finding Labels"].apply(
+            lambda x: [x_i for x_i in x.split("|")] if "|" in x else [x]
+        )
+        mlb = MultiLabelBinarizer(classes=class_names)
+        mlb.fit(metadata["multiclass_labels"])
 
-        train_metadata = metadata[metadata.index.isin(train_val_list)]
-        train_metadata = resample_to_value(cfg, train_metadata, text_encoding)
+        # Create train and test splits
+
+        # test split
+        with open(os.path.join(data_path, "test_list.txt"), "r") as f:
+            test_list = [idx.strip() for idx in f.readlines()]
+
+        # use :huggingface: Dataset.from_pandas function
+        logger.info("Creating :huggingface: dataset...")
+
+        def create_dataset(metadata: dict, split: str = "train"):
+            if split == "train":
+                # train split
+                with open(os.path.join(data_path, "train_val_list.txt"), "r") as f:
+                    train_val_list = [idx.strip() for idx in f.readlines()]
+                    metadata = metadata[metadata.index.isin(train_val_list)]
+            else:
+                metadata = metadata[metadata.index.isin(test_list)]
+
+            dataset = HGFDataset.from_pandas(metadata, split=split)
+            dataset = dataset.map(
+                lambda x: {
+                    "labels": torch.from_numpy(
+                        mlb.transform(x["multiclass_labels"])
+                    ).float()
+                },
+                batched=True,
+            )
+
+            # Tokenize and remove unwanted columns
+            if tokenizer is not None:
+                logger.info(f"Tokenizing '{split}' text prompts...")
+
+                def tokenize_function(example):
+                    return tokenizer(
+                        example["text_prompts"],
+                        padding="max_length",
+                        truncation=True,
+                    )
+
+                columns = dataset.column_names
+                columns.remove("text_prompts")
+                columns.remove("labels")
+                dataset = dataset.map(
+                    tokenize_function,
+                    batched=True,
+                    remove_columns=columns,
+                )
+
+            return dataset
+
+        train_dataset = create_dataset(metadata, split="train")
+        test_dataset = create_dataset(metadata, split="test")
+
+        ret: list = [train_dataset, test_dataset, encodings]
+        return ret
 
 
 def instantiate_image_dataset(
-    cfg: BaseImageConfiguration = None,
+    cfg: ImageConfiguration = None,
     save_metadata=False,
     return_metadata=False,
     **kwargs,
@@ -396,17 +462,9 @@ def instantiate_image_dataset(
             positive_class=preprocessing_cfg.positive_class,
         )
     if len(loaded_datasets) == 3:
-        ret_datasets: OrderedDict = OrderedDict(
-            {
-                "train": train_dataset,
-                "val": loaded_datasets[1],
-                "test": test_dataset,
-            }
-        )
+        ret_datasets: list = train_dataset, loaded_datasets[1], test_dataset
     else:
-        ret_datasets: OrderedDict = OrderedDict(
-            {"train": train_dataset, "test": test_dataset}
-        )
+        ret_datasets: list = train_dataset, test_dataset
 
     logger.info("Image dataset instantiated.\n")
     return ret_datasets
@@ -446,7 +504,7 @@ def combine_datasets(
 
 
 def instantiate_train_val_test_datasets(
-    cfg: BaseImageConfiguration,
+    cfg: ImageConfiguration,
     dataset: monai.data.ImageDataset,
     train_transforms: monai.transforms.Compose,
     eval_transforms: monai.transforms.Compose,
@@ -609,7 +667,7 @@ def instantiate_train_val_test_datasets(
     return train_val_test_split_dict
 
 
-def prepare_validation_dataloaders(cfg: BaseImageConfiguration = None, **kwargs):
+def prepare_validation_dataloaders(cfg: ImageConfiguration = None, **kwargs):
     logger.info("Preparing data...")
     dataset_cfg: ImageDatasetConfiguration = kwargs.get(
         "dataset_cfg", cfg.datasets if cfg else None

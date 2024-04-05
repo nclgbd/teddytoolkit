@@ -62,7 +62,7 @@ def create_run_name(cfg: ImageClassificationConfiguration, random_state: int, **
     return run_name
 
 
-def get_base_params(cfg:BaseImageConfiguration, **kwargs):
+def get_base_params(cfg:ImageConfiguration, **kwargs):
     params = dict()
     params["date"] = cfg.date
     params["postfix"] = cfg.postfix
@@ -122,7 +122,7 @@ def get_params(cfg: ImageClassificationConfiguration, **kwargs):
     return params
 
 
-def log_mlflow_params(cfg: BaseImageConfiguration, **kwargs):
+def log_mlflow_params(cfg: ImageConfiguration, **kwargs):
     """
     Log the parameters to MLFlow.
     """
@@ -132,7 +132,7 @@ def log_mlflow_params(cfg: BaseImageConfiguration, **kwargs):
     mlflow.log_params(params)
 
 
-def prepare_mlflow(cfg: BaseImageConfiguration):
+def prepare_mlflow(cfg: ImageConfiguration):
     logger.info("Preparing MLflow run...")
     mlflow_cfg = cfg.mlflow
     logger.debug("Using AzureML for experiment tracking...")

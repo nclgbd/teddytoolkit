@@ -121,12 +121,25 @@ class BaseConfiguration:
 
 
 @dataclass
-class BaseImageConfiguration(BaseConfiguration):
+class ImageConfiguration(BaseConfiguration):
     datasets: ImageDatasetConfiguration = field(
         default_factory=ImageDatasetConfiguration()
     )
     # whether to use transforms or not
     use_transforms: bool = False
+
+
+@dataclass
+class TextConfiguration(BaseConfiguration):
+    datasets: DatasetConfiguration = field(default_factory=DatasetConfiguration())
+    # the path to the output directory
+    output_dir: str = "outputs"
+    # the path to the log directory. appended to `output_dir`
+    log_dir: str = "logs"
+    # the gpu device to use
+    device: str = "cpu"
+    # the random seed for reproducibility
+    random_state: int = random.randint(0, 8192)
 
 
 @dataclass
@@ -253,7 +266,7 @@ class TorchMetricsConfiguration:
 
 
 @dataclass
-class ImageClassificationConfiguration(BaseImageConfiguration):
+class ImageClassificationConfiguration(ImageConfiguration):
 
     job: JobConfiguration = field(default_factory=JobConfiguration())
     models: ModelConfiguration = field(default_factory=ModelConfiguration())
@@ -284,7 +297,7 @@ class HuggingFaceConfiguration:
 
 
 @dataclass
-class TextToImageConfiguration(BaseImageConfiguration):
+class TextToImageConfiguration(ImageConfiguration):
     huggingface: HuggingFaceConfiguration = field(
         default_factory=HuggingFaceConfiguration
     )
@@ -393,7 +406,7 @@ class NLPTConfiguration(BaseConfiguration):
 
 def set_hydra_configuration(
     config_name: str,
-    ConfigurationInstance: BaseImageConfiguration,
+    ConfigurationInstance: ImageConfiguration,
     init_method: callable = initialize_config_dir,
     init_method_kwargs: dict = {},
     **compose_kwargs,

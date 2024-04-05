@@ -15,7 +15,7 @@ from rtk.utils import load_patient_dataset, login
 
 
 def create_transforms(
-    cfg: BaseImageConfiguration = None,
+    cfg: ImageConfiguration = None,
     dataset_cfg: ImageDatasetConfiguration = None,
     use_transforms: bool = None,
     transform_dicts: dict = None,
