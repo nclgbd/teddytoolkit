@@ -11,6 +11,9 @@ from omegaconf import OmegaConf, DictConfig, ListConfig
 from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 
+# torch
+from transformers import TrainingArguments
+
 # rtk
 from rtk.utils import get_logger
 
@@ -288,12 +291,14 @@ class DiffusionConfiguration(ImageClassificationConfiguration):
 # TODO: NLPTConfiguration inherit from.
 @dataclass
 class HuggingFaceConfiguration:
+    training_args: TrainingArguments = field(default_factory=lambda: TrainingArguments)
     pipeline: dict = field(default_factory=lambda: {})
     unet: dict = field(default_factory=lambda: {})
     scheduler: dict = field(default_factory=lambda: {})
     tokenizer: dict = field(default_factory=lambda: {})
     text_encoder: dict = field(default_factory=lambda: {})
     vae: dict = field(default_factory=lambda: {})
+    lr_scheduler: dict = field(default_factory=lambda: {})
 
 
 @dataclass

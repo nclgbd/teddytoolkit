@@ -62,13 +62,12 @@ def create_run_name(cfg: ImageClassificationConfiguration, random_state: int, **
     return run_name
 
 
-def get_base_params(cfg:ImageConfiguration, **kwargs):
+def get_base_params(cfg: BaseConfiguration, **kwargs):
     params = dict()
     params["date"] = cfg.date
     params["postfix"] = cfg.postfix
     params["random_state"] = cfg.random_state
     params["timestamp"] = cfg.timestamp
-    params["use_transforms"] = cfg.use_transforms
     return params
 
 
@@ -122,7 +121,7 @@ def get_params(cfg: ImageClassificationConfiguration, **kwargs):
     return params
 
 
-def log_mlflow_params(cfg: ImageConfiguration, **kwargs):
+def log_mlflow_params(cfg: BaseConfiguration, **kwargs):
     """
     Log the parameters to MLFlow.
     """
@@ -132,7 +131,7 @@ def log_mlflow_params(cfg: ImageConfiguration, **kwargs):
     mlflow.log_params(params)
 
 
-def prepare_mlflow(cfg: ImageConfiguration):
+def prepare_mlflow(cfg: BaseConfiguration, return_tracking_uri=False):
     logger.info("Preparing MLflow run...")
     mlflow_cfg = cfg.mlflow
     logger.debug("Using AzureML for experiment tracking...")
@@ -154,4 +153,8 @@ def prepare_mlflow(cfg: ImageConfiguration):
     logger.debug(f"MLflow tracking URI: {tracking_uri}")
     start_run_kwargs: dict = mlflow_cfg.get("start_run", {})
     start_run_kwargs["experiment_id"] = experiment_id
-    return start_run_kwargs
+    return (
+        start_run_kwargs
+        if not return_tracking_uri
+        else (start_run_kwargs, tracking_uri)
+    )
