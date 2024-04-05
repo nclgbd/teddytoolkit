@@ -47,7 +47,7 @@ NIH_CLASS_NAMES = [
 ]
 
 
-def chest_xray14_get_target_counts(df: pd.DataFrame, target: str = ""):
+def nih_get_target_counts(df: pd.DataFrame, target: str = ""):
     return Counter(",".join(df[target]).replace("|", ",").split(","))
 
 

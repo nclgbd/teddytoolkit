@@ -1,4 +1,5 @@
 # imports
+import logging
 import hydra
 import numpy as np
 import os
@@ -45,7 +46,7 @@ from rtk.utils import (
     yaml_to_configuration,
 )
 
-logger = get_logger(__name__)
+logger = get_logger(__name__, level=logging.DEBUG)
 
 
 def visualize_scan(
@@ -79,59 +80,58 @@ def visualize_scan(
 
 
 def resample_to_value(
-    cfg: ImageClassificationConfiguration,
+    cfg: BaseConfiguration,
     metadata: pd.DataFrame,
-    text_encoding: dict,
+    label2id: dict,
+    minority_class_names: list = ["Pneumonia", "Hernia"],
     **kwargs,
 ):
     """
     Resample a dataset by duplicating the data.
     """
     dataset_cfg = cfg.datasets
+    index = dataset_cfg.index
     preprocessing_cfg = dataset_cfg.preprocessing
     positive_class = preprocessing_cfg.positive_class
 
     # we have to recheck the size of the data since the data has already been split into training
     subsample_size = len(metadata[metadata[positive_class] == 1])
-    label_encoding = sorted(metadata.columns.unique())
-    label_encoding = label_encoding[:-5]
     sample_to_value: int = preprocessing_cfg.sampling_method.get(
-        "sample_to_value", kwargs.get("sample_to_value", 3500)
+        "sample_to_value", kwargs.get("sample_to_value", subsample_size)
     )
-    new_metadata = pd.DataFrame(columns=metadata.columns, index=metadata.index)
-    for label in label_encoding:
-        class_subset = metadata[metadata[label] == 1]
+    metadata_copy = deepcopy(metadata).reset_index()
+    new_metadata = pd.DataFrame(columns=metadata_copy.columns)
+    dataset_labels = NIH_CLASS_NAMES
+    for label in dataset_labels:
+        # have the data resample from Pneumonia
+        # query = metadata_copy[[label] + minority_class_names]
+        class_subset: pd.DataFrame = metadata_copy[metadata_copy[label] == 1]
 
-        # offset_size = sample_to_value - len(class_subset)
+        if sample_to_value - class_subset.shape[0] <= 0:
+            class_subset = class_subset.sample(
+                n=sample_to_value, replace=False, random_state=cfg.random_state
+            )
 
-        # # if the class is already less than desired value, skip
-        # if offset_size < 1:
-        #     continue
+        else:
+            class_subset = class_subset.sample(
+                n=sample_to_value, replace=True, random_state=cfg.random_state
+            )
 
-        if sample_to_value - len(class_subset) < 1:
-            features = class_subset[dataset_cfg.target]
-            # resampled_features = np.random.choice(
-            #     features, size=subsample_size, replace=False
-            # )
-            resampled_features = features.sample(n=sample_to_value, replace=False)
-            resampled_labels = [text_encoding[text] for text in resampled_features]
-            # resampled_labels = np.array([label] * sample_to_value)
-
-        resampled_dict = {
-            "index": class_subset.index,
-            FEATURE_KEYNAME: resampled_features,
-            LABEL_KEYNAME: resampled_labels,
-        }
         new_metadata = pd.concat(
             [
                 new_metadata,
-                pd.DataFrame.from_dict(
-                    resampled_dict,
-                ),
+                class_subset,
             ],
         )
 
-    return new_metadata
+    class_counts = dict()
+    for label in dataset_labels:
+        class_counts[label] = len(new_metadata[new_metadata[label] == 1])
+
+    logger.info(f"New class counts (with overlap):\n{class_counts}")
+
+    assert len(new_metadata) <= sample_to_value * len(dataset_labels)
+    return new_metadata.reset_index(drop=True)
 
 
 def get_images_and_classes(dataset: ImageDataset, **kwargs):
@@ -323,9 +323,9 @@ def instantiate_text_dataset(
     index = dataset_cfg.index
     target = dataset_cfg.target
     data_path = dataset_cfg.scan_data
+    preprocessing_cfg = dataset_cfg.preprocessing
     positive_class = kwargs.get("positive_class", None)
     if positive_class is None:
-        preprocessing_cfg = dataset_cfg.preprocessing
         positive_class = preprocessing_cfg.get("positive_class", "Pneumonia")
 
     metadata = load_metadata(
@@ -336,11 +336,6 @@ def instantiate_text_dataset(
 
     if dataset_cfg.name == "nih" or dataset_cfg.name == "cxr14":
         from rtk._datasets.nih import NIH_CLASS_NAMES, DATA_ENTRY_PATH
-
-        # remove all of the negative class for diffusion
-        if subset_to_positive_class:
-            logger.info("Removing all negative classes...")
-            metadata = metadata[metadata[positive_class] == 1]
 
         class_names = NIH_CLASS_NAMES
         id2label = {i: l for i, l in enumerate(class_names)}
@@ -353,26 +348,38 @@ def instantiate_text_dataset(
         metadata["multiclass_labels"] = metadata["Finding Labels"].apply(
             lambda x: [x_i for x_i in x.split("|")] if "|" in x else [x]
         )
+
+        # remove all of the negative class for diffusion
+        if subset_to_positive_class:
+            logger.info("Removing all negative classes...")
+            metadata = metadata[metadata[positive_class] == 1]
+
         mlb = MultiLabelBinarizer(classes=class_names)
         mlb.fit(metadata["multiclass_labels"])
 
         # Create train and test splits
 
-        # test split
-        with open(os.path.join(data_path, "test_list.txt"), "r") as f:
-            test_list = [idx.strip() for idx in f.readlines()]
-
         # use :huggingface: Dataset.from_pandas function
-        logger.info("Creating :huggingface: dataset...")
+        logger.info("Creating ':huggingface:' dataset...")
 
         def create_dataset(metadata: dict, split: str = "train"):
+            logger.info(f"Creating '{split}' split...")
             if split == "train":
                 # train split
                 with open(os.path.join(data_path, "train_val_list.txt"), "r") as f:
                     train_val_list = [idx.strip() for idx in f.readlines()]
                     metadata = metadata[metadata.index.isin(train_val_list)]
+
+                    if (
+                        preprocessing_cfg.use_sampling
+                        and subset_to_positive_class == False
+                    ):
+                        metadata = resample_to_value(cfg, metadata, label2id)
             else:
-                metadata = metadata[metadata.index.isin(test_list)]
+                # test split
+                with open(os.path.join(data_path, "test_list.txt"), "r") as f:
+                    test_list = [idx.strip() for idx in f.readlines()]
+                    metadata = metadata[metadata.index.isin(test_list)]
 
             dataset = HGFDataset.from_pandas(metadata, split=split)
             dataset = dataset.map(
