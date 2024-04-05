@@ -122,8 +122,8 @@ def get_logger(name: str = None, level: int = logging.INFO):
 
 def load_patient_dataset(
     ws: Workspace,
-    patient_dataset_name: str,
-    patient_dataset_version="latest",
+    patient_data_name: str,
+    patient_data_version="latest",
     data_dir: os.PathLike = DEFAULT_DATA_PATH,
     pandas_read_fn: callable = pd.read_csv,
     **kwargs,
@@ -142,9 +142,9 @@ def load_patient_dataset(
     * `pd.DataFrame`: The patient dataset.
     """
 
-    _logger.info(f"Patient dataset:\t\t'{patient_dataset_name}'")
+    _logger.info(f"Patient dataset:\t\t'{patient_data_name}'")
     _patients_csv_path = os.path.join(
-        data_dir, "patients", f"{patient_dataset_name}:{patient_dataset_version}.csv"
+        data_dir, "patients", f"{patient_data_name}:{patient_data_version}.csv"
     )
     patients_csv_path = os.path.abspath(_patients_csv_path)
     try:
@@ -155,10 +155,10 @@ def load_patient_dataset(
 
     except FileNotFoundError:
         _logger.warning(
-            f"Patient dataset '{patient_dataset_name}' not found. Downloading from AzureML..."
+            f"Patient dataset '{patient_data_name}' not found. Downloading from AzureML..."
         )
         patient_df: pd.DataFrame = Dataset.get_by_name(
-            ws, name=patient_dataset_name, version=patient_dataset_version
+            ws, name=patient_data_name, version=patient_data_version
         ).to_pandas_dataframe()
         os.makedirs(os.path.dirname(patients_csv_path), exist_ok=True)
         patient_df.to_csv(patients_csv_path, index=False)

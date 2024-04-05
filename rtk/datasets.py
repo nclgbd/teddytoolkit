@@ -34,7 +34,7 @@ from monai.data import ImageDataset, ThreadDataLoader, CacheDataset, PersistentD
 
 # rtk
 from rtk import *
-from rtk._datasets import create_transforms
+from rtk._datasets import *
 from rtk._datasets.ixi import *
 from rtk._datasets.mimic import *
 from rtk._datasets.nih import *
@@ -77,61 +77,6 @@ def visualize_scan(
         plt.imshow(display_scan, cmap="bone")
 
     return display_scan, label
-
-
-def resample_to_value(
-    cfg: BaseConfiguration,
-    metadata: pd.DataFrame,
-    label2id: dict,
-    minority_class_names: list = ["Pneumonia", "Hernia"],
-    **kwargs,
-):
-    """
-    Resample a dataset by duplicating the data.
-    """
-    dataset_cfg = cfg.datasets
-    index = dataset_cfg.index
-    preprocessing_cfg = dataset_cfg.preprocessing
-    positive_class = preprocessing_cfg.positive_class
-
-    # we have to recheck the size of the data since the data has already been split into training
-    subsample_size = len(metadata[metadata[positive_class] == 1])
-    sample_to_value: int = preprocessing_cfg.sampling_method.get(
-        "sample_to_value", kwargs.get("sample_to_value", subsample_size)
-    )
-    metadata_copy = deepcopy(metadata).reset_index()
-    new_metadata = pd.DataFrame(columns=metadata_copy.columns)
-    dataset_labels = NIH_CLASS_NAMES
-    for label in dataset_labels:
-        # have the data resample from Pneumonia
-        # query = metadata_copy[[label] + minority_class_names]
-        class_subset: pd.DataFrame = metadata_copy[metadata_copy[label] == 1]
-
-        if sample_to_value - class_subset.shape[0] <= 0:
-            class_subset = class_subset.sample(
-                n=sample_to_value, replace=False, random_state=cfg.random_state
-            )
-
-        else:
-            class_subset = class_subset.sample(
-                n=sample_to_value, replace=True, random_state=cfg.random_state
-            )
-
-        new_metadata = pd.concat(
-            [
-                new_metadata,
-                class_subset,
-            ],
-        )
-
-    class_counts = dict()
-    for label in dataset_labels:
-        class_counts[label] = len(new_metadata[new_metadata[label] == 1])
-
-    logger.info(f"New class counts (with overlap):\n{class_counts}")
-
-    assert len(new_metadata) <= sample_to_value * len(dataset_labels)
-    return new_metadata.reset_index(drop=True)
 
 
 def get_images_and_classes(dataset: ImageDataset, **kwargs):
@@ -374,7 +319,7 @@ def instantiate_text_dataset(
                         preprocessing_cfg.use_sampling
                         and subset_to_positive_class == False
                     ):
-                        metadata = resample_to_value(cfg, metadata, label2id)
+                        metadata = resample_to_value(cfg, metadata, NIH_CLASS_NAMES)
             else:
                 # test split
                 with open(os.path.join(data_path, "test_list.txt"), "r") as f:
@@ -468,13 +413,13 @@ def instantiate_image_dataset(
             test_dataset=test_dataset,
             positive_class=preprocessing_cfg.positive_class,
         )
-    if len(loaded_datasets) == 3:
-        ret_datasets: list = train_dataset, loaded_datasets[1], test_dataset
-    else:
-        ret_datasets: list = train_dataset, test_dataset
+        if len(loaded_datasets) == 3:
+            loaded_datasets: list = train_dataset, loaded_datasets[1], test_dataset
+        else:
+            loaded_datasets: list = train_dataset, test_dataset
 
     logger.info("Image dataset instantiated.\n")
-    return ret_datasets
+    return loaded_datasets
 
 
 def combine_datasets(

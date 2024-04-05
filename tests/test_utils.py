@@ -21,7 +21,7 @@ class TestUtilities:
     def test_load_patient_dataset(self, ws: Workspace):
         """Test the `rtk.load_patient_dataset` function."""
         dataset = utils.load_patient_dataset(
-            ws, patient_dataset_name="Brain_Tumor_MRI_metadata"
+            ws, patient_data_name="Brain_Tumor_MRI_metadata"
         )
         assert dataset is not None
 

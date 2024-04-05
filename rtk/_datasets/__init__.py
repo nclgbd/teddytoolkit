@@ -14,6 +14,60 @@ from rtk.config import *
 from rtk.utils import load_patient_dataset, login
 
 
+def resample_to_value(
+    cfg: BaseConfiguration,
+    metadata: pd.DataFrame,
+    dataset_labels: list = [],
+    minority_class_names: list = ["Pneumonia", "Hernia"],
+    **kwargs,
+):
+    """
+    Resample a dataset by duplicating the data.
+    """
+    dataset_cfg = cfg.datasets
+    index = dataset_cfg.index
+    preprocessing_cfg = dataset_cfg.preprocessing
+    positive_class = preprocessing_cfg.positive_class
+
+    # we have to recheck the size of the data since the data has already been split into training
+    subsample_size = len(metadata[metadata[positive_class] == 1])
+    sample_to_value: int = preprocessing_cfg.sampling_method.get(
+        "sample_to_value", kwargs.get("sample_to_value", subsample_size)
+    )
+    metadata_copy = deepcopy(metadata).reset_index()
+    new_metadata = pd.DataFrame(columns=metadata_copy.columns)
+    for label in dataset_labels:
+        # have the data resample from Pneumonia
+        # query = metadata_copy[[label] + minority_class_names]
+        class_subset: pd.DataFrame = metadata_copy[metadata_copy[label] == 1]
+
+        if sample_to_value - class_subset.shape[0] <= 0:
+            class_subset = class_subset.sample(
+                n=sample_to_value, replace=False, random_state=cfg.random_state
+            )
+
+        else:
+            class_subset = class_subset.sample(
+                n=sample_to_value, replace=True, random_state=cfg.random_state
+            )
+
+        new_metadata = pd.concat(
+            [
+                new_metadata,
+                class_subset,
+            ],
+        )
+
+    class_counts = dict()
+    for label in dataset_labels:
+        class_counts[label] = len(new_metadata[new_metadata[label] == 1])
+
+    logger.info(f"New class counts (with overlap):\n{class_counts}")
+
+    assert len(new_metadata) <= sample_to_value * len(dataset_labels)
+    return new_metadata.reset_index(drop=True)
+
+
 def create_transforms(
     cfg: ImageConfiguration = None,
     dataset_cfg: ImageDatasetConfiguration = None,

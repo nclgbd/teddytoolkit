@@ -16,7 +16,7 @@ import monai
 
 # rtk
 from rtk import *
-from rtk._datasets import create_transforms, load_metadata
+from rtk._datasets import *
 from rtk.config import *
 from rtk.utils import get_logger
 
@@ -71,8 +71,8 @@ def load_nih_dataset(
 
     nih_metadata = load_metadata(
         dataset_cfg.index,
-        dataset_cfg.patient_dataset_name,
-        dataset_cfg.patient_dataset_version,
+        dataset_cfg.patient_data,
+        dataset_cfg.patient_data_version,
     )
 
     # remove all of the negative class for diffusion
@@ -85,6 +85,9 @@ def load_nih_dataset(
         train_val_list = [idx.strip() for idx in f.readlines()]
 
     train_metadata = nih_metadata[nih_metadata.index.isin(train_val_list)]
+    if preprocessing_cfg.use_sampling and subset_to_positive_class == False:
+        train_metadata = resample_to_value(cfg, train_metadata, NIH_CLASS_NAMES)
+
     train_transforms = kwargs.get(
         "train_transforms",
         None,
@@ -95,7 +98,10 @@ def load_nih_dataset(
             use_transforms=cfg.use_transforms,
         )
     train_image_files = np.array(
-        [os.path.join(scan_path, filename) for filename in train_metadata.index.values]
+        [
+            os.path.join(scan_path, filename)
+            for filename in train_metadata["Image Index"].values
+        ]
     )
     train_labels = list(train_metadata[target].values.tolist())
     train_dataset: monai.data.Dataset = instantiate(
