@@ -13,6 +13,9 @@ from random import randint
 from rich import inspect
 from tqdm import tqdm
 
+import datasets
+import transformers
+
 # sklearn
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, MultiLabelBinarizer
@@ -307,26 +310,35 @@ def instantiate_text_dataset(
         # use :huggingface: Dataset.from_pandas function
         logger.info("Creating ':huggingface:' dataset...")
 
-        def create_dataset(metadata: dict, split: str = "train"):
+        def split_data(metadata: dict, split: str = "train"):
             logger.info(f"Creating '{split}' split...")
             if split == "train":
                 # train split
                 with open(os.path.join(data_path, "train_val_list.txt"), "r") as f:
                     train_val_list = [idx.strip() for idx in f.readlines()]
                     metadata = metadata[metadata.index.isin(train_val_list)]
+                    metadata, val_metadata = train_test_split(
+                        metadata,
+                        stratify=metadata[positive_class],
+                        random_state=cfg.random_state,
+                        **cfg.sklearn.model_selection.train_test_split,
+                    )
 
                     if (
                         preprocessing_cfg.use_sampling
                         and subset_to_positive_class == False
                     ):
                         metadata = resample_to_value(cfg, metadata, NIH_CLASS_NAMES)
+                    return metadata, val_metadata
             else:
                 # test split
                 with open(os.path.join(data_path, "test_list.txt"), "r") as f:
                     test_list = [idx.strip() for idx in f.readlines()]
                     metadata = metadata[metadata.index.isin(test_list)]
+                    return metadata
 
-            dataset = HGFDataset.from_pandas(metadata, split=split)
+        def _create_dataset(data, split="split"):
+            dataset = HGFDataset.from_pandas(data, split=split)
             dataset = dataset.map(
                 lambda x: {
                     "labels": torch.from_numpy(
@@ -358,10 +370,13 @@ def instantiate_text_dataset(
 
             return dataset
 
-        train_dataset = create_dataset(metadata, split="train")
-        test_dataset = create_dataset(metadata, split="test")
+        train_metadata, val_metadata = split_data(metadata, split="train")
+        train_dataset = _create_dataset(train_metadata, split="train")
+        eval_dataset = _create_dataset(val_metadata, split="validation")
+        test_data = split_data(metadata, split="test")
+        test_dataset = _create_dataset(test_data, split="test")
 
-        ret: list = [train_dataset, test_dataset, encodings]
+        ret: list = [train_dataset, eval_dataset, test_dataset, encodings]
         return ret
 
 
