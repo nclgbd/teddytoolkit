@@ -97,12 +97,21 @@ def load_nih_dataset(
             cfg,
             use_transforms=cfg.use_transforms,
         )
-    train_image_files = np.array(
-        [
-            os.path.join(scan_path, filename)
-            for filename in train_metadata["Image Index"].values
-        ]
-    )
+
+    if train_metadata.index.dtype == "int64":
+        train_image_files = np.array(
+            [
+                os.path.join(scan_path, filename)
+                for filename in train_metadata["Image Index"].values
+            ]
+        )
+    else:
+        train_image_files = np.array(
+            [
+                os.path.join(scan_path, filename)
+                for filename in train_metadata.index.values
+            ]
+        )
     train_labels = list(train_metadata[target].values.tolist())
     train_dataset: monai.data.Dataset = instantiate(
         config=dataset_cfg.instantiate,

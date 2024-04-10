@@ -108,6 +108,7 @@ class BaseConfiguration:
     datasets: DatasetConfiguration = field(default_factory=DatasetConfiguration())
     mlflow: MLflowConfiguration = field(default_factory=MLflowConfiguration())
     experiment_name: str = "Default"
+    dry_run: bool = False
     date: str = ""
     postfix: str = ""
     timestamp: str = ""

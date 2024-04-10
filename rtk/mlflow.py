@@ -1,4 +1,5 @@
 #
+import os
 from copy import deepcopy
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
@@ -10,7 +11,7 @@ import mlflow
 from rtk.utils import get_logger, _strip_target, login
 from rtk.config import *
 
-_logger = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 def _determine_model_name(cfg: ImageClassificationConfiguration, **kwargs):
@@ -20,6 +21,23 @@ def _determine_model_name(cfg: ImageClassificationConfiguration, **kwargs):
         model_name = model_cfg.model.pretrained_model_name_or_path.split("/")[-1]
 
     return model_name
+
+
+def prepare_mlflow_environment(cfg: BaseConfiguration, **kwargs):
+    """Manually set the 'MLFLOW_EXPERIMENT_NAME' and 'MLFLOW_TRACKING_URI'"""
+    # set tracking uri
+    ws = login()
+    tracking_uri = kwargs.get("tracking_uri", ws.get_mlflow_tracking_uri())
+    logger.debug(f"MLflow tracking URI:\t'{tracking_uri}'")
+    os.environ["MLFLOW_TRACKING_URI"] = tracking_uri
+
+    # set experiment name
+    experiment_name = cfg.mlflow.get(
+        "experiment_name", HydraConfig.get().job.config_name
+    )
+    logger.info(f"MLflow experiment name:\t'{experiment_name}'")
+    os.environ["MLFLOW_EXPERIMENT_NAME"] = experiment_name
+    return tracking_uri, experiment_name
 
 
 def create_run_name(cfg: ImageClassificationConfiguration, random_state: int, **kwargs):
