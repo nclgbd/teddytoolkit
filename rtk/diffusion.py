@@ -26,9 +26,11 @@ from accelerate.state import AcceleratorState
 from accelerate.utils import ProjectConfiguration, set_seed
 from diffusers.training_utils import EMAModel, cast_training_params
 from diffusers import (
+    AutoPipelineForText2Image,
     AutoencoderKL,
     DDPMScheduler,
     DiffusionPipeline,
+    StableDiffusionPipeline,
     UNet2DConditionModel,
 )
 from diffusers.utils import deprecate
@@ -149,6 +151,7 @@ def compile_huggingface_pipeline(
     device = device if device is not None else accelerator.device
 
     unet: UNet2DConditionModel = hydra_instantiate(hf_cfg.unet)
+
     scheduler: DDPMScheduler = hydra_instantiate(
         hf_cfg.scheduler, torch_dtype=weight_dtype
     )
@@ -195,23 +198,34 @@ def compile_huggingface_pipeline(
     for param in unet.parameters():
         param.requires_grad_(False)
 
+    # if cfg.resume_from_checkpoint == None:
+    base_model_name_or_path = (
+        cfg.resume_from_checkpoint
+        if cfg.resume_from_checkpoint != None
+        else cfg.pretrained_model_name_or_path
+    )
     unet_lora_config = LoraConfig(
+        base_model_name_or_path=base_model_name_or_path,
         r=cfg.rank,
         lora_alpha=cfg.rank,
         init_lora_weights="gaussian",
         target_modules=["to_k", "to_q", "to_v", "to_out.0"],
     )
 
+    # Add adapter and make sure the trainable params are in float32.
+    unet.add_adapter(unet_lora_config)
+    if cfg.resume_from_checkpoint != None:
+        unet.load_attn_procs(
+            cfg.resume_from_checkpoint, weight_name="pytorch_lora_weights.safetensors"
+        )
+    if cfg.mixed_precision == "fp16":
+        # only upcast trainable parameters (LoRA) into fp32
+        cast_training_params(unet, dtype=torch.float32)
+
     # Move unet, vae and text_encoder to device and cast to weight_dtype
     unet.to(device, dtype=weight_dtype)
     vae.to(device, dtype=weight_dtype)
     text_encoder.to(device, dtype=weight_dtype)
-
-    # Add adapter and make sure the trainable params are in float32.
-    unet.add_adapter(unet_lora_config)
-    if cfg.mixed_precision == "fp16":
-        # only upcast trainable parameters (LoRA) into fp32
-        cast_training_params(unet, dtype=torch.float32)
 
     # Create EMA for the unet.
     ema_unet: torch.nn.Module = None
