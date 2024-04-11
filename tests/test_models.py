@@ -18,7 +18,7 @@ from generative.networks.schedulers import DDPMScheduler
 
 # rtk
 from rtk import models
-from rtk.config import Configuration, ModelConfiguration, DiffusionModelConfiguration
+from rtk.config import ImageClassificationConfiguration, ModelConfiguration, DiffusionModelConfiguration
 from rtk.datasets import (
     _LABEL_KEYNAME,
     create_transforms,
@@ -30,7 +30,7 @@ from rtk.utils import hydra_instantiate
 
 class TestModels:
     @pytest.fixture
-    def samples_per_class(self, test_cfg: Configuration):
+    def samples_per_class(self, test_cfg: ImageClassificationConfiguration):
         """Fixture for the train loader."""
         job_cfg = test_cfg.job
         use_transforms = job_cfg.use_transforms
@@ -49,24 +49,24 @@ class TestModels:
         return values_counts
 
     @pytest.fixture
-    def model_cfg(self, test_cfg: Configuration) -> ModelConfiguration:
+    def model_cfg(self, test_cfg: ImageClassificationConfiguration) -> ModelConfiguration:
         """Fixture for the model configuration."""
         return test_cfg.models
 
     @pytest.fixture
     def diffusion_model_cfg(
-        self, test_cfg: Configuration
+        self, test_cfg: ImageClassificationConfiguration
     ) -> DiffusionModelConfiguration:
         """Fixture for the model configuration."""
         return test_cfg.models
 
-    def test_instantiate_model(self, test_cfg: Configuration):
+    def test_instantiate_model(self, test_cfg: ImageClassificationConfiguration):
         """Test the `rtk.models.instantiate_model` function."""
         model = models.instantiate_model(test_cfg, device=0)
         assert isinstance(model, nn.Module)
 
     def test_instantiate_criterion(
-        self, test_cfg: Configuration, samples_per_class: list
+        self, test_cfg: ImageClassificationConfiguration, samples_per_class: list
     ):
         """Test the `rtk.models.instantiate_criterion` function."""
 
@@ -83,7 +83,7 @@ class TestModels:
             )
             assert isinstance(criterion, nn.Module)
 
-    def test_instantiate_optimizer(self, test_cfg: Configuration):
+    def test_instantiate_optimizer(self, test_cfg: ImageClassificationConfiguration):
         """Test the `rtk.models.instantiate_optimizer` function."""
         model = models.instantiate_model(test_cfg, device=torch.device("cpu"))
         optimizer = models.instantiate_optimizer(test_cfg, model=model)

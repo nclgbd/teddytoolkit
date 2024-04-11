@@ -27,8 +27,8 @@ import monai
 # rtk
 from rtk import datasets, repl
 from rtk.config import (
-    Configuration,
-    DatasetConfiguration,
+    ImageClassificationConfiguration,
+    ImageDatasetConfiguration,
     JobConfiguration,
     ModelConfiguration,
 )
@@ -40,7 +40,7 @@ _MAX_RAND_INT = 8192
 
 
 def run_trainer(
-    loaders: list, train_loader: DataLoader, device: torch.device, cfg: Configuration
+    loaders: list, train_loader: DataLoader, device: torch.device, cfg: ImageClassificationConfiguration
 ):
     job_cfg: JobConfiguration = cfg.job
     prepare_func: callable = hydra_instantiate(
@@ -56,12 +56,12 @@ def run_trainer(
     return state
 
 
-def run_evaluate(loaders: list, device: torch.device, cfg: Configuration):
+def run_evaluate(loaders: list, device: torch.device, cfg: ImageClassificationConfiguration):
     prepare_run(loaders=loaders, device=device, cfg=cfg, mode="evaluate")
 
 
 def run_train(
-    cfg: Configuration,
+    cfg: ImageClassificationConfiguration,
     run_name: str,
     loaders: list,
     train_loader: DataLoader,
@@ -88,7 +88,7 @@ def run_train(
 
 
 def run_eval(
-    cfg: Configuration,
+    cfg: ImageClassificationConfiguration,
     run_name: str,
     loaders: list,
     device: torch.device,
@@ -113,8 +113,8 @@ def run_eval(
 
 
 @hydra.main(version_base=None, config_path="", config_name="")
-def main(cfg: Configuration) -> None:
-    dataset_cfg: DatasetConfiguration = cfg.datasets
+def main(cfg: ImageClassificationConfiguration) -> None:
+    dataset_cfg: ImageDatasetConfiguration = cfg.datasets
     # before we run....
     logger.debug(OmegaConf.to_yaml(cfg))
     mode: str = cfg.get("mode", "train")

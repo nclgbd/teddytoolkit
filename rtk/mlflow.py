@@ -1,4 +1,5 @@
 #
+import os
 from copy import deepcopy
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
@@ -10,10 +11,10 @@ import mlflow
 from rtk.utils import get_logger, _strip_target, login
 from rtk.config import *
 
-_logger = get_logger(__name__)
+logger = get_logger(__name__)
 
 
-def _determine_model_name(cfg: Configuration, **kwargs):
+def _determine_model_name(cfg: ImageClassificationConfiguration, **kwargs):
     model_cfg = cfg.models
     model_name: str = _strip_target(model_cfg.model, lower=True)
     if model_name == "from_pretrained":
@@ -22,7 +23,24 @@ def _determine_model_name(cfg: Configuration, **kwargs):
     return model_name
 
 
-def create_run_name(cfg: Configuration, random_state: int, **kwargs):
+def prepare_mlflow_environment(cfg: BaseConfiguration, **kwargs):
+    """Manually set the 'MLFLOW_EXPERIMENT_NAME' and 'MLFLOW_TRACKING_URI'"""
+    # set tracking uri
+    ws = login()
+    tracking_uri = kwargs.get("tracking_uri", ws.get_mlflow_tracking_uri())
+    logger.debug(f"MLflow tracking URI:\t'{tracking_uri}'")
+    os.environ["MLFLOW_TRACKING_URI"] = tracking_uri
+
+    # set experiment name
+    experiment_name = cfg.mlflow.get(
+        "experiment_name", HydraConfig.get().job.config_name
+    )
+    logger.info(f"MLflow experiment name:\t'{experiment_name}'")
+    os.environ["MLFLOW_EXPERIMENT_NAME"] = experiment_name
+    return tracking_uri, experiment_name
+
+
+def create_run_name(cfg: ImageClassificationConfiguration, random_state: int, **kwargs):
     """Create a run name."""
     dataset_cfg = cfg.datasets
     preprocessing_cfg = dataset_cfg.preprocessing
@@ -62,21 +80,20 @@ def create_run_name(cfg: Configuration, random_state: int, **kwargs):
     return run_name
 
 
-def get_base_params(cfg:BaseConfiguration, **kwargs):
+def get_base_params(cfg: BaseConfiguration, **kwargs):
     params = dict()
     params["date"] = cfg.date
     params["postfix"] = cfg.postfix
     params["random_state"] = cfg.random_state
     params["timestamp"] = cfg.timestamp
-    params["use_transforms"] = cfg.use_transforms
     return params
 
 
-def get_params(cfg: Configuration, **kwargs):
+def get_params(cfg: ImageClassificationConfiguration, **kwargs):
     """
     Get the parameters of this run.
     """
-    dataset_cfg: DatasetConfiguration = kwargs.get("dataset_cfg", cfg.datasets)
+    dataset_cfg: ImageDatasetConfiguration = kwargs.get("dataset_cfg", cfg.datasets)
     model_cfg: ModelConfiguration = kwargs.get("model_cfg", cfg.models)
     preprocessing_cfg: PreprocessingConfiguration = kwargs.get(
         "preprocessing_cfg", dataset_cfg.preprocessing
@@ -132,7 +149,7 @@ def log_mlflow_params(cfg: BaseConfiguration, **kwargs):
     mlflow.log_params(params)
 
 
-def prepare_mlflow(cfg: BaseConfiguration):
+def prepare_mlflow(cfg: BaseConfiguration, return_tracking_uri=False):
     logger.info("Preparing MLflow run...")
     mlflow_cfg = cfg.mlflow
     logger.debug("Using AzureML for experiment tracking...")
@@ -154,4 +171,8 @@ def prepare_mlflow(cfg: BaseConfiguration):
     logger.debug(f"MLflow tracking URI: {tracking_uri}")
     start_run_kwargs: dict = mlflow_cfg.get("start_run", {})
     start_run_kwargs["experiment_id"] = experiment_id
-    return start_run_kwargs
+    return (
+        start_run_kwargs
+        if not return_tracking_uri
+        else (start_run_kwargs, tracking_uri)
+    )

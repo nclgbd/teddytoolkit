@@ -29,12 +29,12 @@ logger = get_logger(__name__)
 
 
 def load_mimic_dataset(
-    cfg: BaseConfiguration,
+    cfg: ImageConfiguration,
     save_metadata=False,
     subset_to_positive_class=False,
     **kwargs,
 ):
-    dataset_cfg: DatasetConfiguration = kwargs.get("dataset_cfg", None)
+    dataset_cfg: ImageDatasetConfiguration = kwargs.get("dataset_cfg", None)
     if dataset_cfg is None:
         dataset_cfg = cfg.datasets
 
@@ -72,7 +72,7 @@ def load_mimic_dataset(
         )
 
     def __build_mimic_data_split(
-        cfg: BaseConfiguration, data: pd.DataFrame, transforms: monai_transforms.Compose
+        cfg: ImageConfiguration, data: pd.DataFrame, transforms: monai_transforms.Compose
     ):
         dataset_cfg = cfg.datasets
         image_files = [

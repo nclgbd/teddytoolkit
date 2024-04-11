@@ -76,7 +76,7 @@ logger = get_logger(__name__)
 
 
 def create_default_trainer_args(
-    cfg: BaseConfiguration,
+    cfg: ImageConfiguration,
     **kwargs,
 ):
     """
@@ -186,7 +186,7 @@ def add_sklearn_metrics(
 
 
 def create_metrics(
-    cfg: Configuration = None,
+    cfg: ImageClassificationConfiguration = None,
     _metrics: dict = None,
     criterion: nn.Module = None,
     device: torch.device = torch.device("cpu"),
@@ -266,7 +266,7 @@ def create_lr_scheduler(
 
 
 def build_report(
-    cfg: Configuration, metrics: dict, epoch: int, split: str = "test", **kwargs
+    cfg: ImageClassificationConfiguration, metrics: dict, epoch: int, split: str = "test", **kwargs
 ):
     """
     Creates a report for the model.
@@ -332,7 +332,7 @@ def build_report(
 
 
 def _log_metrics(
-    cfg: Configuration,
+    cfg: ImageClassificationConfiguration,
     trainer: Engine,
     evaluator: Engine,
     loader: DataLoader,
@@ -395,7 +395,7 @@ def _log_metrics(
 
 
 def _log_metrics_to_mlflow(
-    cfg: Configuration,
+    cfg: ImageClassificationConfiguration,
     metrics: dict,
     split: str,
     epoch: int,
@@ -419,7 +419,7 @@ def _log_metrics_to_mlflow(
 
 
 def train(
-    cfg: Configuration,
+    cfg: ImageClassificationConfiguration,
     trainer: Engine,
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
@@ -477,7 +477,7 @@ def train(
 
 
 def evaluate(
-    cfg: Configuration,
+    cfg: ImageClassificationConfiguration,
     trainer: Engine,
     model: nn.Module,
     loader: DataLoader,  # {"test": test_loader}
@@ -491,7 +491,7 @@ def evaluate(
 
 
 def prepare_run(
-    cfg: Configuration,
+    cfg: ImageClassificationConfiguration,
     loaders: list,
     device: torch.device,
     mode: str = "train",
