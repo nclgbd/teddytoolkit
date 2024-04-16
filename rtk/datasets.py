@@ -30,6 +30,9 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torchvision.io import read_image
 
+# :huggingface:
+from transformers import AutoTokenizer
+
 # monai
 import monai
 import monai.transforms as monai_transforms
@@ -256,9 +259,6 @@ def apply_label_to_text_prompts(x, base: list = None):
     return prompt[:-1]  # remove the last comma
 
 
-from transformers import AutoTokenizer
-
-
 def instantiate_text_dataset(
     cfg: TextConfiguration,
     subset_to_positive_class=False,
@@ -317,10 +317,17 @@ def instantiate_text_dataset(
 
         return dataset
 
-    if dataset_cfg.name == "nih" or dataset_cfg.name == "cxr14":
-        from rtk._datasets.nih import NIH_CLASS_NAMES, DATA_ENTRY_PATH
+    from rtk._datasets.nih import NIH_CLASS_NAMES
+    from rtk._datasets.mimic import MIMIC_CLASS_NAMES
 
+    if dataset_cfg.name == "nih" or dataset_cfg.name == "cxr14":
         class_names = NIH_CLASS_NAMES
+    else:
+        class_names = MIMIC_CLASS_NAMES
+
+    if dataset_cfg.name == "nih" or dataset_cfg.name == "cxr14":
+        from rtk._datasets.nih import DATA_ENTRY_PATH
+
         id2label = {i: l for i, l in enumerate(class_names)}
         label2id = {l: i for i, l in enumerate(class_names)}
         encodings = {"id2label": id2label, "label2id": label2id}
@@ -337,15 +344,23 @@ def instantiate_text_dataset(
             logger.info("Removing all negative classes...")
             metadata = metadata[metadata[positive_class] == 1]
 
+        if cfg.mode == "evaluate":
+            overlapped_classes = set(NIH_CLASS_NAMES).intersection(
+                set(MIMIC_CLASS_NAMES)
+            )
+            drop_classes = list(set(class_names) - set(overlapped_classes))
+            for d in drop_classes:
+                metadata = metadata.drop(metadata[metadata[d] == 1].index)
+            logger.info(
+                f"Overlapped classes: {overlapped_classes}. Dropping: {drop_classes}"
+            )
+
         mlb = MultiLabelBinarizer(classes=class_names)
         mlb.fit(metadata["multiclass_labels"])
 
         # Create train and test splits
-
-        # use :huggingface: Dataset.from_pandas function
         logger.info("Creating ':huggingface:' dataset...")
 
-        # TODO: move this outside of this function
         def split_data(metadata: dict, split: str = "train"):
             logger.info(f"Creating '{split}' split...")
             if split == "train":
@@ -363,8 +378,9 @@ def instantiate_text_dataset(
                     if (
                         preprocessing_cfg.use_sampling
                         and subset_to_positive_class == False
+                        and cfg.mode != "evaluate"
                     ):
-                        metadata = resample_to_value(cfg, metadata, NIH_CLASS_NAMES)
+                        metadata = resample_to_value(cfg, metadata, class_names)
                     return metadata, val_metadata
             else:
                 # test split
@@ -374,22 +390,28 @@ def instantiate_text_dataset(
                     return metadata
 
         train_metadata, val_metadata = split_data(metadata, split="train")
+        test_metadata = split_data(metadata, split="test")
+
+        for split, data in {
+            "train": train_metadata,
+            "validation": val_metadata,
+            "test": test_metadata,
+        }.items():
+            class_counts = data[class_names].sum()
+            logger.info(f"{split.capitalize()} class counts:\n{class_counts}")
+
         train_dataset = _create_dataset(
             train_metadata, tokenizer=tokenizer, split="train"
         )
         eval_dataset = _create_dataset(
             val_metadata, tokenizer=tokenizer, split="validation"
         )
-        test_data = split_data(metadata, split="test")
-        test_dataset = _create_dataset(test_data, tokenizer=tokenizer, split="test")
+        test_dataset = _create_dataset(test_metadata, tokenizer=tokenizer, split="test")
 
         ret: list = [train_dataset, eval_dataset, test_dataset, encodings]
         return ret
 
     elif dataset_cfg.name == "mimic-cxr":
-        from rtk._datasets.mimic import MIMIC_CLASS_NAMES
-
-        class_names = sorted(MIMIC_CLASS_NAMES)
         id2label = {i: l for i, l in enumerate(class_names)}
         label2id = {l: i for i, l in enumerate(class_names)}
         encodings = {"id2label": id2label, "label2id": label2id}
@@ -399,6 +421,19 @@ def instantiate_text_dataset(
             logger.info("Removing all negative classes...")
             metadata = metadata[metadata[positive_class] == 1]
 
+        if cfg.mode == "evaluate":
+            overlapped_classes = set(NIH_CLASS_NAMES).intersection(
+                set(MIMIC_CLASS_NAMES)
+            )
+            drop_classes = list(set(class_names) - set(overlapped_classes))
+            for d in drop_classes:
+                metadata = metadata.drop(metadata[metadata[d] == 1].index)
+            # logger.info(
+            #     f"Overlapped classes: {overlapped_classes}. Dropping: {drop_classes}"
+            # )
+            class_counts = metadata[class_names].sum()
+            logger.info(f"Class counts:\n{class_counts}")
+
         def _create_multiclass_labels(x):
             finding_labels = []
             for column in class_names:
@@ -406,6 +441,7 @@ def instantiate_text_dataset(
                     finding_labels.append(column)
             return finding_labels
 
+        # TODO: When running cross evaluation with multiple datasets, we must realign them so it's in a format the model can understand
         metadata["multiclass_labels"] = metadata[class_names].apply(
             _create_multiclass_labels, axis=1
         )
@@ -419,8 +455,20 @@ def instantiate_text_dataset(
         test_metadata = metadata[metadata["split"] == "test"]
 
         # resample train data if needed
-        if preprocessing_cfg.use_sampling and subset_to_positive_class == False:
+        if (
+            preprocessing_cfg.use_sampling
+            and subset_to_positive_class == False
+            and cfg.mode != "evaluate"
+        ):
             train_metadata = resample_to_value(cfg, train_metadata, class_names)
+
+        for split, data in {
+            "train": train_metadata,
+            "validation": val_metadata,
+            "test": test_metadata,
+        }.items():
+            class_counts = data[class_names].sum()
+            logger.info(f"'{split.capitalize()}' class counts:\n{class_counts}\n")
 
         train_dataset: HGFDataset = _create_dataset(
             train_metadata, tokenizer=tokenizer, split="train"

@@ -94,7 +94,7 @@ class MLflowConfiguration:
 @dataclass
 class BaseConfiguration:
     datasets: DatasetConfiguration = field(default_factory=DatasetConfiguration())
-    mlflow: MLflowConfiguration = field(default_factory=MLflowConfiguration())
+    mlflow: MLflowConfiguration = None
     experiment_name: str = "Default"
     dry_run: bool = False
     date: str = ""
