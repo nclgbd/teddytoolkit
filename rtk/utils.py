@@ -127,7 +127,7 @@ def load_patient_dataset(
     data_dir: os.PathLike = DEFAULT_DATA_PATH,
     pandas_read_fn: callable = pd.read_csv,
     **kwargs,
-):
+) -> pd.DataFrame:
     """
     Load a patient dataset from AzureML. If the dataset is not found locally, it will be downloaded from AzureML and saved to the local cache.
 
@@ -147,11 +147,12 @@ def load_patient_dataset(
         data_dir, "patients", f"{patient_data_name}:{patient_data_version}.csv"
     )
     patients_csv_path = os.path.abspath(_patients_csv_path)
+    patient_df: pd.DataFrame
     try:
         _logger.debug(
             f"Attempting to load patient dataset from: '{patients_csv_path}'..."
         )
-        patient_df = pandas_read_fn(patients_csv_path, **kwargs)
+        patient_df: pd.DataFrame = pandas_read_fn(patients_csv_path, **kwargs)
 
     except FileNotFoundError:
         _logger.warning(

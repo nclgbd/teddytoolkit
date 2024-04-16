@@ -50,10 +50,6 @@ class DatasetConfiguration:
     target: str = ""
     # the names for each label in alphabetical order
     labels: list = field(default_factory=lambda: [])
-    # the kind of dataset to instantiate
-    instantiate: DictConfig = field(
-        default_factory=lambda: DictConfig({"_target_": "monai.data.ImageDataset"})
-    )
     #
     dataloader: DictConfig = field(
         default_factory=lambda: DictConfig({"_target_": "torch.utils.data.DataLoader"})
@@ -66,14 +62,10 @@ class DatasetConfiguration:
 
 @dataclass
 class ImageDatasetConfiguration(DatasetConfiguration):
-
-    # # name of the dataset
-    # name: str = ""
-
-    # # preprocessing configuration
-    # preprocessing: PreprocessingConfiguration = field(
-    #     default_factory=PreprocessingConfiguration
-    # )
+    # the kind of dataset to instantiate
+    instantiate: DictConfig = field(
+        default_factory=lambda: DictConfig({"_target_": "monai.data.ImageDataset"})
+    )
     # transforms
     transforms: DictConfig = field(
         default_factory=lambda: DictConfig({"load": [], "train": []})
@@ -85,10 +77,6 @@ class ImageDatasetConfiguration(DatasetConfiguration):
 
     # dimension to resize the images to
     dim: int = 224
-    # # integer representation of how many times to expand the dataset
-    # # i.e.: if the dataset has 100 samples and resample_value is 3, then the dataset will be expanded to 300 samples.
-    # # default is 1, which means no expansion.
-    # resample_value: int = 1
     # the path to the scan of the dataset
     scan_data: str = ""
     scan_dataset_version: str = "latest"
@@ -140,8 +128,6 @@ class TextConfiguration(BaseConfiguration):
     output_dir: str = "outputs"
     # the path to the log directory. appended to `output_dir`
     log_dir: str = "logs"
-    # the gpu device to use
-    device: str = "cpu"
     # the random seed for reproducibility
     random_state: int = random.randint(0, 8192)
 
@@ -420,7 +406,7 @@ class NLPTConfiguration(BaseConfiguration):
 
 def set_hydra_configuration(
     config_name: str,
-    ConfigurationInstance: ImageConfiguration,
+    BaseConfigurationInstance: BaseConfiguration,
     init_method: callable = initialize_config_dir,
     init_method_kwargs: dict = {},
     **compose_kwargs,
@@ -441,4 +427,4 @@ def set_hydra_configuration(
     GlobalHydra.instance().clear()
     init_method(version_base="1.1", **init_method_kwargs)
     cfg: DictConfig = compose(config_name=config_name, **compose_kwargs)
-    return ConfigurationInstance(**cfg)
+    return BaseConfigurationInstance(**cfg)

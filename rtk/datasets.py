@@ -276,10 +276,12 @@ def instantiate_text_dataset(
     if positive_class is None:
         positive_class = preprocessing_cfg.get("positive_class", "Pneumonia")
 
+    ws: Workspace = kwargs.get("ws", None)
     metadata = load_metadata(
         index,
-        dataset_cfg.patient_data,
-        dataset_cfg.patient_data_version,
+        ws=ws,
+        patient_data_name=dataset_cfg.patient_data,
+        patient_data_version=dataset_cfg.patient_data_version,
     )
 
     def _create_dataset(data, tokenizer: AutoTokenizer, split="split"):
@@ -343,6 +345,7 @@ def instantiate_text_dataset(
         # use :huggingface: Dataset.from_pandas function
         logger.info("Creating ':huggingface:' dataset...")
 
+        # TODO: move this outside of this function
         def split_data(metadata: dict, split: str = "train"):
             logger.info(f"Creating '{split}' split...")
             if split == "train":
@@ -371,10 +374,14 @@ def instantiate_text_dataset(
                     return metadata
 
         train_metadata, val_metadata = split_data(metadata, split="train")
-        train_dataset = _create_dataset(train_metadata, split="train")
-        eval_dataset = _create_dataset(val_metadata, split="validation")
+        train_dataset = _create_dataset(
+            train_metadata, tokenizer=tokenizer, split="train"
+        )
+        eval_dataset = _create_dataset(
+            val_metadata, tokenizer=tokenizer, split="validation"
+        )
         test_data = split_data(metadata, split="test")
-        test_dataset = _create_dataset(test_data, split="test")
+        test_dataset = _create_dataset(test_data, tokenizer=tokenizer, split="test")
 
         ret: list = [train_dataset, eval_dataset, test_dataset, encodings]
         return ret
@@ -411,9 +418,19 @@ def instantiate_text_dataset(
         val_metadata = metadata[metadata["split"] == "validate"]
         test_metadata = metadata[metadata["split"] == "test"]
 
-        train_dataset = _create_dataset(train_metadata, split="train")
-        eval_dataset = _create_dataset(val_metadata, split="validation")
-        test_dataset = _create_dataset(test_metadata, split="test")
+        # resample train data if needed
+        if preprocessing_cfg.use_sampling and subset_to_positive_class == False:
+            train_metadata = resample_to_value(cfg, train_metadata, class_names)
+
+        train_dataset: HGFDataset = _create_dataset(
+            train_metadata, tokenizer=tokenizer, split="train"
+        )
+        eval_dataset: HGFDataset = _create_dataset(
+            val_metadata, tokenizer=tokenizer, split="validation"
+        )
+        test_dataset: HGFDataset = _create_dataset(
+            test_metadata, tokenizer=tokenizer, split="test"
+        )
 
         ret: list = [train_dataset, eval_dataset, test_dataset, encodings]
         return ret

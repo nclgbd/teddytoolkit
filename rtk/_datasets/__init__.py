@@ -5,6 +5,9 @@ import skimage
 from copy import deepcopy
 from PIL import Image
 
+# azureml
+from azureml.core import Workspace
+
 # monai
 import monai.transforms as monai_transforms
 
@@ -121,7 +124,13 @@ def create_transforms(
     return monai_transforms.Compose(ret_transforms)
 
 
-def load_metadata(index: str, *args, **kwargs) -> pd.DataFrame:
-    ws = login()
+def load_metadata(
+    index: str, return_workspace=False, ws: Workspace = None, *args, **kwargs
+):
+    if ws is None:
+        ws: Workspace = login()
     metadata: pd.DataFrame = load_patient_dataset(ws, *args, **kwargs).set_index(index)
+
+    if return_workspace:
+        return metadata, ws
     return metadata
