@@ -282,6 +282,39 @@ def instantiate_text_dataset(
         dataset_cfg.patient_data_version,
     )
 
+    def _create_dataset(data, tokenizer: AutoTokenizer, split="split"):
+        dataset = HGFDataset.from_pandas(data, split=split)
+        dataset = dataset.map(
+            lambda x: {
+                "labels": torch.from_numpy(
+                    mlb.transform(x["multiclass_labels"])
+                ).float()
+            },
+            batched=True,
+        )
+
+        # Tokenize and remove unwanted columns
+        if tokenizer is not None:
+            logger.info(f"Tokenizing '{split}' text prompts...")
+
+            def tokenize_function(example):
+                return tokenizer(
+                    example["text_prompts"],
+                    padding="max_length",
+                    truncation=True,
+                )
+
+            columns = dataset.column_names
+            columns.remove("text_prompts")
+            columns.remove("labels")
+            dataset = dataset.map(
+                tokenize_function,
+                batched=True,
+                remove_columns=columns,
+            )
+
+        return dataset
+
     if dataset_cfg.name == "nih" or dataset_cfg.name == "cxr14":
         from rtk._datasets.nih import NIH_CLASS_NAMES, DATA_ENTRY_PATH
 
@@ -337,44 +370,50 @@ def instantiate_text_dataset(
                     metadata = metadata[metadata.index.isin(test_list)]
                     return metadata
 
-        def _create_dataset(data, split="split"):
-            dataset = HGFDataset.from_pandas(data, split=split)
-            dataset = dataset.map(
-                lambda x: {
-                    "labels": torch.from_numpy(
-                        mlb.transform(x["multiclass_labels"])
-                    ).float()
-                },
-                batched=True,
-            )
-
-            # Tokenize and remove unwanted columns
-            if tokenizer is not None:
-                logger.info(f"Tokenizing '{split}' text prompts...")
-
-                def tokenize_function(example):
-                    return tokenizer(
-                        example["text_prompts"],
-                        padding="max_length",
-                        truncation=True,
-                    )
-
-                columns = dataset.column_names
-                columns.remove("text_prompts")
-                columns.remove("labels")
-                dataset = dataset.map(
-                    tokenize_function,
-                    batched=True,
-                    remove_columns=columns,
-                )
-
-            return dataset
-
         train_metadata, val_metadata = split_data(metadata, split="train")
         train_dataset = _create_dataset(train_metadata, split="train")
         eval_dataset = _create_dataset(val_metadata, split="validation")
         test_data = split_data(metadata, split="test")
         test_dataset = _create_dataset(test_data, split="test")
+
+        ret: list = [train_dataset, eval_dataset, test_dataset, encodings]
+        return ret
+
+    elif dataset_cfg.name == "mimic-cxr":
+        from rtk._datasets.mimic import MIMIC_CLASS_NAMES
+
+        class_names = sorted(MIMIC_CLASS_NAMES)
+        id2label = {i: l for i, l in enumerate(class_names)}
+        label2id = {l: i for i, l in enumerate(class_names)}
+        encodings = {"id2label": id2label, "label2id": label2id}
+
+        # remove all of the negative class for diffusion
+        if subset_to_positive_class:
+            logger.info("Removing all negative classes...")
+            metadata = metadata[metadata[positive_class] == 1]
+
+        def _create_multiclass_labels(x):
+            finding_labels = []
+            for column in class_names:
+                if x[column] == 1:
+                    finding_labels.append(column)
+            return finding_labels
+
+        metadata["multiclass_labels"] = metadata[class_names].apply(
+            _create_multiclass_labels, axis=1
+        )
+
+        mlb = MultiLabelBinarizer(classes=class_names)
+        mlb.fit(metadata["multiclass_labels"])
+
+        # split the dataset into train/val/test
+        train_metadata = metadata[metadata["split"] == "train"]
+        val_metadata = metadata[metadata["split"] == "validate"]
+        test_metadata = metadata[metadata["split"] == "test"]
+
+        train_dataset = _create_dataset(train_metadata, split="train")
+        eval_dataset = _create_dataset(val_metadata, split="validation")
+        test_dataset = _create_dataset(test_metadata, split="test")
 
         ret: list = [train_dataset, eval_dataset, test_dataset, encodings]
         return ret

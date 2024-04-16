@@ -24,6 +24,22 @@ from rtk.utils import (
     login,
 )
 
+MIMIC_CLASS_NAMES = [
+    "Atelectasis",
+    "Cardiomegaly",
+    "Consolidation",
+    "Edema",
+    "Enlarged Cardiomediastinum",
+    "Fracture",
+    "Lung Lesion",
+    "Lung Opacity",
+    "No Finding",
+    "Effusion",
+    "Pleural Other",
+    "Pneumonia",
+    "Pneumothorax",
+    "Support Devices",
+]
 
 logger = get_logger(__name__)
 
@@ -72,7 +88,9 @@ def load_mimic_dataset(
         )
 
     def __build_mimic_data_split(
-        cfg: ImageConfiguration, data: pd.DataFrame, transforms: monai_transforms.Compose
+        cfg: ImageConfiguration,
+        data: pd.DataFrame,
+        transforms: monai_transforms.Compose,
     ):
         dataset_cfg = cfg.datasets
         image_files = [

@@ -405,9 +405,17 @@ class NLPTConfiguration(BaseConfiguration):
     huggingface: HuggingFaceConfiguration = field(
         default_factory=HuggingFaceConfiguration
     )
-    pretrained_model_name_or_path: str = ""
+    sklearn: SklearnConfiguration = field(default_factory=SklearnConfiguration)
+    gradient_accumulation_steps: int = 1
+    gradient_checkpointing: bool = False
     learning_rate: float = 3e-5
+    lr_scheduler: str = "constant"
+    max_train_samples: int = None
+    metric_for_best_model: str = "eval_f1-score"
     num_train_epochs: int = 3
+    pretrained_model_name_or_path: str = ""
+    seed: int = 0
+    weight_decay: float = 0.0
 
 
 def set_hydra_configuration(
