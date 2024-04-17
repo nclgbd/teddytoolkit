@@ -355,7 +355,7 @@ def instantiate_text_dataset(
                 f"Overlapped classes: {overlapped_classes}. Dropping: {drop_classes}"
             )
 
-        mlb = MultiLabelBinarizer(classes=class_names)
+        mlb = MultiLabelBinarizer(classes=NIH_CLASS_NAMES)
         mlb.fit(metadata["multiclass_labels"])
 
         # Create train and test splits
@@ -439,6 +439,8 @@ def instantiate_text_dataset(
             for column in class_names:
                 if x[column] == 1:
                     finding_labels.append(column)
+            if finding_labels == []:
+                finding_labels.append("No Finding")
             return finding_labels
 
         # TODO: When running cross evaluation with multiple datasets, we must realign them so it's in a format the model can understand
@@ -446,7 +448,7 @@ def instantiate_text_dataset(
             _create_multiclass_labels, axis=1
         )
 
-        mlb = MultiLabelBinarizer(classes=class_names)
+        mlb = MultiLabelBinarizer(classes=NIH_CLASS_NAMES)
         mlb.fit(metadata["multiclass_labels"])
 
         # split the dataset into train/val/test
