@@ -71,8 +71,8 @@ def load_nih_dataset(
 
     nih_metadata = load_metadata(
         dataset_cfg.index,
-        dataset_cfg.patient_data,
-        dataset_cfg.patient_data_version,
+        patient_data_name=dataset_cfg.patient_data,
+        patient_data_version=dataset_cfg.patient_data_version,
     )
 
     # remove all of the negative class for diffusion

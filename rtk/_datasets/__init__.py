@@ -5,6 +5,9 @@ import skimage
 from copy import deepcopy
 from PIL import Image
 
+# sklean
+from imblearn.under_sampling import RandomUnderSampler
+
 # azureml
 from azureml.core import Workspace
 
@@ -21,11 +24,12 @@ def resample_to_value(
     cfg: BaseConfiguration,
     metadata: pd.DataFrame,
     dataset_labels: list = [],
-    minority_class_names: list = ["Pneumonia", "Hernia"],
+    sampling_strategy: float = 1.0,
     **kwargs,
 ):
     """
     Resample a dataset by duplicating the data.
+    `sampling_strategy` is the ratio of the number of samples in the minority class to the number of samples in the majority class after resampling.
     """
     dataset_cfg = cfg.datasets
     index = dataset_cfg.index
@@ -39,27 +43,39 @@ def resample_to_value(
     )
     metadata_copy = deepcopy(metadata).reset_index()
     new_metadata = pd.DataFrame(columns=metadata_copy.columns)
-    for label in dataset_labels:
-        # have the data resample from Pneumonia
-        # query = metadata_copy[[label] + minority_class_names]
-        class_subset: pd.DataFrame = metadata_copy[metadata_copy[label] == 1]
+    if sampling_strategy == 1.0:
+        for label in dataset_labels:
+            # have the data resample from Pneumonia
+            # query = metadata_copy[[label] + minority_class_names]
+            class_subset: pd.DataFrame = metadata_copy[metadata_copy[label] == 1]
 
-        if sample_to_value - class_subset.shape[0] <= 0:
-            class_subset = class_subset.sample(
-                n=sample_to_value, replace=False, random_state=cfg.random_state
+            if sample_to_value - class_subset.shape[0] <= 0:
+                class_subset = class_subset.sample(
+                    n=sample_to_value, replace=False, random_state=cfg.random_state
+                )
+
+            else:
+                class_subset = class_subset.sample(
+                    n=sample_to_value, replace=True, random_state=cfg.random_state
+                )
+
+            new_metadata = pd.concat(
+                [
+                    new_metadata,
+                    class_subset,
+                ],
             )
-
-        else:
-            class_subset = class_subset.sample(
-                n=sample_to_value, replace=True, random_state=cfg.random_state
-            )
-
-        new_metadata = pd.concat(
-            [
-                new_metadata,
-                class_subset,
-            ],
+            # assert len(new_metadata) <= sample_to_value * len(dataset_labels)
+    else:
+        # perform undersampling using v1.0 labels
+        # sampler = RandomUnderSampler(random_state=cfg.random_state)
+        positive_indices = metadata_copy[metadata_copy[positive_class] == 1].index
+        positive_samples = metadata_copy.loc[positive_indices]
+        negative_samples = metadata_copy.drop(positive_indices)
+        negative_samples = negative_samples.sample(
+            n=len(positive_samples), replace=False, random_state=cfg.random_state
         )
+        new_metadata = pd.concat([positive_samples, negative_samples])
 
     class_counts = dict()
     for label in dataset_labels:
@@ -67,7 +83,6 @@ def resample_to_value(
 
     logger.info(f"New class counts (with overlap):\n{class_counts}")
 
-    assert len(new_metadata) <= sample_to_value * len(dataset_labels)
     return new_metadata.reset_index(drop=True)
 
 
