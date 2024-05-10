@@ -762,37 +762,8 @@ def prepare_validation_dataloaders(cfg: ImageConfiguration = None, **kwargs):
     dataset_cfg: ImageDatasetConfiguration = kwargs.get(
         "dataset_cfg", cfg.datasets if cfg else None
     )
-    # use_transforms = cfg.use_transforms
-    # train_transform = create_transforms(cfg, use_transforms=use_transforms)
-    # eval_transform = create_transforms(cfg, use_transforms=False)
     full_datasets = instantiate_image_dataset(cfg=cfg, save_metadata=True)
     train_dataset, val_dataset, test_dataset = full_datasets
-
-    # NOTE: combined datasets here
-    # if len(dataset_cfg.get("additional_datasets", [])) > 0:
-    #     combined_datasets = combine_datasets(train_dataset, test_dataset, cfg=cfg)
-    #     train_dataset, test_dataset = combined_datasets[0], combined_datasets[-1]
-
-    # split the dataset into train/val/test
-
-    # train_transform = train_dataset.transform
-    # eval_transform = test_dataset.transform
-    # train_val_test_split_dict = instantiate_train_val_test_datasets(
-    #     cfg=cfg,
-    #     dataset=train_dataset,
-    #     train_transforms=train_transform,
-    #     eval_transforms=eval_transform,
-    # )
-    # train_dataset, val_dataset = (
-    #     train_val_test_split_dict["train"],
-    #     train_val_test_split_dict["val"],
-    # )
-    # if len(full_datasets) == 3:
-    #     from torch.utils.data import ConcatDataset
-
-    #     # combine validation data with already separated validation dataset if provided
-    #     val_dataset = ConcatDataset([val_dataset, full_datasets[1]])
-    # val_dataset = full_datasets[1] if len(full_datasets) == 3 else None
 
     loaders = []
     train_loader: DataLoader = hydra_instantiate(

@@ -51,8 +51,9 @@ def resample_to_value(
     # we have to recheck the size of the data since the data has already been split into training
     subsample_size = len(metadata[metadata[positive_class] == 1])
     sample_to_value: int = preprocessing_cfg.sampling_method.get(
-        "sample_to_value", kwargs.get("sample_to_value", subsample_size)
+        "sample_to_value", None
     )
+    sample_to_value = subsample_size if sample_to_value is None else sample_to_value
     metadata_copy = deepcopy(metadata).reset_index()
     if sampling_strategy == "text_prompts":
         new_metadata = pd.DataFrame(columns=metadata_copy.columns)
