@@ -1,12 +1,7 @@
 import hydra
 import numpy as np
 import pandas as pd
-import skimage
 from copy import deepcopy
-from PIL import Image
-
-# sklean
-from imblearn.under_sampling import RandomUnderSampler
 
 # azureml
 from azureml.core import Workspace
@@ -20,21 +15,38 @@ from rtk.config import *
 from rtk.utils import load_patient_dataset, login
 
 
+def get_class_counts(metadata: pd.DataFrame, dataset_labels: list):
+
+    class_counts = dict()
+    for label in dataset_labels:
+        class_counts[label] = len(metadata[metadata[label] == 1])
+
+    class_counts = pd.DataFrame.from_dict(
+        class_counts, orient="index", columns=["Occurrences"]
+    )
+    return class_counts
+
+
 def resample_to_value(
-    cfg: BaseConfiguration,
     metadata: pd.DataFrame,
     dataset_labels: list = [],
-    sampling_strategy: float = 1.0,
+    sampling_strategy: str = "text_prompts",
+    cfg: BaseConfiguration = None,
     **kwargs,
 ):
     """
     Resample a dataset by duplicating the data.
     `sampling_strategy` is the ratio of the number of samples in the minority class to the number of samples in the majority class after resampling.
     """
-    dataset_cfg = cfg.datasets
-    index = dataset_cfg.index
-    preprocessing_cfg = dataset_cfg.preprocessing
+    dataset_cfg: DatasetConfiguration = kwargs.get("dataset_cfg", None)
+    if dataset_cfg is None:
+        dataset_cfg = cfg.datasets
+    # index = dataset_cfg.index
+    preprocessing_cfg = kwargs.get("preprocessing_cfg", None)
+    if preprocessing_cfg is None:
+        preprocessing_cfg = dataset_cfg.preprocessing
     positive_class = preprocessing_cfg.positive_class
+    random_state = kwargs.get("random_state", 42)
 
     # we have to recheck the size of the data since the data has already been split into training
     subsample_size = len(metadata[metadata[positive_class] == 1])
@@ -42,8 +54,8 @@ def resample_to_value(
         "sample_to_value", kwargs.get("sample_to_value", subsample_size)
     )
     metadata_copy = deepcopy(metadata).reset_index()
-    new_metadata = pd.DataFrame(columns=metadata_copy.columns)
-    if sampling_strategy == 1.0:
+    if sampling_strategy == "text_prompts":
+        new_metadata = pd.DataFrame(columns=metadata_copy.columns)
         for label in dataset_labels:
             # have the data resample from Pneumonia
             # query = metadata_copy[[label] + minority_class_names]
@@ -51,12 +63,12 @@ def resample_to_value(
 
             if sample_to_value - class_subset.shape[0] <= 0:
                 class_subset = class_subset.sample(
-                    n=sample_to_value, replace=False, random_state=cfg.random_state
+                    n=sample_to_value, replace=False, random_state=random_state
                 )
 
             else:
                 class_subset = class_subset.sample(
-                    n=sample_to_value, replace=True, random_state=cfg.random_state
+                    n=sample_to_value, replace=True, random_state=random_state
                 )
 
             new_metadata = pd.concat(
@@ -65,25 +77,31 @@ def resample_to_value(
                     class_subset,
                 ],
             )
-            # assert len(new_metadata) <= sample_to_value * len(dataset_labels)
     else:
-        # perform undersampling using v1.0 labels
-        # sampler = RandomUnderSampler(random_state=cfg.random_state)
+        # create splits
         positive_indices = metadata_copy[metadata_copy[positive_class] == 1].index
         positive_samples = metadata_copy.loc[positive_indices]
         negative_samples = metadata_copy.drop(positive_indices)
-        negative_samples = negative_samples.sample(
-            n=len(positive_samples), replace=False, random_state=cfg.random_state
+
+        # resample positive class
+        p_replace = True if len(positive_samples) < sample_to_value else False
+        positive_samples = positive_samples.sample(
+            n=sample_to_value, replace=p_replace, random_state=random_state
         )
-        new_metadata = pd.concat([positive_samples, negative_samples])
+        # resample negative class
+        n_replace = True if len(negative_samples) < sample_to_value else False
+        negative_samples = negative_samples.sample(
+            n=sample_to_value, replace=n_replace, random_state=random_state
+        )
+        new_metadata = pd.concat([positive_samples, negative_samples]).reset_index(
+            drop=True
+        )
 
-    class_counts = dict()
-    for label in dataset_labels:
-        class_counts[label] = len(new_metadata[new_metadata[label] == 1])
+    class_counts = get_class_counts(new_metadata, dataset_labels)
 
-    logger.info(f"New class counts (with overlap):\n{class_counts}")
+    logger.debug(f"New class counts (with overlap):\n{class_counts}")
 
-    return new_metadata.reset_index(drop=True)
+    return new_metadata
 
 
 def create_transforms(

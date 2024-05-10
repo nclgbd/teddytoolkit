@@ -10,6 +10,7 @@ from datasets import Dataset as HGFDataset
 
 # sklearn
 from sklearn.preprocessing import LabelEncoder, MultiLabelBinarizer
+from sklearn.model_selection import train_test_split
 
 # monai
 import monai
@@ -63,11 +64,22 @@ def load_nih_dataset(
         dataset_cfg = cfg.datasets
 
     scan_path = dataset_cfg.scan_data
-    target = dataset_cfg.target
-    positive_class = kwargs.get("positive_class", None)
-    if positive_class is None:
+    index = kwargs.get("index", dataset_cfg.index)
+    target = kwargs.get("target", dataset_cfg.target)
+
+    preprocessing_cfg = kwargs.get("preprocessing_cfg", None)
+    if preprocessing_cfg is None:
         preprocessing_cfg = dataset_cfg.preprocessing
-        positive_class = preprocessing_cfg.get("positive_class", "Pneumonia")
+
+    positive_class = kwargs.get("positive_class", None)
+    if positive_class == None:
+        positive_class = preprocessing_cfg.get(
+            "positive_class", preprocessing_cfg.get("positive_class", "Pneumonia")
+        )
+
+    random_state = kwargs.get("random_state", None)
+    if random_state is None:
+        random_state = cfg.random_state
 
     nih_metadata = load_metadata(
         dataset_cfg.index,
@@ -85,9 +97,34 @@ def load_nih_dataset(
         train_val_list = [idx.strip() for idx in f.readlines()]
 
     train_metadata = nih_metadata[nih_metadata.index.isin(train_val_list)]
-    if preprocessing_cfg.use_sampling and subset_to_positive_class == False:
-        train_metadata = resample_to_value(cfg, train_metadata, NIH_CLASS_NAMES)
+    stratify = kwargs.get("stratify", train_metadata["class_conditioned_labels"]).values
+    X = train_metadata.drop(columns=[target]).reset_index(drop=False)
+    X_columns = X.columns
+    X = X.values
+    y = train_metadata[target].values
+    X_train, X_val, y_train, y_val = train_test_split(
+        X, y, test_size=0.05, random_state=random_state, stratify=stratify
+    )
+    y_train = y_train.reshape(-1, 1)
+    y_val = y_val.reshape(-1, 1)
+    train_metadata = np.concatenate((X_train, y_train), axis=1)
+    columns = X_columns.values.tolist()
+    columns.append(target)
+    train_metadata = pd.DataFrame(train_metadata, columns=columns)
 
+    val_metadata = np.concatenate((X_val, y_val), axis=1)
+    val_metadata = pd.DataFrame(val_metadata, columns=columns)
+    if preprocessing_cfg.use_sampling and subset_to_positive_class == False:
+        train_metadata = resample_to_value(
+            train_metadata,
+            NIH_CLASS_NAMES,
+            dataset_cfg=dataset_cfg,
+            preprocessing_cfg=preprocessing_cfg,
+            sampling_strategy=target,
+            random_state=random_state,
+        )
+
+    # prepare transforms
     train_transforms = kwargs.get(
         "train_transforms",
         None,
@@ -98,6 +135,17 @@ def load_nih_dataset(
             use_transforms=cfg.use_transforms,
         )
 
+    eval_transforms = kwargs.get(
+        "eval_transforms",
+        None,
+    )
+    if eval_transforms is None:
+        eval_transforms = create_transforms(
+            cfg,
+            use_transforms=False,
+        )
+
+    # train split
     if train_metadata.index.dtype == "int64":
         train_image_files = np.array(
             [
@@ -120,19 +168,38 @@ def load_nih_dataset(
         transform=train_transforms,
     )
 
+    train_class_counts = get_class_counts(train_metadata, NIH_CLASS_NAMES)
+    logger.info(f"Train class counts:\n{train_class_counts.to_markdown()}")
+
+    # val split
+    if val_metadata.index.dtype == "int64":
+        val_image_files = np.array(
+            [
+                os.path.join(scan_path, filename)
+                for filename in val_metadata["Image Index"].values
+            ]
+        )
+    else:
+        val_image_files = np.array(
+            [
+                os.path.join(scan_path, filename)
+                for filename in val_metadata.index.values
+            ]
+        )
+    val_labels = val_metadata[target].values.tolist()
+    val_dataset = monai.data.Dataset = instantiate(
+        config=dataset_cfg.instantiate,
+        image_files=list(val_image_files),
+        labels=list(val_labels),
+        transform=train_transforms,
+    )
+
+    val_class_counts = get_class_counts(val_metadata, NIH_CLASS_NAMES)
+    logger.info(f"Validation class counts:\n{val_class_counts.to_markdown()}")
+
     # test split
     with open(os.path.join(scan_path, "test_list.txt"), "r") as f:
         test_list = [idx.strip() for idx in f.readlines()]
-
-    eval_transforms = kwargs.get(
-        "eval_transforms",
-        None,
-    )
-    if eval_transforms is None:
-        eval_transforms = create_transforms(
-            cfg,
-            use_transforms=False,
-        )
     test_metadata = nih_metadata[nih_metadata.index.isin(test_list)]
     test_image_files = np.array(
         [os.path.join(scan_path, filename) for filename in test_metadata.index.values]
@@ -144,9 +211,15 @@ def load_nih_dataset(
         labels=list(test_labels),
         transform=eval_transforms,
     )
+
+    test_class_counts = get_class_counts(test_metadata, NIH_CLASS_NAMES)
+    logger.info(f"Test class counts:\n{test_class_counts.to_markdown()}")
     if save_metadata:
         train_metadata.to_csv(
             os.path.join(DEFAULT_DATA_PATH, "patients", "nih_train_metadata.csv")
+        )
+        val_metadata.to_csv(
+            os.path.join(DEFAULT_DATA_PATH, "patients", "nih_val_metadata.csv")
         )
         test_metadata.to_csv(
             os.path.join(DEFAULT_DATA_PATH, "patients", "nih_test_metadata.csv")
@@ -155,10 +228,12 @@ def load_nih_dataset(
     return (
         (
             train_dataset,
+            val_dataset,
             test_dataset,
             train_metadata,
+            val_metadata,
             test_metadata,
         )
         if return_metadata
-        else (train_dataset, test_dataset)
+        else (train_dataset, val_dataset, test_dataset)
     )

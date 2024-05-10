@@ -17,7 +17,11 @@ from generative.networks.schedulers import Scheduler
 
 # rtk
 from rtk import DEFAULT_MODEL_PATH
-from rtk.config import ImageClassificationConfiguration, ModelConfiguration, DiffusionModelConfiguration
+from rtk.config import (
+    ImageClassificationConfiguration,
+    ModelConfiguration,
+    DiffusionModelConfiguration,
+)
 from rtk.utils import get_logger, hydra_instantiate
 
 logger = get_logger(__name__)
@@ -91,7 +95,16 @@ def instantiate_model(
         from rtk.utils import login
 
         ws = login()
-        model_path = download_model_weights(ws, **pretrained_weights)
+
+        try:
+            model_name = pretrained_weights.get("name", "")
+            model_dir = os.path.join(DEFAULT_MODEL_PATH, model_name)
+            path = os.listdir(model_dir)[0]
+            model_path = os.path.join(model_dir, path)
+            logger.info(f"Found model at: '{model_path}'.")
+        except Exception:
+            model_path = download_model_weights(ws, **pretrained_weights)
+
         if use_huggingface:
             model = model.from_pretrained(model_path)
         else:
@@ -107,7 +120,9 @@ def instantiate_model(
 
 
 def instantiate_criterion(
-    cfg: ImageClassificationConfiguration, device: torch.device = torch.device("cpu"), **kwargs
+    cfg: ImageClassificationConfiguration,
+    device: torch.device = torch.device("cpu"),
+    **kwargs,
 ):
     """
     Instantiates the criterion (loss function) from a given configuration.
@@ -120,7 +135,9 @@ def instantiate_criterion(
     return criterion.to(device)
 
 
-def instantiate_optimizer(cfg: ImageClassificationConfiguration, model: nn.Module, **kwargs):
+def instantiate_optimizer(
+    cfg: ImageClassificationConfiguration, model: nn.Module, **kwargs
+):
     """
     Instantiates the optimizer from a given configuration.
 
@@ -147,7 +164,9 @@ def instantiate_diffusion_scheduler(cfg: DiffusionModelConfiguration, **kwargs):
     return scheduler
 
 
-def instantiate_diffusion_inferer(cfg: ImageClassificationConfiguration, scheduler: Scheduler, **kwargs):
+def instantiate_diffusion_inferer(
+    cfg: ImageClassificationConfiguration, scheduler: Scheduler, **kwargs
+):
     """
     Instantiates the inferer from a given configuration.
 

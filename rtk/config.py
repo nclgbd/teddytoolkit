@@ -35,6 +35,7 @@ class PreprocessingConfiguration:
 
 @dataclass
 class DatasetConfiguration:
+    additional_datasets: dict = field(default_factory=lambda: {})
     # name of the dataset
     name: str = ""
     # preprocessing configuration

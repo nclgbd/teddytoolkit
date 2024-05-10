@@ -508,7 +508,9 @@ def instantiate_image_dataset(
         )
 
     elif dataset_name == "mimic-cxr":
-        loaded_datasets = load_mimic_dataset(cfg, save_metadata=save_metadata, **kwargs)
+        loaded_datasets = load_mimic_dataset(
+            cfg=cfg, save_metadata=save_metadata, **kwargs
+        )
 
     elif dataset_name == "pediatrics":
         loaded_datasets = load_pediatrics_dataset(
@@ -528,14 +530,16 @@ def instantiate_image_dataset(
     if "additional_datasets" in dataset_cfg:
         logger.info("Adding additional datasets...")
         train_dataset, test_dataset = loaded_datasets[0], loaded_datasets[-1]
-        train_dataset, test_dataset = combine_datasets(
-            dataset_cfg=dataset_cfg,
+        val_dataset = None if len(loaded_datasets) == 2 else loaded_datasets[1]
+        combined_datasets = combine_datasets(
+            cfg=cfg,
             train_dataset=train_dataset,
+            val_dataset=val_dataset,
             test_dataset=test_dataset,
-            positive_class=preprocessing_cfg.positive_class,
         )
-        if len(loaded_datasets) == 3:
-            loaded_datasets: list = train_dataset, loaded_datasets[1], test_dataset
+        train_dataset, test_dataset = combined_datasets[0], combined_datasets[-1]
+        if len(combined_datasets) == 3:
+            loaded_datasets: list = train_dataset, combined_datasets[1], test_dataset
         else:
             loaded_datasets: list = train_dataset, test_dataset
 
@@ -544,24 +548,28 @@ def instantiate_image_dataset(
 
 
 def combine_datasets(
-    dataset_cfg: ImageDatasetConfiguration,
+    cfg: ImageConfiguration,
     train_dataset: ImageDataset,
     test_dataset: ImageDataset,
     val_dataset: ImageDataset = None,
     positive_class: str = "Pneumonia",
     **kwargs,
 ):
+    dataset_cfg: ImageDatasetConfiguration = cfg.datasets
     dataset_configs = list(dataset_cfg.additional_datasets.dataset_configs)
     for dc in dataset_configs:
         d_cfg = OmegaConf.load(dc["filepath"])
         loader = hydra_instantiate(dc["loader"])
-        add_datasets = loader(
+        full_datasets = loader(
+            random_state=cfg.random_state,
             dataset_cfg=d_cfg,
+            preprocessing_cfg=dataset_cfg.preprocessing,
             positive_class=positive_class,
+            target=dataset_cfg.target,
             train_transforms=train_dataset.transform,
             eval_transforms=test_dataset.transform,
         )
-        a_train_data, a_test_data = add_datasets
+        a_train_data, a_test_data = full_datasets[0], full_datasets[-1]
         train_dataset = ImageDataset(
             image_files=list(train_dataset.image_files)
             + list(a_train_data.image_files),
@@ -573,7 +581,16 @@ def combine_datasets(
             labels=list(test_dataset.labels) + list(a_test_data.labels),
             transform=test_dataset.transform,
         )
-    return train_dataset, test_dataset
+        if len(full_datasets) == 3:
+            a_val_data = full_datasets[1]
+            val_dataset = ImageDataset(
+                image_files=list(val_dataset.image_files)
+                + list(a_val_data.image_files),
+                labels=list(val_dataset.labels) + list(a_val_data.labels),
+                transform=test_dataset.transform,
+            )
+
+    return [train_dataset, val_dataset, test_dataset]
 
 
 def instantiate_train_val_test_datasets(
@@ -745,52 +762,66 @@ def prepare_validation_dataloaders(cfg: ImageConfiguration = None, **kwargs):
     dataset_cfg: ImageDatasetConfiguration = kwargs.get(
         "dataset_cfg", cfg.datasets if cfg else None
     )
-    use_transforms = cfg.use_transforms
-    train_transform = create_transforms(cfg, use_transforms=use_transforms)
-    eval_transform = create_transforms(cfg, use_transforms=False)
-    dataset = instantiate_image_dataset(cfg=cfg, transform=train_transform)
-    train_dataset, test_dataset = dataset[0], dataset[-1]
+    # use_transforms = cfg.use_transforms
+    # train_transform = create_transforms(cfg, use_transforms=use_transforms)
+    # eval_transform = create_transforms(cfg, use_transforms=False)
+    full_datasets = instantiate_image_dataset(cfg=cfg, save_metadata=True)
+    train_dataset, val_dataset, test_dataset = full_datasets
 
     # NOTE: combined datasets here
-    if len(dataset_cfg.get("additional_datasets", [])) > 0:
-        combined_datasets = combine_datasets(train_dataset, test_dataset, cfg=cfg)
-        train_dataset, test_dataset = combined_datasets[0], combined_datasets[-1]
+    # if len(dataset_cfg.get("additional_datasets", [])) > 0:
+    #     combined_datasets = combine_datasets(train_dataset, test_dataset, cfg=cfg)
+    #     train_dataset, test_dataset = combined_datasets[0], combined_datasets[-1]
 
     # split the dataset into train/val/test
-    train_val_test_split_dict = instantiate_train_val_test_datasets(
-        cfg=cfg,
-        dataset=train_dataset,
-        train_transforms=train_transform,
-        eval_transforms=eval_transform,
-    )
-    train_dataset, val_dataset = (
-        train_val_test_split_dict["train"],
-        train_val_test_split_dict["val"],
-    )
-    train_dataset.transform = train_transform
-    test_dataset.transform = eval_transform
 
+    # train_transform = train_dataset.transform
+    # eval_transform = test_dataset.transform
+    # train_val_test_split_dict = instantiate_train_val_test_datasets(
+    #     cfg=cfg,
+    #     dataset=train_dataset,
+    #     train_transforms=train_transform,
+    #     eval_transforms=eval_transform,
+    # )
+    # train_dataset, val_dataset = (
+    #     train_val_test_split_dict["train"],
+    #     train_val_test_split_dict["val"],
+    # )
+    # if len(full_datasets) == 3:
+    #     from torch.utils.data import ConcatDataset
+
+    #     # combine validation data with already separated validation dataset if provided
+    #     val_dataset = ConcatDataset([val_dataset, full_datasets[1]])
+    # val_dataset = full_datasets[1] if len(full_datasets) == 3 else None
+
+    loaders = []
     train_loader: DataLoader = hydra_instantiate(
         cfg=dataset_cfg.dataloader,
         dataset=train_dataset,
         pin_memory=torch.cuda.is_available() if torch.cuda.is_available() else False,
         shuffle=True,
     )
-    val_loader: DataLoader = hydra_instantiate(
-        cfg=dataset_cfg.dataloader,
-        dataset=val_dataset,
-        pin_memory=torch.cuda.is_available(),
-        shuffle=True,
-    )
+    loaders.append(train_loader)
+
+    if val_dataset is not None:
+        val_loader: DataLoader = hydra_instantiate(
+            cfg=dataset_cfg.dataloader,
+            dataset=val_dataset,
+            pin_memory=torch.cuda.is_available(),
+            shuffle=True,
+        )
+        loaders.append(val_loader)
+
     test_loader: DataLoader = hydra_instantiate(
         cfg=dataset_cfg.dataloader,
         dataset=test_dataset,
         pin_memory=torch.cuda.is_available(),
         shuffle=False,
     )
+    loaders.append(test_loader)
 
     logger.info("Data prepared.\n\n")
-    return train_loader, val_loader, test_loader
+    return loaders
 
 
 def convert_image_dataset(
