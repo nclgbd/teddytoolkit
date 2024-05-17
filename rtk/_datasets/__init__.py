@@ -1,3 +1,4 @@
+from typing import List
 import hydra
 import numpy as np
 import pandas as pd
@@ -25,6 +26,13 @@ def get_class_counts(metadata: pd.DataFrame, dataset_labels: list):
         class_counts, orient="index", columns=["Occurrences"]
     )
     return class_counts
+
+
+def get_class_name_intersection(class_names: List[str]):
+    class_intersection = sorted(
+        list(set(class_names).intersection(set(FULL_DATA_CLASS_NAMES)))
+    )
+    return class_intersection
 
 
 def resample_to_value(
@@ -118,9 +126,9 @@ def create_transforms(
         else cfg.get("use_transforms", False)
     )
     if use_transforms:
-        logger.info("Creating 'train' transforms...")
+        console.log("Creating 'train' transforms...")
     else:
-        logger.info("Creating 'eval' transforms...")
+        console.log("Creating 'eval' transforms...")
 
     transform_dicts: dict = (
         transform_dicts

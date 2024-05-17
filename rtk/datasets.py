@@ -42,11 +42,13 @@ from rtk._datasets.nih import *
 from rtk._datasets.pediatrics import load_pediatrics_dataset
 from rtk.config import *
 from rtk.utils import (
+    _console,
     get_logger,
     hydra_instantiate,
 )
 
 logger = get_logger(__name__, level=logging.DEBUG)
+console = _console
 
 
 def visualize_scan(
@@ -152,67 +154,67 @@ def set_labels_from_encoding(cfg: ImageConfiguration, encoding: dict = None):
     return list(encoding.keys())
 
 
-def transform_labels_to_metaclass(
-    df: pd.DataFrame,
-    target_name: str,
-    positive_class: str,
-    negative_class: str = None,
-    drop: bool = True,
-):
-    """
-    Transform the labels to the metaclass.
-    """
+# def transform_labels_to_metaclass(
+#     df: pd.DataFrame,
+#     target_name: str,
+#     positive_class: str,
+#     negative_class: str = None,
+#     drop: bool = True,
+# ):
+#     """
+#     Transform the labels to the metaclass.
+#     """
 
-    def _transform_to_metaclass(x, positive_class: str, negative_class: str):
-        """
-        Transform the label to the metaclass.
-        """
-        if negative_class is None:
-            negative_class = f"Non-{positive_class}"
-        if positive_class in x:
-            return positive_class
-        return negative_class
+#     def _transform_to_metaclass(x, positive_class: str, negative_class: str):
+#         """
+#         Transform the label to the metaclass.
+#         """
+#         if negative_class is None:
+#             negative_class = f"Non-{positive_class}"
+#         if positive_class in x:
+#             return positive_class
+#         return negative_class
 
-    logger.info("Transforming labels to metaclass...")
-    old_target_name = f"old_{target_name}"
-    df[old_target_name] = df[target_name]
-    df[target_name] = df[old_target_name].apply(
-        _transform_to_metaclass,
-        positive_class=positive_class,
-        negative_class=negative_class,
-    )
-    logger.info("Labels transformed.\n")
-    if drop:
-        df.drop(columns=[old_target_name], inplace=True)
+#     console.log("Transforming labels to metaclass...")
+#     old_target_name = f"old_{target_name}"
+#     df[old_target_name] = df[target_name]
+#     df[target_name] = df[old_target_name].apply(
+#         _transform_to_metaclass,
+#         positive_class=positive_class,
+#         negative_class=negative_class,
+#     )
+#     console.log("Labels transformed.\n")
+#     if drop:
+#         df.drop(columns=[old_target_name], inplace=True)
 
-    logger.debug(f"Dataframe:\n\n{df.head()}\n")
-    classes = df[target_name].value_counts().to_dict()
-    logger.info(f"Labels transformed. New class counts:\n{classes}.\n")
+#     logger.debug(f"Dataframe:\n\n{df.head()}\n")
+#     classes = df[target_name].value_counts().to_dict()
+#     console.log(f"Labels transformed. New class counts:\n{classes}.\n")
 
-    return df
+#     return df
 
 
-def preprocess_dataset(
-    cfg: ImageConfiguration,
-    dataset: ImageDataset,
-    **kwargs,
-):
-    preprocessing_cfg = cfg.datasets.preprocessing
-    X, y = get_images_and_classes(dataset=dataset)
-    data_df = pd.DataFrame({IMAGE_KEYNAME: X, LABEL_KEYNAME: y})
+# def preprocess_dataset(
+#     cfg: ImageConfiguration,
+#     dataset: ImageDataset,
+#     **kwargs,
+# ):
+#     preprocessing_cfg = cfg.datasets.preprocessing
+#     X, y = get_images_and_classes(dataset=dataset)
+#     data_df = pd.DataFrame({IMAGE_KEYNAME: X, LABEL_KEYNAME: y})
 
-    # 1. subset to class
-    if preprocessing_cfg.use_subset:
-        data_df = subset_to_class(cfg=cfg, data_df=data_df, **kwargs)
-        X, y = data_df[IMAGE_KEYNAME].values, data_df[LABEL_KEYNAME].values
+#     # 1. subset to class
+#     if preprocessing_cfg.use_subset:
+#         data_df = subset_to_class(cfg=cfg, data_df=data_df, **kwargs)
+#         X, y = data_df[IMAGE_KEYNAME].values, data_df[LABEL_KEYNAME].values
 
-    # . convert to persistent dataset for faster lookup time
-    new_dataset = PersistentDataset(
-        data=data_df.to_dict(orient="records"),
-        transform=dataset.transform,
-        cache_dir=CACHE_DIR,
-    )
-    return new_dataset
+#     # . convert to persistent dataset for faster lookup time
+#     new_dataset = PersistentDataset(
+#         data=data_df.to_dict(orient="records"),
+#         transform=dataset.transform,
+#         cache_dir=CACHE_DIR,
+#     )
+#     return new_dataset
 
 
 def create_subset(df: pd.DataFrame, target: str, labels: list = []) -> pd.DataFrame:
@@ -291,7 +293,7 @@ def instantiate_text_dataset(
 
         # Tokenize and remove unwanted columns
         if tokenizer is not None:
-            logger.info(f"Tokenizing '{split}' text prompts...")
+            console.print(f"Tokenizing '{split}' text prompts...")
 
             def tokenize_function(example):
                 return tokenizer(
@@ -335,7 +337,7 @@ def instantiate_text_dataset(
 
         # remove all of the negative class for diffusion
         if subset_to_positive_class:
-            logger.info("Removing all negative classes...")
+            console.log("Removing all negative classes...")
             metadata = metadata[metadata[positive_class] == 1]
 
         if cfg.mode == "evaluate":
@@ -345,7 +347,7 @@ def instantiate_text_dataset(
             drop_classes = list(set(class_names) - set(overlapped_classes))
             for d in drop_classes:
                 metadata = metadata.drop(metadata[metadata[d] == 1].index)
-            logger.info(
+            console.log(
                 f"Overlapped classes: {overlapped_classes}. Dropping: {drop_classes}"
             )
 
@@ -353,10 +355,10 @@ def instantiate_text_dataset(
         mlb.fit(metadata["multiclass_labels"])
 
         # Create train and test splits
-        logger.info("Creating ':huggingface:' dataset...")
+        console.log("Creating huggingface dataset...")
 
         def split_data(metadata: dict, split: str = "train"):
-            logger.info(f"Creating '{split}' split...")
+            console.log(f"Creating '{split}' split...")
             if split == "train":
                 # train split
                 with open(os.path.join(data_path, "train_val_list.txt"), "r") as f:
@@ -392,7 +394,7 @@ def instantiate_text_dataset(
             "test": test_metadata,
         }.items():
             class_counts = data[class_names].sum()
-            logger.info(f"{split.capitalize()} class counts:\n{class_counts}")
+            console.log(f"{split.capitalize()} class counts:\n{class_counts}")
 
         train_dataset = _create_dataset(
             train_metadata, tokenizer=tokenizer, split="train"
@@ -412,7 +414,7 @@ def instantiate_text_dataset(
 
         # remove all of the negative class for diffusion
         if subset_to_positive_class:
-            logger.info("Removing all negative classes...")
+            console.log("Removing all negative classes...")
             metadata = metadata[metadata[positive_class] == 1]
 
         if cfg.mode == "evaluate":
@@ -422,11 +424,11 @@ def instantiate_text_dataset(
             drop_classes = list(set(class_names) - set(overlapped_classes))
             for d in drop_classes:
                 metadata = metadata.drop(metadata[metadata[d] == 1].index)
-            # logger.info(
-            #     f"Overlapped classes: {overlapped_classes}. Dropping: {drop_classes}"
-            # )
+            logger.debug(
+                f"Overlapped classes: {overlapped_classes}. Dropping: {drop_classes}"
+            )
             class_counts = metadata[class_names].sum()
-            logger.info(f"Class counts:\n{class_counts}")
+            console.log(f"Class counts:\n{class_counts}")
 
         def _create_multiclass_labels(x):
             finding_labels = []
@@ -464,7 +466,7 @@ def instantiate_text_dataset(
             "test": test_metadata,
         }.items():
             class_counts = data[class_names].sum()
-            logger.info(f"'{split.capitalize()}' class counts:\n{class_counts}\n")
+            console.log(f"'{split.capitalize()}' class counts:\n{class_counts}\n")
 
         train_dataset: HGFDataset = _create_dataset(
             train_metadata, tokenizer=tokenizer, split="train"
@@ -487,7 +489,7 @@ def instantiate_image_dataset(
     **kwargs,
 ) -> List[ImageDataset]:
     """ """
-    logger.info("Instantiating image dataset...")
+    console.log("Instantiating image dataset...")
     dataset_cfg: ImageDatasetConfiguration = kwargs.get(
         "dataset_cfg", cfg.datasets if cfg is not None else None
     )
@@ -522,7 +524,7 @@ def instantiate_image_dataset(
         )
 
     if "additional_datasets" in dataset_cfg:
-        logger.info("Adding additional datasets...")
+        console.log("Adding additional datasets...")
         train_dataset, test_dataset = loaded_datasets[0], loaded_datasets[-1]
         val_dataset = None if len(loaded_datasets) == 2 else loaded_datasets[1]
         combined_datasets = combine_datasets(
@@ -537,7 +539,7 @@ def instantiate_image_dataset(
         else:
             loaded_datasets: list = train_dataset, test_dataset
 
-    logger.info("Image dataset instantiated.\n")
+    console.log("Image dataset instantiated.")
     return loaded_datasets
 
 
@@ -607,7 +609,7 @@ def instantiate_train_val_test_datasets(
     train_test_split_kwargs: dict = sklearn_cfg.model_selection.train_test_split
 
     if dataset_cfg.extension == ".jpeg" or ".png":
-        logger.info("Creating 'validation' split...")
+        console.log("Creating 'validation' split...")
         X, y = get_images_and_classes(dataset=dataset)
 
         X_train, X_val, y_train, y_val = train_test_split(
@@ -621,7 +623,7 @@ def instantiate_train_val_test_datasets(
 
         sampling_method = preprocessing_cfg.sampling_method
         if "_dir_" in sampling_method.method.keys():
-            logger.info("Loading additional generated images...")
+            console.log("Loading additional generated images...")
             gen_path: str = sampling_method.method["_dir_"]
             target_encoding = dataset_cfg.encoding[positive_class]
 
@@ -639,7 +641,7 @@ def instantiate_train_val_test_datasets(
             sampled_gen_data: pd.DataFrame = gen_data.sample(
                 offset, random_state=cfg.random_state
             )
-            logger.info(f"Number of sampled generated images: {len(sampled_gen_data)}")
+            console.log(f"Number of sampled generated images: {len(sampled_gen_data)}")
             train_data = pd.concat([train_data, sampled_gen_data])
 
         if preprocessing_cfg.get("use_sampling", False):
@@ -686,12 +688,12 @@ def instantiate_train_val_test_datasets(
             train_val_test_split_dict["val"] = val_dataset
 
     elif dataset_cfg.extension == ".nii.gz":
-        logger.info("Creating train/val/test splits...")
+        console.log("Creating train/val/test splits...")
 
         X = np.array(dataset.image_files)
         encoder = LabelEncoder()
         y = encoder.fit_transform(dataset.labels)
-        logger.info(f"Label encoder information for target: '{dataset_cfg.target}'")
+        console.log(f"Label encoder information for target: '{dataset_cfg.target}'")
         inspect(encoder)
         X_train, X_test, y_train, y_test = train_test_split(
             X,
@@ -736,23 +738,23 @@ def instantiate_train_val_test_datasets(
             **kwargs,
         )
         train_val_test_split_dict["train"] = train_dataset
-        logger.info("Train/val/test splits created.")
+        console.log("Train/val/test splits created.")
 
     else:
         raise ValueError(
             f"Dataset extension '{dataset_cfg.extension}' not supported. Please use ['.nii.gz','.jpeg','.png']."
         )
 
-    logger.info("Train/val/test splits created.")
-    logger.info("Train dataset:\t{}".format(Counter(train_dataset.labels)))
+    console.log("Train/val/test splits created.")
+    console.log("Train dataset:\t{}".format(Counter(train_dataset.labels)))
     if kwargs.get("perform_validation", True):
-        logger.info("Val dataset:\t{}".format(Counter(val_dataset.labels)))
+        console.log("Val dataset:\t{}".format(Counter(val_dataset.labels)))
 
     return train_val_test_split_dict
 
 
 def prepare_validation_dataloaders(cfg: ImageConfiguration = None, **kwargs):
-    logger.info("Preparing data...")
+    console.log("Preparing data...")
     dataset_cfg: ImageDatasetConfiguration = kwargs.get(
         "dataset_cfg", cfg.datasets if cfg else None
     )
@@ -785,7 +787,7 @@ def prepare_validation_dataloaders(cfg: ImageConfiguration = None, **kwargs):
     )
     loaders.append(test_loader)
 
-    logger.info("Data prepared.\n\n")
+    console.log("Data prepared.\n")
     return loaders
 
 

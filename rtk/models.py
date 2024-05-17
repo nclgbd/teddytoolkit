@@ -22,9 +22,10 @@ from rtk.config import (
     ModelConfiguration,
     DiffusionModelConfiguration,
 )
-from rtk.utils import get_logger, hydra_instantiate
+from rtk.utils import _console, get_logger, hydra_instantiate
 
 logger = get_logger(__name__)
+console = _console
 
 
 def ddp_setup(rank: int, world_size: int):
@@ -54,13 +55,13 @@ def download_model_weights(
         `name` (`str`): The name of the model to download.
         `target_dir` (`str`, optional): The path to save the weights. Defaults to `./assets/model_swinvit.pt`.
     """
-    logger.info(f"Downloading custom model '{name}'...")
+    console.log(f"Downloading custom model '{name}'...")
     model = Model(ws, name=name, version=version)
     model_path = os.path.join(target_dir, name)
     os.makedirs(target_dir, exist_ok=True)
 
     location = model.download(target_dir=model_path, exist_ok=True)
-    logger.info("Download complete.")
+    console.log("Download complete.")
     logger.debug(f"Model location: {location}")
 
     return location
@@ -79,7 +80,7 @@ def instantiate_model(
     * `model_cfg` (`ModelConfiguration`): The model configuration.
     * `device` (`torch.device`, optional): The device to instantiate the model on. Defaults to `torch.device("cpu")`.
     """
-    logger.info("Instantiating model...")
+    console.log("Instantiating model...")
     model_cfg: ModelConfiguration = (
         cfg.models if kwargs.get("model_cfg", None) is None else kwargs.get("model_cfg")
     )
@@ -91,7 +92,7 @@ def instantiate_model(
 
     pretrained_weights = model_cfg.get("pretrained_weights", None)
     if pretrained_weights is not None:
-        logger.info("Loading model weights...")
+        console.log("Loading model weights...")
         from rtk.utils import login
 
         ws = login()
@@ -101,7 +102,7 @@ def instantiate_model(
             model_dir = os.path.join(DEFAULT_MODEL_PATH, model_name)
             path = os.listdir(model_dir)[0]
             model_path = os.path.join(model_dir, path)
-            logger.info(f"Found model at: '{model_path}'.")
+            console.log(f"Found model at: '{model_path}'.")
         except Exception:
             model_path = download_model_weights(ws, **pretrained_weights)
 
@@ -111,7 +112,7 @@ def instantiate_model(
             model.load_state_dict(torch.load(model_path))
 
     if cfg.job.get("use_multi_gpu", False):
-        logger.info("Using multi-GPU...")
+        console.log("Using multi-GPU...")
         device_ids = kwargs.get("device_ids", [device])
         model = DDP(model, device_ids=device_ids, output_device=0)
         return model
@@ -130,7 +131,7 @@ def instantiate_criterion(
     ## Args:
     * `cfg` (`Configuration`): The model configuration.
     """
-    logger.info("Instantiating criterion (loss function)...")
+    console.log("Instantiating criterion (loss function)...")
     criterion: nn.Module = hydra_instantiate(cfg=cfg.models.criterion, **kwargs)
     return criterion.to(device)
 
@@ -145,7 +146,7 @@ def instantiate_optimizer(
     * `cfg` (`Configuration`): The model configuration.
     * `model` (`nn.Module`): The model to optimize.
     """
-    logger.info("Instantiating optimizer...")
+    console.log("Instantiating optimizer...")
     optimizer: torch.optim.Optimizer = hydra_instantiate(
         cfg=cfg.models.optimizer, params=model.parameters(), **kwargs
     )

@@ -15,9 +15,10 @@ from hydra.core.global_hydra import GlobalHydra
 from transformers import TrainingArguments
 
 # rtk
-from rtk.utils import get_logger
+from rtk.utils import get_logger, _console
 
 logger = get_logger(__name__)
+console = _console
 
 
 @dataclass
@@ -411,7 +412,7 @@ def set_hydra_configuration(
     init_method: callable = initialize_config_dir,
     init_method_kwargs: dict = {},
     **compose_kwargs,
-):
+) -> BaseConfiguration:
     """
     Creates and returns a hydra configuration.
 
@@ -424,7 +425,7 @@ def set_hydra_configuration(
     ## Returns:
     * `DictConfig`: The hydra configuration.
     """
-    logger.info(f"Creating configuration: '{config_name}'\n")
+    console.log(f"Creating configuration: '{config_name}'\n")
     GlobalHydra.instance().clear()
     init_method(version_base="1.1", **init_method_kwargs)
     cfg: DictConfig = compose(config_name=config_name, **compose_kwargs)

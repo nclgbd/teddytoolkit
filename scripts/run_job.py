@@ -4,6 +4,7 @@ import logging
 import os
 import random
 import sys
+from typing import List
 from omegaconf import OmegaConf
 
 # hydra
@@ -28,19 +29,20 @@ import monai
 from rtk import datasets, repl
 from rtk.config import (
     ImageClassificationConfiguration,
-    ImageDatasetConfiguration,
     JobConfiguration,
-    ModelConfiguration,
 )
-from rtk.ignite import prepare_run, evaluate
+from rtk.ignite import prepare_run
 from rtk.mlflow import *
-from rtk.utils import hydra_instantiate, get_logger
+from rtk.utils import hydra_instantiate, get_logger, _console
 
 _MAX_RAND_INT = 8192
 
 
 def run_trainer(
-    loaders: list, train_loader: DataLoader, device: torch.device, cfg: ImageClassificationConfiguration
+    loaders: list,
+    train_loader: DataLoader,
+    device: torch.device,
+    cfg: ImageClassificationConfiguration,
 ):
     job_cfg: JobConfiguration = cfg.job
     prepare_func: callable = hydra_instantiate(
@@ -56,14 +58,18 @@ def run_trainer(
     return state
 
 
-def run_evaluate(loaders: list, device: torch.device, cfg: ImageClassificationConfiguration):
+def run_evaluate(
+    loaders: List[DataLoader],
+    device: torch.device,
+    cfg: ImageClassificationConfiguration,
+):
     prepare_run(loaders=loaders, device=device, cfg=cfg, mode="evaluate")
 
 
 def run_train(
     cfg: ImageClassificationConfiguration,
     run_name: str,
-    loaders: list,
+    loaders: List[DataLoader],
     train_loader: DataLoader,
     device: torch.device,
 ):
@@ -74,13 +80,13 @@ def run_train(
             **start_run_kwargs,
         ) as mlflow_run:
             logger.debug(
-                "run_id: {}, status: {}".format(
+                "'run_id': {}, 'status': {}".format(
                     mlflow_run.info.run_id, mlflow_run.info.status
                 )
             )
             log_mlflow_params(cfg)
             state = run_trainer(loaders, train_loader, device, cfg)
-            mlflow.log_artifact("./")
+            mlflow.log_artifact("./artifacts/checkpoints/")
     else:
         state = run_trainer(loaders, train_loader, device, cfg)
 
@@ -106,7 +112,7 @@ def run_eval(
             )
             log_mlflow_params(cfg)
             run_evaluate(loaders, device, cfg)
-            mlflow.log_artifact("./")
+            mlflow.log_artifact("./artifacts/checkpoints/")
     else:
         run_evaluate(loaders, device, cfg)
     return
@@ -114,25 +120,23 @@ def run_eval(
 
 @hydra.main(version_base=None, config_path="", config_name="")
 def main(cfg: ImageClassificationConfiguration) -> None:
-    dataset_cfg: ImageDatasetConfiguration = cfg.datasets
     # before we run....
     logger.debug(OmegaConf.to_yaml(cfg))
     mode: str = cfg.get("mode", "train")
     random_state: int = cfg.get("random_state", random.randint(0, _MAX_RAND_INT))
 
     monai.utils.set_determinism(seed=random_state)
-    logger.info(f"Using seed:\t{random_state}")
+    console.log(f"Using seed:\t{random_state}")
 
     device = torch.device(cfg.device)
-    logger.info(f"Using device:\t'{device}'")
+    console.log(f"Using device:\t'{device}'")
 
     run_name = create_run_name(cfg=cfg, random_state=random_state)
-    logger.info(f"Run name:\t'{run_name}'")
+    console.log(f"Run name:\t'{run_name}'")
 
     # prepare data
     loaders = datasets.prepare_validation_dataloaders(cfg)
     train_loader = loaders[0]
-    test_loader = loaders[-1]
 
     os.makedirs("artifacts", exist_ok=True)
 
@@ -140,17 +144,18 @@ def main(cfg: ImageClassificationConfiguration) -> None:
     if mode == "train":
         run_train(cfg, run_name, loaders, train_loader, device)
 
-    elif mode == "evaluate":
+    elif "eval" in mode:
         run_eval(cfg, run_name, loaders, device)
 
     else:
         raise ValueError(f"Unknown mode: '{mode}'")
 
-    logger.info("Job complete.")
+    console.log("Job complete.")
 
 
 if __name__ == "__main__":
     repl.install(show_locals=False)
     logger = get_logger("rtk.scripts")
+    console = _console
     monai.config.print_config()
     main()

@@ -1,3 +1,4 @@
+from typing import List
 import pandas as pd
 import numpy as np
 from collections import Counter, OrderedDict
@@ -18,6 +19,7 @@ from rtk import *
 from rtk._datasets import *
 from rtk.config import *
 from rtk.utils import (
+    _console,
     get_logger,
     hydra_instantiate,
     load_patient_dataset,
@@ -43,6 +45,7 @@ MIMIC_CLASS_NAMES = [
 ]
 
 logger = get_logger(__name__)
+console = _console
 
 
 def load_mimic_dataset(
@@ -50,7 +53,8 @@ def load_mimic_dataset(
     save_metadata=False,
     subset_to_positive_class=False,
     **kwargs,
-):
+) -> List[ImageDataset]:
+
     dataset_cfg: ImageDatasetConfiguration = kwargs.get("dataset_cfg", None)
     if dataset_cfg is None:
         dataset_cfg = cfg.datasets
@@ -76,7 +80,7 @@ def load_mimic_dataset(
 
     # remove all of the negative class for diffusion
     if subset_to_positive_class:
-        logger.info("Removing all negative classes...")
+        console.log("Removing all negative classes...")
         patient_data = patient_data[patient_data[positive_class] == 1]
 
     train_metadata = patient_data[patient_data["split"] == "train"]
@@ -94,13 +98,13 @@ def load_mimic_dataset(
         )
 
     train_class_counts = get_class_counts(train_metadata, MIMIC_CLASS_NAMES)
-    logger.info(f"Train class counts:\n{train_class_counts}")
+    console.log(f"Train class counts:\n{train_class_counts}")
 
     val_class_counts = get_class_counts(val_metadata, MIMIC_CLASS_NAMES)
-    logger.info(f"Validation class counts:\n{val_class_counts}")
+    console.log(f"Validation class counts:\n{val_class_counts}")
 
     test_class_counts = get_class_counts(test_metadata, MIMIC_CLASS_NAMES)
-    logger.info(f"Test class counts:\n{test_class_counts}")
+    console.log(f"Test class counts:\n{test_class_counts}")
 
     if save_metadata:
         patient_metadata_path = os.path.join(DEFAULT_DATA_PATH, "patients")

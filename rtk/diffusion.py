@@ -50,7 +50,7 @@ import mlflow
 # rtk
 from rtk import datasets
 from rtk.config import *
-from rtk.utils import hydra_instantiate, _strip_target, get_logger
+from rtk.utils import hydra_instantiate, strip_target, get_logger
 
 logger = get_logger(__name__)
 
@@ -60,7 +60,7 @@ def instantiate_torch_metrics(tm_cfg: TorchMetricsConfiguration, remap=True, **k
     metrics = {}
     for metric_cfg in _metrics:
         metric = hydra_instantiate(metric_cfg, **kwargs)
-        target_name = _strip_target(metric_cfg, lower=False)
+        target_name = strip_target(metric_cfg, lower=False)
         if remap:
             try:
                 target_name: str = tm_cfg.remap[target_name]

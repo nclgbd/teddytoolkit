@@ -70,9 +70,10 @@ from generative.networks.schedulers import Scheduler
 from rtk import models
 from rtk._datasets import LABEL_KEYNAME
 from rtk.config import *
-from rtk.utils import get_logger, login, hydra_instantiate
+from rtk.utils import get_logger, _console, stringify_epoch, hydra_instantiate
 
 logger = get_logger(__name__)
+console = _console
 
 
 def create_default_trainer_args(
@@ -82,7 +83,7 @@ def create_default_trainer_args(
     """
     Prepares the data for the ignite trainer.
     """
-    logger.info("Creating default trainer arguments...")
+    console.log("Creating default trainer arguments...")
     trainer_kwargs = dict()
     device: torch.device = kwargs.get("device", torch.device(cfg.device))
     trainer_kwargs["device"] = device
@@ -106,14 +107,14 @@ def add_handlers(
     optimizer: torch.optim.Optimizer = None,
     model: nn.Module = None,
 ):
-    logger.info("Adding additional handlers...")
+    console.log("Adding additional handlers...")
     score_name = ignite_cfg.score_name
     score_sign = -1.0 if score_name == "loss" else 1.0
     score_fn: callable = Checkpoint.get_default_score_fn(score_name, score_sign)
     handlers = []
 
     if ignite_cfg.use_checkpoint:
-        logger.info("Adding checkpoint for model...")
+        console.log("Adding checkpoint for model...")
         global_step_transform = global_step_from_engine(trainer)
         checkpoint_kwargs = ignite_cfg.checkpoint
         to_save = {"model": model}
@@ -134,7 +135,7 @@ def add_handlers(
         handlers.append(checkpoint_handler)
 
     if ignite_cfg.use_early_stopping:
-        logger.info("Adding early stopping...")
+        console.log("Adding early stopping...")
         early_stopping_kwargs = ignite_cfg.early_stopping
         early_stopping_handler: EarlyStopping = hydra.utils.instantiate(
             ignite_cfg.early_stopping,
@@ -150,7 +151,7 @@ def add_handlers(
         handlers.append(early_stopping_handler)
 
     if ignite_cfg.use_lr_scheduler:
-        logger.info("Adding learning rate scheduler...")
+        console.log("Adding learning rate scheduler...")
         lr_scheduler_kwargs = ignite_cfg.lr_scheduler
         lr_scheduler = create_lr_scheduler(
             optimizer, ignite_config=ignite_cfg, **lr_scheduler_kwargs
@@ -163,7 +164,7 @@ def add_handlers(
 
         handlers.append(lr_scheduler_handler)
 
-    logger.info("Additional handlers added.\n")
+    console.log("Additional handlers added.\n")
     return handlers
 
 
@@ -199,12 +200,12 @@ def create_metrics(
     ## Returns:
         `dict`: A dictionary of torch ignite metrics.
     """
-    logger.info("Creating metrics...")
+    console.log("Creating metrics...")
     ignite_config = cfg.ignite
     _metrics = _metrics if _metrics is not None else ignite_config.metrics
     metrics = dict()
     for metric_name, metric_fn_kwargs in _metrics.items():
-        logger.info(f"Creating metric '{metric_name}'...")
+        logger.debug(f"Creating metric '{metric_name}'...")
         flag = False
         for mod in IGNITE_METRICS_MODULE:
             if hasattr(mod, metric_name):
@@ -233,7 +234,7 @@ def create_metrics(
         elif not flag:
             logger.warn(f"Metric '{metric_name}' not found.")
 
-    logger.info("Metrics created.\n")
+    console.log("Metrics created.\n")
     logger.debug(f"Metrics:\n{metrics}\n")
 
     return metrics
@@ -254,12 +255,13 @@ def create_lr_scheduler(
     ## Returns:
         `_LRScheduler`: The LR scheduler instance.
     """
-    logger.info("Creating LR scheduler...")
+    console.log("Creating LR scheduler...")
     lr_scheduler: torch_lr_schedulers._LRScheduler
     lr_scheduler = hydra.utils.instantiate(
         ignite_config.lr_scheduler, optimizer=optimizer, **lr_scheduler_kwargs
     )
-    logger.info("LR scheduler created. LR scheduler summary:\n")
+    console.log("LR scheduler created.")
+    logger.debug("LR scheduler summary:\n")
     inspect(lr_scheduler)
 
     return lr_scheduler
@@ -275,23 +277,22 @@ def build_report(
     """
     Creates a report for the model.
     """
-    logger.info("Generating report...")
+    console.log("Generating report...")
     model_cfg: ModelConfiguration = cfg.get(
         "models", kwargs.get("model_cfg", ModelConfiguration())
     )
     report: str = "# Run summary\n\n"
-
+    epoch_str = stringify_epoch(epoch)
     # classification report
     cr_report_dict = dict()
     cr_df: pd.DataFrame = pd.read_csv(
-        os.path.join("artifacts", split, f"classification_report_epoch={epoch}.csv")
+        os.path.join("artifacts", split, f"classification_report_epoch={epoch_str}.csv")
     )
 
     model_class_name = model_cfg.model._target_.split(".")[-1].lower()
     model_name = model_cfg.model.get("model_name", model_class_name)
     test_auc: float = metrics[f"{split}_roc_auc"]
     test_acc: float = metrics[f"{split}_accuracy"]
-    test_loss: float = metrics[f"{split}_loss"]
     test_precision: float = cr_df["macro avg"][0]
     test_recall: float = cr_df["macro avg"][1]
     test_f1: float = cr_df["macro avg"][2]
@@ -299,7 +300,6 @@ def build_report(
     cr_report_dict["model_name"] = model_name
     cr_report_dict["roc_auc"] = test_auc
     cr_report_dict["accuracy"] = test_acc
-    cr_report_dict["loss"] = test_loss
     cr_report_dict["precision"] = test_precision
     cr_report_dict["recall"] = test_recall
     cr_report_dict["f1-score"] = test_f1
@@ -315,7 +315,7 @@ def build_report(
     # confusion matrix
     cfm_df: pd.DataFrame = (
         pd.read_csv(
-            os.path.join("artifacts", split, f"confusion_matrix_epoch={epoch}.csv")
+            os.path.join("artifacts", split, f"confusion_matrix_epoch={epoch_str}.csv")
         )
         .set_index("Unnamed: 0")
         .rename_axis("", axis=0)
@@ -347,22 +347,29 @@ def _log_metrics(
     evaluator.run(loader)
     metrics = evaluator.state.metrics
     epoch = trainer.state.epoch
+    epoch_str = stringify_epoch(epoch)
+    labels = sorted(list(cfg.datasets.encoding.keys()))
 
-    logger.info(
-        f"epoch: {epoch}, {split} {ignite_cfg.score_name}: {metrics[ignite_cfg.score_name]}"
+    console.print(f"'{split.capitalize()}' results for epoch: {epoch}\n")
+    console.print(
+        f"'{split}' {ignite_cfg.score_name}: {metrics[ignite_cfg.score_name]}"
     )
     y_true = metrics["y_true"]
     y_pred = metrics["y_preds"]
-    labels = sorted(list(cfg.datasets.encoding.keys()))
+
+    # roc_auc
+    roc_auc = roc_auc_score(y_true=y_true, y_score=y_pred)
+    metrics["roc_auc"] = roc_auc
+    console.print(f"'{split}' roc_auc: {roc_auc}")
 
     try:
         image_files = loader.dataset.image_files
         index = pd.Index([os.path.basename(image_file) for image_file in image_files])
         predictions_df = pd.DataFrame({"y_true": y_true, "y_pred": y_pred}, index=index)
-        predictions_df.to_csv(f"artifacts/{split}/predictions_epoch={epoch}.csv")
+        predictions_df.to_csv(f"artifacts/{split}/predictions_epoch={epoch_str}.csv")
 
     except AttributeError as e:
-        pass
+        logger.warn(f"Could not save predictions due to: {e}")
 
     # classification report
     cr_str = classification_report(
@@ -371,7 +378,7 @@ def _log_metrics(
         target_names=labels,
         zero_division=0.0,
     )
-    logger.info(f"{split} classification report:\n{cr_str}")
+    console.print(f"'{split}' classification report:\n{cr_str}")
     cr = classification_report(
         y_true=y_true,
         y_pred=y_pred,
@@ -380,22 +387,26 @@ def _log_metrics(
         zero_division=0.0,
     )
     cr_df = pd.DataFrame.from_dict(cr)
-    cr_df.to_csv(f"artifacts/{split}/classification_report_epoch={epoch}.csv")
+    z_epoch_str = stringify_epoch(epoch)
+    cr_filepath = f"artifacts/{split}/classification_report_epoch={z_epoch_str}.csv"
+    cr_df.to_csv(cr_filepath)
     # confusion matrix
     cfm = confusion_matrix(y_true=y_true, y_pred=y_pred)
     cfm_df = pd.DataFrame(cfm, index=labels, columns=labels)
-    logger.info(f"{split} confusion matrix:\n{cfm_df}")
-    cfm_df.to_csv(f"artifacts/{split}/confusion_matrix_epoch={epoch}.csv")
-
-    # roc_auc
-    roc_auc = roc_auc_score(y_true=y_true, y_score=y_pred)
-    metrics["roc_auc"] = roc_auc
+    console.print(f"'{split}' confusion matrix:\n{cfm_df}")
+    cfm_filepath = f"artifacts/{split}/confusion_matrix_epoch={z_epoch_str}.csv"
+    cfm_df.to_csv(cfm_filepath)
 
     if cfg.job.use_mlflow:
+        console.log("Uploading metrics to MLflow...")
         override = kwargs.get("override", False)
         _log_metrics_to_mlflow(
             cfg, metrics=metrics, split=split, epoch=epoch, override=override
         )
+
+        # log the physical classification and confusion matrices
+        mlflow.log_artifact(cr_filepath, f"{split}/")
+        mlflow.log_artifact(cfm_filepath, f"{split}/")
 
 
 def _log_metrics_to_mlflow(
@@ -458,23 +469,24 @@ def train(
 
     @trainer.on(Events.EPOCH_COMPLETED(every=log_interval))
     def log_metrics(trainer):
-        logger.info("Logging metrics...")
+        console.log("Logging metrics...")
         train_loader, val_loader = loaders[0], loaders[1]
         if not cfg.job.dry_run:
             _log_metrics(cfg, trainer, train_evaluator, train_loader, "train")
         else:
-            logger.debug("Dry run, skipping train evaluation.")
+            logger.warn("Dry run, skipping train evaluation.")
 
         _log_metrics(cfg, trainer, val_evaluator, val_loader, "val")
 
     @trainer.on(Events.COMPLETED)
     def log_test_metrics(trainer):
-        logger.info("Logging test metrics...")
+        console.log("Logging test metrics...")
         test_loader = loaders[2]
         _log_metrics(cfg, trainer, test_evaluator, test_loader, "test")
 
     @trainer.on(Events.EXCEPTION_RAISED)
     def handle_exception_raised(error: Exception):
+        logger.warn("Exception raised, ending run...")
         mlflow.end_run()
 
     return trainer, [train_evaluator, val_evaluator, test_evaluator]
@@ -491,7 +503,7 @@ def evaluate(
 ):
     evaluator = create_supervised_evaluator(model, metrics=metrics, device=device)
     ProgressBar().attach(evaluator)
-    _log_metrics(cfg, trainer, evaluator, loader, "", override=True)
+    _log_metrics(cfg, trainer, evaluator, loader, "test", override=True)
 
 
 def prepare_run(
@@ -501,8 +513,7 @@ def prepare_run(
     mode: str = "train",
     **kwargs,
 ):
-    logger.info("Preparing ignite run...")
-    ignite_cfg: IgniteConfiguration = cfg.ignite
+    console.log("Preparing ignite run...")
 
     ## prepare run
     default_trainer_kwargs = {}
@@ -516,7 +527,6 @@ def prepare_run(
     trainer: Engine
     evaluators: list
     model: nn.Module = trainer_args["model"]
-    # TODO: make the engines from monai.engines
     if mode == "train":
         trainer, evaluators = train(
             cfg=cfg,

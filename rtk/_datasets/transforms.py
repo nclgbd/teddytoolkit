@@ -1,10 +1,7 @@
-"""Custom transforms for the datasets."""
-
-from PIL import Image
-
+"""Custom transforms for formatted datasets."""
 
 # torch
-from torchvision.transforms import PILToTensor, Lambda, ToPILImage
+from torchvision.transforms import Lambda
 import torch
 import torchxrayvision as xrv
 
@@ -18,9 +15,6 @@ def RGBToGrayscale():
 
 
 def __convert_one_channel_to_three(x: torch.Tensor, mode="BGR"):
-    # x = ToPILImage()(x)
-    # x = x.convert(mode)
-    # return PILToTensor()(x)
     x = x.repeat(3, 1, 1)
     return x
 

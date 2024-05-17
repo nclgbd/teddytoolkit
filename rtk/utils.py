@@ -90,7 +90,10 @@ def get_console(**kwargs) -> Console:
 
     """
 
-    return kwargs.get("console", Console(**kwargs))
+    return kwargs.get("console", Console(record=True, **kwargs))
+
+
+_console = get_console()
 
 
 def get_logger(name: str = None, level: int = logging.INFO):
@@ -111,7 +114,7 @@ def get_logger(name: str = None, level: int = logging.INFO):
         rich_tracebacks=True,
         level=level,
         log_time_format=LOG_TIME_FORMAT,
-        console=get_console(),
+        console=_console,
     )
     rich_handler.setFormatter(COLOR_LOGGER_FORMAT)
     logger.addHandler(rich_handler)
@@ -142,7 +145,7 @@ def load_patient_dataset(
     * `pd.DataFrame`: The patient dataset.
     """
 
-    _logger.info(f"Patient dataset:\t\t'{patient_data_name}'")
+    _console.log(f"Patient dataset: '{patient_data_name}'")
     _patients_csv_path = os.path.join(
         data_dir, "patients", f"{patient_data_name}:{patient_data_version}.csv"
     )
@@ -184,20 +187,20 @@ def load_scan_dataset(
     * `data_dir` (`os.PathLike`, optional): The path to the data directory. Defaults to `DEFAULT_DATA_PATH`.
     * `mount` (`bool`, optional): Whether to mount the dataset or download it. Defaults to `True`.
     """
-    _logger.info(f"Scan dataset:\t\t'{scan_dataset_name}'\n")
+    _console.log(f"Scan dataset: '{scan_dataset_name}'\n")
 
     scan_dataset: Dataset = Dataset.get_by_name(
         ws, name=scan_dataset_name, version=scan_dataset_version
     )
     if mount:
         scan_mount = scan_dataset.mount()
-        _logger.info(f"Mounting scan dataset to '{scan_mount.mount_point}'.")
+        _console.log(f"Mounting scan dataset to '{scan_mount.mount_point}'.")
         return scan_mount
     else:
         target_path = os.path.join(
             data_dir, "scans", f"{scan_dataset_name}:{scan_dataset_version}"
         )
-        _logger.info(f"Downloading scan dataset to '{data_dir}'.")
+        _console.log(f"Downloading scan dataset to '{data_dir}'.")
         scan_dataset.download(target_path=target_path, overwrite=True)
         return scan_dataset
 
@@ -253,12 +256,16 @@ def parse_args(args):
     return args
 
 
-def _strip_target(_dict: dict, lower=False):
+def strip_target(_dict: dict, lower=False):
     target_name: str = _dict["_target_"].split(".")[-1]
     if lower:
         target_name = target_name.lower()
     return target_name
 
 
-_console = get_console()
+def stringify_epoch(epoch: int, width: int = 5) -> str:
+    z_epoch_str = str(epoch).zfill(width)
+    return z_epoch_str
+
+
 _logger = get_logger(__name__)

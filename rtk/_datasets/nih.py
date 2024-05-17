@@ -19,10 +19,11 @@ import monai
 from rtk import *
 from rtk._datasets import *
 from rtk.config import *
-from rtk.utils import get_logger
+from rtk.utils import get_logger, _console
 
 
 logger = get_logger(__name__)
+console = _console
 
 MINORITY_CLASS = "Hernia"
 MINORITY_CLASS_COUNT = 227
@@ -89,7 +90,7 @@ def load_nih_dataset(
 
     # remove all of the negative class for diffusion
     if subset_to_positive_class:
-        logger.info("Removing all negative classes...")
+        console.log("Removing all negative classes...")
         nih_metadata = nih_metadata[nih_metadata[positive_class] == 1]
 
     # train split
@@ -169,7 +170,7 @@ def load_nih_dataset(
     )
 
     train_class_counts = get_class_counts(train_metadata, NIH_CLASS_NAMES)
-    logger.info(f"Train class counts:\n{train_class_counts}")
+    console.log(f"Train class counts:\n{train_class_counts}")
 
     # val split
     if val_metadata.index.dtype == "int64":
@@ -195,7 +196,7 @@ def load_nih_dataset(
     )
 
     val_class_counts = get_class_counts(val_metadata, NIH_CLASS_NAMES)
-    logger.info(f"Validation class counts:\n{val_class_counts}")
+    console.log(f"Validation class counts:\n{val_class_counts}")
 
     # test split
     with open(os.path.join(scan_path, "test_list.txt"), "r") as f:
@@ -213,7 +214,7 @@ def load_nih_dataset(
     )
 
     test_class_counts = get_class_counts(test_metadata, NIH_CLASS_NAMES)
-    logger.info(f"Test class counts:\n{test_class_counts}")
+    console.log(f"Test class counts:\n{test_class_counts}")
     if save_metadata:
         train_metadata.to_csv(
             os.path.join(DEFAULT_DATA_PATH, "patients", "nih_train_metadata.csv")

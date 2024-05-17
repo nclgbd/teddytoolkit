@@ -8,15 +8,16 @@ from omegaconf import DictConfig
 import mlflow
 
 # rtk
-from rtk.utils import get_logger, _strip_target, login
+from rtk.utils import get_logger, strip_target, login, _console
 from rtk.config import *
 
 logger = get_logger(__name__)
+console = _console
 
 
 def _determine_model_name(cfg: ImageClassificationConfiguration, **kwargs):
     model_cfg = cfg.models
-    model_name: str = _strip_target(model_cfg.model, lower=True)
+    model_name: str = strip_target(model_cfg.model, lower=True)
     if model_name == "from_pretrained":
         model_name = model_cfg.model.pretrained_model_name_or_path.split("/")[-1]
 
@@ -35,7 +36,7 @@ def prepare_mlflow_environment(cfg: BaseConfiguration, **kwargs):
     experiment_name = cfg.mlflow.get(
         "experiment_name", HydraConfig.get().job.config_name
     )
-    logger.info(f"MLflow experiment name:\t'{experiment_name}'")
+    console.print(f"MLflow experiment name:\t'{experiment_name}'")
     os.environ["MLFLOW_EXPERIMENT_NAME"] = experiment_name
     return tracking_uri, experiment_name
 
@@ -110,12 +111,12 @@ def get_params(cfg: ImageClassificationConfiguration, **kwargs):
         params.update(model_cfg.model)
         # criterion parameters
         params["criterion_name"] = params.get(
-            "criterion", _strip_target(model_cfg.criterion)
+            "criterion", strip_target(model_cfg.criterion)
         )
         params.update(model_cfg.criterion)
         # optimizer parameters
         params["optimizer_name"] = params.get(
-            "optimizer", _strip_target(model_cfg.optimizer)
+            "optimizer", strip_target(model_cfg.optimizer)
         )
         params.update(model_cfg.optimizer)
 
@@ -145,12 +146,13 @@ def log_mlflow_params(cfg: BaseConfiguration, **kwargs):
     """
     # tags = cfg.get("tags", {})
     params = get_params(cfg, **kwargs)
-    logger.info("Logged parameters:\n{}".format(OmegaConf.to_yaml(params)))
+    console.log("Logged parameters:\n{}".format(OmegaConf.to_yaml(params)))
     mlflow.log_params(params)
+    mlflow.log_artifact(".hydra")
 
 
 def prepare_mlflow(cfg: BaseConfiguration, return_tracking_uri=False):
-    logger.info("Preparing MLflow run...")
+    console.log("Preparing MLflow run...")
     mlflow_cfg = cfg.mlflow
     logger.debug("Using AzureML for experiment tracking...")
     ws = login()
