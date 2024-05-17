@@ -12,3 +12,24 @@ LABEL_KEYNAME = "labels"
 COLUMN_NAMES = [IMAGE_KEYNAME, LABEL_KEYNAME]
 
 DEFAULT_MODEL_PATH = os.path.join(DEFAULT_CACHE_DIR, "models")
+
+FULL_DATA_CLASS_NAMES = [
+    "Atelectasis",
+    "Cardiomegaly",
+    "Consolidation",
+    "Edema",
+    "Effusion",
+    "Emphysema",
+    "Enlarged Cardiomediastinum",
+    "Fibrosis",
+    "Fracture",
+    "Hernia",
+    "Infiltration",
+    "Lung Lesion",
+    "Lung Opacity",
+    "Mass",
+    "Nodule",
+    "Pleural_Thickening",
+    "Pneumonia",
+    "Pneumothorax",
+]

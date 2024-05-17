@@ -94,13 +94,13 @@ def load_mimic_dataset(
         )
 
     train_class_counts = get_class_counts(train_metadata, MIMIC_CLASS_NAMES)
-    logger.info(f"Train class counts:\n{train_class_counts.to_markdown()}")
+    logger.info(f"Train class counts:\n{train_class_counts}")
 
     val_class_counts = get_class_counts(val_metadata, MIMIC_CLASS_NAMES)
-    logger.info(f"Validation class counts:\n{val_class_counts.to_markdown()}")
+    logger.info(f"Validation class counts:\n{val_class_counts}")
 
     test_class_counts = get_class_counts(test_metadata, MIMIC_CLASS_NAMES)
-    logger.info(f"Test class counts:\n{test_class_counts.to_markdown()}")
+    logger.info(f"Test class counts:\n{test_class_counts}")
 
     if save_metadata:
         patient_metadata_path = os.path.join(DEFAULT_DATA_PATH, "patients")

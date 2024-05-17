@@ -51,25 +51,25 @@ def create_run_name(cfg: ImageClassificationConfiguration, random_state: int, **
     model_name = _determine_model_name(cfg, **kwargs)
     run_name: str = model_cfg.model.get("model_name", model_name.lower())
 
-    if tags.get("type", "train") == "train" or cfg.mode == "train":
-        criterion_name: str = model_cfg.criterion._target_.split(".")[-1].lower()
-        lr: float = model_cfg.optimizer.lr
-        optimizer_name: str = model_cfg.optimizer._target_.split(".")[-1].lower()
-        weight_decay: float = model_cfg.optimizer.get("weight_decay", 0.0)
-        run_name += f";optimizer={optimizer_name};lr={lr};weight_decay={weight_decay};criterion={criterion_name}"
+    # if tags.get("type", "train") == "train" or cfg.mode == "train":
+    #     criterion_name: str = model_cfg.criterion._target_.split(".")[-1].lower()
+    #     lr: float = model_cfg.optimizer.lr
+    #     optimizer_name: str = model_cfg.optimizer._target_.split(".")[-1].lower()
+    #     weight_decay: float = model_cfg.optimizer.get("weight_decay", 0.0)
+    #     run_name += f";optimizer={optimizer_name};lr={lr};weight_decay={weight_decay};criterion={criterion_name}"
 
-        if preprocessing_cfg.use_sampling:
-            sample_to_value = preprocessing_cfg.sampling_method["sample_to_value"]
-            run_name += f";sample_to_value={sample_to_value}"
+    #     if preprocessing_cfg.use_sampling:
+    #         sample_to_value = preprocessing_cfg.sampling_method["sample_to_value"]
+    #         run_name += f";sample_to_value={sample_to_value}"
 
-        run_name += f";pretrained={str(job_cfg.use_pretrained).lower()}"
+    #     run_name += f";pretrained={str(job_cfg.use_pretrained).lower()}"
 
-    elif tags.get("type", "train") == "eval" or cfg.mode == "evaluate":
-        pretrained_model = model_cfg.get("load_model", {}).get("name", "")
-        run_name += f";pretrained_model={pretrained_model}"
+    # elif tags.get("type", "train") == "eval" or cfg.mode == "evaluate":
+    #     pretrained_model = model_cfg.get("load_model", {}).get("name", "")
+    #     run_name += f";pretrained_model={pretrained_model}"
 
-    elif tags.get("type", "train") == "diff" or cfg.mode == "diffusion":
-        pass
+    # elif tags.get("type", "train") == "diff" or cfg.mode == "diffusion":
+    #     pass
 
     date = cfg.date
     postfix: str = cfg.postfix

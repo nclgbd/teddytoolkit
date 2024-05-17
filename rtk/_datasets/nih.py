@@ -169,7 +169,7 @@ def load_nih_dataset(
     )
 
     train_class_counts = get_class_counts(train_metadata, NIH_CLASS_NAMES)
-    logger.info(f"Train class counts:\n{train_class_counts.to_markdown()}")
+    logger.info(f"Train class counts:\n{train_class_counts}")
 
     # val split
     if val_metadata.index.dtype == "int64":
@@ -195,7 +195,7 @@ def load_nih_dataset(
     )
 
     val_class_counts = get_class_counts(val_metadata, NIH_CLASS_NAMES)
-    logger.info(f"Validation class counts:\n{val_class_counts.to_markdown()}")
+    logger.info(f"Validation class counts:\n{val_class_counts}")
 
     # test split
     with open(os.path.join(scan_path, "test_list.txt"), "r") as f:
@@ -213,7 +213,7 @@ def load_nih_dataset(
     )
 
     test_class_counts = get_class_counts(test_metadata, NIH_CLASS_NAMES)
-    logger.info(f"Test class counts:\n{test_class_counts.to_markdown()}")
+    logger.info(f"Test class counts:\n{test_class_counts}")
     if save_metadata:
         train_metadata.to_csv(
             os.path.join(DEFAULT_DATA_PATH, "patients", "nih_train_metadata.csv")

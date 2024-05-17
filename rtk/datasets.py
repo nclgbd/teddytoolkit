@@ -1,5 +1,6 @@
 # imports
 import logging
+from typing import List
 import hydra
 import numpy as np
 import os
@@ -11,7 +12,6 @@ from matplotlib import pyplot as plt
 from omegaconf import OmegaConf
 from random import randint
 from rich import inspect
-from tqdm import tqdm
 
 import datasets
 import transformers
@@ -20,14 +20,9 @@ import transformers
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, MultiLabelBinarizer
 
-# imblean
-from imblearn.datasets import make_imbalance
-from imblearn.over_sampling import RandomOverSampler
-
 # torch
 import torch
 from torch.utils.data import DataLoader
-from torch.utils.data.distributed import DistributedSampler
 from torchvision.io import read_image
 
 # :huggingface:
@@ -36,7 +31,7 @@ from transformers import AutoTokenizer
 # monai
 import monai
 import monai.transforms as monai_transforms
-from monai.data import ImageDataset, ThreadDataLoader, CacheDataset, PersistentDataset
+from monai.data import ImageDataset, CacheDataset, PersistentDataset
 
 # rtk
 from rtk import *
@@ -49,7 +44,6 @@ from rtk.config import *
 from rtk.utils import (
     get_logger,
     hydra_instantiate,
-    yaml_to_configuration,
 )
 
 logger = get_logger(__name__, level=logging.DEBUG)
@@ -491,13 +485,13 @@ def instantiate_image_dataset(
     save_metadata=False,
     return_metadata=False,
     **kwargs,
-):
+) -> List[ImageDataset]:
     """ """
     logger.info("Instantiating image dataset...")
     dataset_cfg: ImageDatasetConfiguration = kwargs.get(
         "dataset_cfg", cfg.datasets if cfg is not None else None
     )
-    preprocessing_cfg = dataset_cfg.preprocessing
+    # preprocessing_cfg = dataset_cfg.preprocessing
     set_labels_from_encoding(cfg=cfg)
 
     dataset_name = dataset_cfg.name
@@ -560,7 +554,7 @@ def combine_datasets(
     for dc in dataset_configs:
         d_cfg = OmegaConf.load(dc["filepath"])
         loader = hydra_instantiate(dc["loader"])
-        full_datasets = loader(
+        full_datasets: List[ImageDataset] = loader(
             random_state=cfg.random_state,
             dataset_cfg=d_cfg,
             preprocessing_cfg=dataset_cfg.preprocessing,

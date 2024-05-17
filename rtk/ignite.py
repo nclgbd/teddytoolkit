@@ -266,7 +266,11 @@ def create_lr_scheduler(
 
 
 def build_report(
-    cfg: ImageClassificationConfiguration, metrics: dict, epoch: int, split: str = "test", **kwargs
+    cfg: ImageClassificationConfiguration,
+    metrics: dict,
+    epoch: int,
+    split: str = "test",
+    **kwargs,
 ):
     """
     Creates a report for the model.
@@ -349,7 +353,7 @@ def _log_metrics(
     )
     y_true = metrics["y_true"]
     y_pred = metrics["y_preds"]
-    labels = cfg.datasets.labels
+    labels = sorted(list(cfg.datasets.encoding.keys()))
 
     try:
         image_files = loader.dataset.image_files
@@ -480,7 +484,7 @@ def evaluate(
     cfg: ImageClassificationConfiguration,
     trainer: Engine,
     model: nn.Module,
-    loader: DataLoader,  # {"test": test_loader}
+    loader: DataLoader,
     metrics: dict,
     device: torch.device,
     **kwargs,
