@@ -50,6 +50,7 @@ console = _console
 
 def load_mimic_dataset(
     cfg: ImageConfiguration = None,
+    return_metadata=False,
     save_metadata=False,
     subset_to_positive_class=False,
     **kwargs,
@@ -119,6 +120,9 @@ def load_mimic_dataset(
         test_metadata.to_csv(
             os.path.join(patient_metadata_path, f"mimic_test_metadata.csv")
         )
+
+    if return_metadata:
+        return train_metadata, val_metadata, test_metadata
 
     def __build_mimic_data_split(
         dataset_cfg: DatasetConfiguration,

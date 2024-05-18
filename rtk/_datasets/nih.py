@@ -65,7 +65,6 @@ def load_nih_dataset(
         dataset_cfg = cfg.datasets
 
     scan_path = dataset_cfg.scan_data
-    index = kwargs.get("index", dataset_cfg.index)
     target = kwargs.get("target", dataset_cfg.target)
 
     preprocessing_cfg = kwargs.get("preprocessing_cfg", None)
@@ -93,7 +92,7 @@ def load_nih_dataset(
         console.log("Removing all negative classes...")
         nih_metadata = nih_metadata[nih_metadata[positive_class] == 1]
 
-    # train split
+    # split metadata
     with open(os.path.join(scan_path, "train_val_list.txt"), "r") as f:
         train_val_list = [idx.strip() for idx in f.readlines()]
 
@@ -108,13 +107,12 @@ def load_nih_dataset(
     )
     y_train = y_train.reshape(-1, 1)
     y_val = y_val.reshape(-1, 1)
+
+    # train split
     train_metadata = np.concatenate((X_train, y_train), axis=1)
     columns = X_columns.values.tolist()
     columns.append(target)
     train_metadata = pd.DataFrame(train_metadata, columns=columns)
-
-    val_metadata = np.concatenate((X_val, y_val), axis=1)
-    val_metadata = pd.DataFrame(val_metadata, columns=columns)
     if preprocessing_cfg.use_sampling and subset_to_positive_class == False:
         train_metadata = resample_to_value(
             train_metadata,
@@ -124,8 +122,33 @@ def load_nih_dataset(
             sampling_strategy=target,
             random_state=random_state,
         )
+    train_class_counts = get_class_counts(train_metadata, NIH_CLASS_NAMES)
+    console.log(f"Train class counts:\n{train_class_counts}")
 
-    # prepare transforms
+    # val split
+    val_metadata = np.concatenate((X_val, y_val), axis=1)
+    val_metadata = pd.DataFrame(val_metadata, columns=columns)
+
+    val_class_counts = get_class_counts(val_metadata, NIH_CLASS_NAMES)
+    console.log(f"Validation class counts:\n{val_class_counts}")
+
+    # test split
+    with open(os.path.join(scan_path, "test_list.txt"), "r") as f:
+        test_list = [idx.strip() for idx in f.readlines()]
+    test_metadata = nih_metadata[nih_metadata.index.isin(test_list)]
+
+    test_class_counts = get_class_counts(test_metadata, NIH_CLASS_NAMES)
+    console.log(f"Test class counts:\n{test_class_counts}")
+
+    if return_metadata:
+        return (
+            train_metadata,
+            val_metadata,
+            test_metadata,
+        )
+
+    # create datasets
+    ## prepare transforms
     train_transforms = kwargs.get(
         "train_transforms",
         None,
@@ -145,8 +168,8 @@ def load_nih_dataset(
             cfg,
             use_transforms=False,
         )
-
-    # train split
+    ## train
+    train_labels = list(train_metadata[target].values.tolist())
     if train_metadata.index.dtype == "int64":
         train_image_files = np.array(
             [
@@ -161,7 +184,7 @@ def load_nih_dataset(
                 for filename in train_metadata.index.values
             ]
         )
-    train_labels = list(train_metadata[target].values.tolist())
+
     train_dataset: monai.data.Dataset = instantiate(
         config=dataset_cfg.instantiate,
         image_files=list(train_image_files),
@@ -169,10 +192,8 @@ def load_nih_dataset(
         transform=train_transforms,
     )
 
-    train_class_counts = get_class_counts(train_metadata, NIH_CLASS_NAMES)
-    console.log(f"Train class counts:\n{train_class_counts}")
-
-    # val split
+    ## validation
+    val_labels = val_metadata[target].values.tolist()
     if val_metadata.index.dtype == "int64":
         val_image_files = np.array(
             [
@@ -187,7 +208,6 @@ def load_nih_dataset(
                 for filename in val_metadata.index.values
             ]
         )
-    val_labels = val_metadata[target].values.tolist()
     val_dataset = monai.data.Dataset = instantiate(
         config=dataset_cfg.instantiate,
         image_files=list(val_image_files),
@@ -195,17 +215,11 @@ def load_nih_dataset(
         transform=train_transforms,
     )
 
-    val_class_counts = get_class_counts(val_metadata, NIH_CLASS_NAMES)
-    console.log(f"Validation class counts:\n{val_class_counts}")
-
-    # test split
-    with open(os.path.join(scan_path, "test_list.txt"), "r") as f:
-        test_list = [idx.strip() for idx in f.readlines()]
-    test_metadata = nih_metadata[nih_metadata.index.isin(test_list)]
+    ## test
+    test_labels = test_metadata[target].values.tolist()
     test_image_files = np.array(
         [os.path.join(scan_path, filename) for filename in test_metadata.index.values]
     )
-    test_labels = test_metadata[target].values.tolist()
     test_dataset = monai.data.Dataset = instantiate(
         config=dataset_cfg.instantiate,
         image_files=list(test_image_files),
@@ -213,8 +227,6 @@ def load_nih_dataset(
         transform=eval_transforms,
     )
 
-    test_class_counts = get_class_counts(test_metadata, NIH_CLASS_NAMES)
-    console.log(f"Test class counts:\n{test_class_counts}")
     if save_metadata:
         train_metadata.to_csv(
             os.path.join(DEFAULT_DATA_PATH, "patients", "nih_train_metadata.csv")
@@ -226,15 +238,4 @@ def load_nih_dataset(
             os.path.join(DEFAULT_DATA_PATH, "patients", "nih_test_metadata.csv")
         )
 
-    return (
-        (
-            train_dataset,
-            val_dataset,
-            test_dataset,
-            train_metadata,
-            val_metadata,
-            test_metadata,
-        )
-        if return_metadata
-        else (train_dataset, val_dataset, test_dataset)
-    )
+    return train_dataset, val_dataset, test_dataset

@@ -493,26 +493,31 @@ def instantiate_image_dataset(
     dataset_cfg: ImageDatasetConfiguration = kwargs.get(
         "dataset_cfg", cfg.datasets if cfg is not None else None
     )
-    # preprocessing_cfg = dataset_cfg.preprocessing
     set_labels_from_encoding(cfg=cfg)
 
     dataset_name = dataset_cfg.name
 
     if dataset_name == "nih" or dataset_name == "cxr14":
         loaded_datasets = load_nih_dataset(
-            cfg=cfg, save_metadata=save_metadata, **kwargs
+            cfg=cfg,
+            return_metadata=return_metadata,
+            save_metadata=save_metadata,
+            **kwargs,
         )
 
     elif dataset_name == "mimic-cxr":
         loaded_datasets = load_mimic_dataset(
-            cfg=cfg, save_metadata=save_metadata, **kwargs
+            cfg=cfg,
+            return_metadata=return_metadata,
+            save_metadata=save_metadata,
+            **kwargs,
         )
 
     elif dataset_name == "pediatrics":
         loaded_datasets = load_pediatrics_dataset(
             cfg=cfg,
-            save_metadata=save_metadata,
             return_metadata=return_metadata,
+            save_metadata=save_metadata,
         )
 
     elif dataset_name == "ixi":
@@ -535,7 +540,11 @@ def instantiate_image_dataset(
         )
         train_dataset, test_dataset = combined_datasets[0], combined_datasets[-1]
         if len(combined_datasets) == 3:
-            loaded_datasets: list = train_dataset, combined_datasets[1], test_dataset
+            loaded_datasets: list = (
+                train_dataset,
+                combined_datasets[1],
+                test_dataset,
+            )
         else:
             loaded_datasets: list = train_dataset, test_dataset
 

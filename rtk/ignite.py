@@ -387,6 +387,7 @@ def _log_metrics(
         zero_division=0.0,
     )
     cr_df = pd.DataFrame.from_dict(cr)
+    metrics["f1_score"] = cr_df["macro avg"][2]
     z_epoch_str = stringify_epoch(epoch)
     cr_filepath = f"artifacts/{split}/classification_report_epoch={z_epoch_str}.csv"
     cr_df.to_csv(cr_filepath)
