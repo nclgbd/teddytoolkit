@@ -33,3 +33,4 @@ FULL_DATA_CLASS_NAMES = [
     "Pneumonia",
     "Pneumothorax",
 ]
+_MAX_RAND_INT = 8192

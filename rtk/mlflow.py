@@ -109,11 +109,6 @@ def get_params(cfg: ImageClassificationConfiguration, **kwargs):
         model_name = _determine_model_name(cfg, **kwargs)
         params["model_name"] = model_name
         params.update(model_cfg.model)
-        # criterion parameters
-        params["criterion_name"] = params.get(
-            "criterion", strip_target(model_cfg.criterion)
-        )
-        params.update(model_cfg.criterion)
         # optimizer parameters
         params["optimizer_name"] = params.get(
             "optimizer", strip_target(model_cfg.optimizer)

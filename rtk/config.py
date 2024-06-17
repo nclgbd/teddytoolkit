@@ -210,7 +210,7 @@ class SklearnConfiguration:
 
 @dataclass
 class JobConfiguration:
-
+    checkpointing_steps: int = 500
     # whether to run in dry run mode
     dry_run: bool = True
     # the number of iterations within each epoch
@@ -242,6 +242,8 @@ class ModelConfiguration:
 @dataclass
 class DiffusionModelConfiguration(ModelConfiguration):
     scheduler: DictConfig = field(default_factory=lambda: DictConfig({"_target_": ""}))
+    lr_scheduler: str = "cosine"
+    lr_warmup_steps: int = 500
 
 
 @dataclass

@@ -19,6 +19,8 @@ from torchmetrics.image.fid import FrechetInceptionDistance
 from torchmetrics.image.inception import InceptionScore
 from torchmetrics.image.ssim import StructuralSimilarityIndexMeasure
 
+import monai
+
 # :huggingface:
 import accelerate
 from accelerate import Accelerator
@@ -48,7 +50,7 @@ from peft.utils import get_peft_model_state_dict
 import mlflow
 
 # rtk
-from rtk import datasets
+from rtk import datasets, _MAX_RAND_INT
 from rtk.config import *
 from rtk.utils import hydra_instantiate, strip_target, get_logger
 
@@ -84,7 +86,9 @@ def instantiate_torch_metrics(tm_cfg: TorchMetricsConfiguration, remap=True, **k
     return metrics
 
 
-def prepare_accelerator(args: TextToImageConfiguration, device_placement: bool = False):
+def prepare_accelerator(
+    args: TextToImageConfiguration, device_placement: bool = False, seed: int = None
+):
     non_ema_revision = None if "non_ema_revision" not in args else args.non_ema_revision
     if non_ema_revision is not None:
         deprecate(
@@ -102,9 +106,11 @@ def prepare_accelerator(args: TextToImageConfiguration, device_placement: bool =
     )
 
     # device_placement = False
+    gradient_accumulation_steps = args.get("gradient_accumulation_steps", 1)
+    mixed_precision = args.get("mixed_precision", "fp16")
     accelerator: Accelerator = Accelerator(
-        gradient_accumulation_steps=args.gradient_accumulation_steps,
-        mixed_precision=args.mixed_precision,
+        gradient_accumulation_steps=gradient_accumulation_steps,
+        mixed_precision=mixed_precision,
         project_config=accelerator_project_config,
         device_placement=device_placement,
     )
@@ -116,10 +122,17 @@ def prepare_accelerator(args: TextToImageConfiguration, device_placement: bool =
     logger.info(f"Using device:\t'{device}'")
 
     # If passed along, set the training seed now.
-    if args.seed is not None:
-        set_seed(args.seed)
+    seed: int = (
+        args.get("random_state", random.randint(0, _MAX_RAND_INT))
+        if seed is None
+        else seed
+    )
+    args.random_state = seed
 
-    logger.info(f"Using seed:\t{args.seed}")
+    set_seed(seed)
+    monai.utils.set_determinism(seed=seed)
+
+    logger.info(f"Using seed:\t{args.random_state}")
 
     # Handle the repository creation
     if accelerator.is_main_process:
@@ -131,10 +144,10 @@ def prepare_accelerator(args: TextToImageConfiguration, device_placement: bool =
     weight_dtype: torch.dtype = torch.float32
     if accelerator.mixed_precision == "fp16":
         weight_dtype = torch.float16
-        args.mixed_precision = accelerator.mixed_precision
+        mixed_precision = accelerator.mixed_precision
     elif accelerator.mixed_precision == "bf16":
         weight_dtype = torch.bfloat16
-        args.mixed_precision = accelerator.mixed_precision
+        mixed_precision = accelerator.mixed_precision
 
     return accelerator, weight_dtype, device
 
@@ -448,16 +461,15 @@ def generate_samples(
         # Save the images
         test_dir = os.path.join("artifacts", "samples")
         os.makedirs(test_dir, exist_ok=True)
-        img_path = f"{test_dir}/{(epoch+1):05d}.png"
+        img_path = f"{test_dir}/{(epoch+1):06d}.png"
         image_grid.save(img_path)
-        mlflow.log_artifact(img_path)
+        mlflow.log_artifact(img_path, test_dir)
 
     return samples_images
 
 
 def forward_diffusion(
     clean_images: torch.Tensor,
-    model_cfg: ImageClassificationConfiguration,
     noise_scheduler: DDPMScheduler,
 ):
     # Sample noise to add to the images
