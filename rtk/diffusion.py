@@ -334,7 +334,7 @@ def evaluate(
 ):
     logger.info("Evaluating model...")
     if True:
-        logger.warn("Skipping metric evaluation")
+        logger.debug("Skipping metric evaluation")
 
         num_samples = (
             num_samples
@@ -430,7 +430,7 @@ def generate_samples(
 ):
     logger.info("Generating samples...")
     generator = (
-        torch.Generator(device=device).manual_seed(cfg.random_state)
+        torch.Generator(device=device).manual_seed(epoch)
         if generator is None
         else generator
     )

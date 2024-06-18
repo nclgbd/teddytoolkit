@@ -273,6 +273,7 @@ class ImageClassificationConfiguration(ImageConfiguration):
 
 @dataclass
 class DiffusionConfiguration(ImageClassificationConfiguration):
+    training_args: TrainingArguments = field(default_factory=lambda: TrainingArguments)
     torchmetrics: TorchMetricsConfiguration = field(
         default_factory=TorchMetricsConfiguration
     )
