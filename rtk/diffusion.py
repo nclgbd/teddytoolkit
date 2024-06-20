@@ -333,14 +333,11 @@ def evaluate(
     **kwargs,
 ):
     logger.info("Evaluating model...")
+    batch_size: int = cfg.datasets.dataloader.batch_size
     if True:
         logger.debug("Skipping metric evaluation")
 
-        num_samples = (
-            num_samples
-            if num_samples is not None
-            else cfg.datasets.dataloader.batch_size
-        )
+        num_samples = num_samples if num_samples is not None else batch_size
         generator = torch.Generator(device=device).manual_seed(epoch)
         fake_images = generate_samples(
             cfg,
@@ -435,7 +432,7 @@ def generate_samples(
         else generator
     )
 
-    batch_size = cfg.datasets.dataloader.batch_size
+    batch_size: int = cfg.datasets.dataloader.batch_size
     samples_images = []
 
     # The default pipeline output type is `List[PIL.Image]`
@@ -455,8 +452,8 @@ def generate_samples(
 
     if save_images:
         # Make a grid out of the images
-        random_samples = random.choices(samples_images, k=batch_size)
-        image_grid = make_grid(random_samples)
+        # random_samples = random.choices(samples_images, k=batch_size)
+        image_grid = make_grid(samples_images[:num_samples])
 
         # Save the images
         test_dir = os.path.join("artifacts", "samples")
