@@ -48,6 +48,47 @@ logger = get_logger(__name__)
 console = _console
 
 
+def build_patient_metadata(cfg: ImageConfiguration, **kwargs):
+    scan_data = cfg.datasets.scan_data
+
+    # load in mapping file
+    df_records = pd.read_csv(
+        os.path.join(scan_data, "cxr-record-list.csv.gz"), header=0, sep=","
+    )
+
+    n = df_records.shape[0]
+    console.print(f"{n} DICOMs in MIMIC-CXR v2.0.0.")
+
+    n = df_records["study_id"].nunique()
+    console.print(f"  {n} studies.")
+
+    n = df_records["subject_id"].nunique()
+    console.print(f"  {n} subjects.")
+
+    df_split = pd.read_csv(os.path.join(scan_data, "mimic-cxr-2.0.0-split.csv.gz"))
+    df_split.info()
+    df_metadata = pd.read_csv(
+        os.path.join(scan_data, "mimic-cxr-2.0.0-metadata.csv.gz")
+    )
+    df_metadata.info()
+    drop_columns = [
+        "subject_id",
+        "study_id",
+        "PerformedProcedureStepDescription",
+        "Rows",
+        "Columns",
+        "StudyDate",
+        "StudyTime",
+        "ProcedureCodeSequence_CodeMeaning",
+        "ViewCodeSequence_CodeMeaning",
+        "PatientOrientationCodeSequence_CodeMeaning",
+    ]
+    patient_df = pd.merge(
+        df_records, df_metadata.drop(columns=drop_columns), on="dicom_id"
+    ).set_index("dicom_id")
+    return patient_df
+
+
 def load_mimic_dataset(
     cfg: ImageConfiguration = None,
     return_metadata=False,

@@ -266,9 +266,12 @@ class ImageClassificationConfiguration(ImageConfiguration):
     models: ModelConfiguration = field(default_factory=ModelConfiguration())
 
     # module specific configurations
-    ignite: IgniteConfiguration = field(default_factory=lambda: IgniteConfiguration())
     mlflow: DictConfig = field(default_factory=lambda: DictConfig({}))
+    ignite: IgniteConfiguration = field(default_factory=lambda: IgniteConfiguration())
     sklearn: SklearnConfiguration = field(default_factory=SklearnConfiguration())
+    torchmetrics: TorchMetricsConfiguration = field(
+        default_factory=TorchMetricsConfiguration()
+    )
 
 
 @dataclass
