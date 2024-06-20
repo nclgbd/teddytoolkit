@@ -277,9 +277,9 @@ class ImageClassificationConfiguration(ImageConfiguration):
 @dataclass
 class DiffusionConfiguration(ImageClassificationConfiguration):
     training_args: TrainingArguments = field(default_factory=lambda: TrainingArguments)
-    torchmetrics: TorchMetricsConfiguration = field(
-        default_factory=TorchMetricsConfiguration
-    )
+    # torchmetrics: TorchMetricsConfiguration = field(
+    #     default_factory=TorchMetricsConfiguration
+    # )
 
 
 # TODO: reorganize this so that it is more modular. HugggingFaceConfiguration should be a dataclass that TextToImageConfiguration and

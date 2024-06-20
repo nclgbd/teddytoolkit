@@ -185,16 +185,26 @@ def load_mimic_dataset(
         return dataset
 
     # use transforms
-    use_transforms = kwargs.get("use_transforms", True)
-    train_transforms: Compose = kwargs.get(
+    # use_transforms = kwargs.get("use_transforms", True)
+    train_transforms = kwargs.get(
         "train_transforms",
-        create_transforms(dataset_cfg=dataset_cfg, use_transforms=use_transforms),
+        None,
     )
+    if train_transforms is None:
+        train_transforms = create_transforms(
+            cfg,
+            use_transforms=cfg.use_transforms,
+        )
 
-    eval_transforms: Compose = kwargs.get(
+    eval_transforms = kwargs.get(
         "eval_transforms",
-        create_transforms(dataset_cfg=dataset_cfg, use_transforms=False),
+        None,
     )
+    if eval_transforms is None:
+        eval_transforms = create_transforms(
+            cfg,
+            use_transforms=False,
+        )
 
     # form datasets
     train_dataset = __build_mimic_data_split(
