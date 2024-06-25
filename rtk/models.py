@@ -28,6 +28,21 @@ logger = get_logger(__name__)
 console = _console
 
 
+def print_trainable_parameters(model: nn.Module):
+    """
+    Adapted from: https://huggingface.co/docs/peft/v0.6.2/en/task_guides/image_classification_lora#load-and-prepare-a-model
+    """
+    trainable_params = 0
+    all_param = 0
+    for _, param in model.named_parameters():
+        all_param += param.numel()
+        if param.requires_grad:
+            trainable_params += param.numel()
+    console.log(
+        f"Trainable params: {trainable_params} || All params: {all_param} || Trainable%: {100 * trainable_params / all_param:.2f}"
+    )
+
+
 def ddp_setup(rank: int, world_size: int):
     """
     Args:

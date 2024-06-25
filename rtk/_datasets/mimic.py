@@ -15,8 +15,10 @@ import monai.transforms as monai_transforms
 from monai.data import ImageDataset
 
 # rtk
+import rtk
 from rtk import *
 from rtk._datasets import *
+from rtk._datasets.nih import NIH_CLASS_NAMES
 from rtk.config import *
 from rtk.utils import (
     _console,
@@ -87,6 +89,113 @@ def build_patient_metadata(cfg: ImageConfiguration, **kwargs):
         df_records, df_metadata.drop(columns=drop_columns), on="dicom_id"
     ).set_index("dicom_id")
     return patient_df
+
+
+def load_mimic_text_dataset(
+    cfg: BaseConfiguration,
+    metadata: pd.DataFrame,
+    tokenizer: AutoTokenizer,
+    subset_to_positive_class=False,
+    **kwargs,
+):
+    class_names = MIMIC_CLASS_NAMES
+    random_state = cfg.random_state
+    dataset_cfg = cfg.datasets
+    target = dataset_cfg.target
+    preprocessing_cfg = cfg.datasets.preprocessing
+    positive_class = kwargs.get("positive_class", preprocessing_cfg.positive_class)
+    id2label = {i: l for i, l in enumerate(class_names)}
+    label2id = {l: i for i, l in enumerate(class_names)}
+    encodings = {"id2label": id2label, "label2id": label2id}
+
+    # remove all of the negative class for diffusion
+    if subset_to_positive_class:
+        console.log("Removing all negative classes...")
+        metadata = metadata[metadata[positive_class] == 1]
+
+    if cfg.mode == "evaluate":
+        overlapped_classes = set(NIH_CLASS_NAMES).intersection(set(MIMIC_CLASS_NAMES))
+        drop_classes = list(set(class_names) - set(overlapped_classes))
+        for d in drop_classes:
+            metadata = metadata.drop(metadata[metadata[d] == 1].index)
+        logger.debug(
+            f"Overlapped classes: {overlapped_classes}. Dropping: {drop_classes}"
+        )
+        class_counts = metadata[class_names].sum()
+        console.log(f"Class counts:\n{class_counts}")
+
+    def _create_multiclass_labels(x):
+        finding_labels = []
+        for column in class_names:
+            if x[column] == 1:
+                finding_labels.append(column)
+        if finding_labels == []:
+            finding_labels.append("No Finding")
+        return finding_labels
+
+    console.log("Creating multiclass labels...")
+    metadata["multiclass_labels"] = metadata.apply(_create_multiclass_labels, axis=1)
+    mlb = MultiLabelBinarizer(classes=class_names)
+    mlb.fit(metadata["multiclass_labels"])
+
+    # split the dataset into train/val/test
+    train_metadata = metadata[metadata["split"] == "train"]
+    val_metadata = metadata[metadata["split"] == "validate"]
+    test_metadata = metadata[metadata["split"] == "test"]
+
+    # resample train data if needed
+    if (
+        preprocessing_cfg.use_sampling
+        and subset_to_positive_class == False
+        and cfg.mode != "evaluate"
+    ):
+        train_metadata = resample_to_value(
+            train_metadata,
+            class_names,
+            dataset_cfg=dataset_cfg,
+            preprocessing_cfg=preprocessing_cfg,
+            sampling_strategy=target,
+            random_state=random_state,
+        )
+
+    for split, data in {
+        "train": train_metadata,
+        "validation": val_metadata,
+        "test": test_metadata,
+    }.items():
+        class_counts = data[class_names].sum()
+        console.log(f"'{split.capitalize()}' class counts:\n{class_counts}")
+
+    train_dataset: HGFDataset = create_text_dataset(
+        train_metadata,
+        data_path=dataset_cfg.scan_data,
+        target=target,
+        mlb=mlb,
+        tokenizer=tokenizer,
+        split="train",
+        **kwargs,
+    )
+    eval_dataset: HGFDataset = create_text_dataset(
+        val_metadata,
+        target=target,
+        mlb=mlb,
+        data_path=dataset_cfg.scan_data,
+        tokenizer=tokenizer,
+        split="validation",
+        **kwargs,
+    )
+    test_dataset: HGFDataset = create_text_dataset(
+        test_metadata,
+        target=target,
+        mlb=mlb,
+        data_path=dataset_cfg.scan_data,
+        tokenizer=tokenizer,
+        split="test",
+        **kwargs,
+    )
+
+    ret: list = [train_dataset, eval_dataset, test_dataset, encodings]
+    return ret
 
 
 def load_mimic_dataset(

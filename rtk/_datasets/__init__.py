@@ -7,8 +7,18 @@ from copy import deepcopy
 # azureml
 from azureml.core import Workspace
 
+# sklearn
+from sklearn.preprocessing import MultiLabelBinarizer
+
+# torch
+import torch
+
 # monai
 import monai.transforms as monai_transforms
+
+# :huggingface:
+from datasets import Dataset as HGFDataset
+from transformers import AutoTokenizer
 
 # rtk
 from rtk import *
@@ -171,8 +181,65 @@ def load_metadata(
 ):
     if ws is None:
         ws: Workspace = login()
-    metadata: pd.DataFrame = load_patient_dataset(ws, *args, **kwargs).set_index(index)
+
+    metadata: pd.DataFrame = load_patient_dataset(ws, *args, **kwargs)
+
+    try:
+        metadata = metadata.set_index(index)
+    except KeyError:
+        logger.warn(f"Index '{index}' not found in metadata. Using default index.")
+        pass
 
     if return_workspace:
         return metadata, ws
     return metadata
+
+
+def create_text_dataset(
+    data,
+    target: str,
+    data_path: str,
+    mlb: MultiLabelBinarizer,
+    tokenizer: AutoTokenizer,
+    split="split",
+    stop_words=[],
+):
+
+    def __read_reports(f):
+        with open(os.path.join(data_path, f), "r") as f:
+            text = f.read()
+            text = text.lower()
+            text = " ".join([word for word in text.split() if word not in (stop_words)])
+        return text
+
+    data[target] = data[target].apply(__read_reports)
+    console.log(f"Creating :huggingface: Dataset from '{split}' data...")
+    dataset = HGFDataset.from_pandas(data, split=split)
+    dataset = dataset.map(
+        lambda x: {
+            "labels": torch.from_numpy(mlb.transform(x["multiclass_labels"])).float()
+        },
+        batched=True,
+    )
+
+    # Tokenize and remove unwanted columns
+    if tokenizer is not None:
+        console.print(f"Tokenizing '{split}' text prompts...")
+
+        def tokenize_function(example):
+            return tokenizer(
+                example[target],
+                padding="max_length",
+                truncation=True,
+            )
+
+        columns = dataset.column_names
+        columns.remove(target)
+        columns.remove("labels")
+        dataset = dataset.map(
+            tokenize_function,
+            batched=True,
+            remove_columns=columns,
+        )
+
+    return dataset

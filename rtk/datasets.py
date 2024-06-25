@@ -280,46 +280,11 @@ def instantiate_text_dataset(
         patient_data_version=dataset_cfg.patient_data_version,
     )
 
-    def _create_dataset(data, tokenizer: AutoTokenizer, split="split"):
-        dataset = HGFDataset.from_pandas(data, split=split)
-        dataset = dataset.map(
-            lambda x: {
-                "labels": torch.from_numpy(
-                    mlb.transform(x["multiclass_labels"])
-                ).float()
-            },
-            batched=True,
-        )
-
-        # Tokenize and remove unwanted columns
-        if tokenizer is not None:
-            console.print(f"Tokenizing '{split}' text prompts...")
-
-            def tokenize_function(example):
-                return tokenizer(
-                    example["text_prompts"],
-                    padding="max_length",
-                    truncation=True,
-                )
-
-            columns = dataset.column_names
-            columns.remove("text_prompts")
-            columns.remove("labels")
-            dataset = dataset.map(
-                tokenize_function,
-                batched=True,
-                remove_columns=columns,
-            )
-
-        return dataset
-
-    from rtk._datasets.nih import NIH_CLASS_NAMES
-    from rtk._datasets.mimic import MIMIC_CLASS_NAMES
-
-    if dataset_cfg.name == "nih" or dataset_cfg.name == "cxr14":
-        class_names = NIH_CLASS_NAMES
-    else:
-        class_names = MIMIC_CLASS_NAMES
+    class_names = (
+        NIH_CLASS_NAMES
+        if dataset_cfg.name == "nih" or dataset_cfg.name == "cxr14"
+        else MIMIC_CLASS_NAMES
+    )
 
     if dataset_cfg.name == "nih" or dataset_cfg.name == "cxr14":
         from rtk._datasets.nih import DATA_ENTRY_PATH
@@ -396,89 +361,35 @@ def instantiate_text_dataset(
             class_counts = data[class_names].sum()
             console.log(f"{split.capitalize()} class counts:\n{class_counts}")
 
-        train_dataset = _create_dataset(
+        train_dataset = create_text_dataset(
             train_metadata, tokenizer=tokenizer, split="train"
         )
-        eval_dataset = _create_dataset(
+        eval_dataset = create_text_dataset(
             val_metadata, tokenizer=tokenizer, split="validation"
         )
-        test_dataset = _create_dataset(test_metadata, tokenizer=tokenizer, split="test")
+        test_dataset = create_text_dataset(
+            test_metadata, tokenizer=tokenizer, split="test"
+        )
 
         ret: list = [train_dataset, eval_dataset, test_dataset, encodings]
         return ret
 
     elif dataset_cfg.name == "mimic-cxr":
-        id2label = {i: l for i, l in enumerate(class_names)}
-        label2id = {l: i for i, l in enumerate(class_names)}
-        encodings = {"id2label": id2label, "label2id": label2id}
+        import nltk.corpus
 
-        # remove all of the negative class for diffusion
-        if subset_to_positive_class:
-            console.log("Removing all negative classes...")
-            metadata = metadata[metadata[positive_class] == 1]
+        nltk.download("stopwords")
+        from nltk.corpus import stopwords
 
-        if cfg.mode == "evaluate":
-            overlapped_classes = set(NIH_CLASS_NAMES).intersection(
-                set(MIMIC_CLASS_NAMES)
-            )
-            drop_classes = list(set(class_names) - set(overlapped_classes))
-            for d in drop_classes:
-                metadata = metadata.drop(metadata[metadata[d] == 1].index)
-            logger.debug(
-                f"Overlapped classes: {overlapped_classes}. Dropping: {drop_classes}"
-            )
-            class_counts = metadata[class_names].sum()
-            console.log(f"Class counts:\n{class_counts}")
-
-        def _create_multiclass_labels(x):
-            finding_labels = []
-            for column in class_names:
-                if x[column] == 1:
-                    finding_labels.append(column)
-            if finding_labels == []:
-                finding_labels.append("No Finding")
-            return finding_labels
-
-        # TODO: When running cross evaluation with multiple datasets, we must realign them so it's in a format the model can understand
-        metadata["multiclass_labels"] = metadata[class_names].apply(
-            _create_multiclass_labels, axis=1
+        stop = stopwords.words("english")
+        _ = stop.pop(stop.index("no"))
+        _ = stop.pop(stop.index("not"))
+        ret: list = load_mimic_text_dataset(
+            cfg,
+            metadata,
+            tokenizer=tokenizer,
+            subset_to_positive_class=subset_to_positive_class,
+            stop_words=stop,
         )
-
-        mlb = MultiLabelBinarizer(classes=NIH_CLASS_NAMES)
-        mlb.fit(metadata["multiclass_labels"])
-
-        # split the dataset into train/val/test
-        train_metadata = metadata[metadata["split"] == "train"]
-        val_metadata = metadata[metadata["split"] == "validate"]
-        test_metadata = metadata[metadata["split"] == "test"]
-
-        # resample train data if needed
-        if (
-            preprocessing_cfg.use_sampling
-            and subset_to_positive_class == False
-            and cfg.mode != "evaluate"
-        ):
-            train_metadata = resample_to_value(cfg, train_metadata, class_names)
-
-        for split, data in {
-            "train": train_metadata,
-            "validation": val_metadata,
-            "test": test_metadata,
-        }.items():
-            class_counts = data[class_names].sum()
-            console.log(f"'{split.capitalize()}' class counts:\n{class_counts}\n")
-
-        train_dataset: HGFDataset = _create_dataset(
-            train_metadata, tokenizer=tokenizer, split="train"
-        )
-        eval_dataset: HGFDataset = _create_dataset(
-            val_metadata, tokenizer=tokenizer, split="validation"
-        )
-        test_dataset: HGFDataset = _create_dataset(
-            test_metadata, tokenizer=tokenizer, split="test"
-        )
-
-        ret: list = [train_dataset, eval_dataset, test_dataset, encodings]
         return ret
 
 

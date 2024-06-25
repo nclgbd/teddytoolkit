@@ -5,6 +5,7 @@ Basic hydra template configurations for the `rtk` package.
 import os
 import random
 from dataclasses import dataclass, field
+from typing import Union
 from omegaconf import OmegaConf, DictConfig, ListConfig
 
 # hydra
@@ -12,7 +13,8 @@ from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 
 # torch
-from transformers import TrainingArguments
+import torch
+from transformers import TrainingArguments as _TrainingArguments
 
 # rtk
 from rtk.utils import get_logger, _console
@@ -274,26 +276,35 @@ class ImageClassificationConfiguration(ImageConfiguration):
     )
 
 
+# Child class of `transformers.TrainingArguments` with overridden defaults since :huggingface: doesn't want you to.
+@dataclass
+class TrainingArguments(_TrainingArguments):
+    device: Union[str, torch.device] = torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu"
+    )
+    eval_batch_size: int = 1
+    train_batch_size: int = 1
+    place_model_on_device: bool = False
+
+
 @dataclass
 class DiffusionConfiguration(ImageClassificationConfiguration):
     training_args: TrainingArguments = field(default_factory=lambda: TrainingArguments)
-    # torchmetrics: TorchMetricsConfiguration = field(
-    #     default_factory=TorchMetricsConfiguration
-    # )
 
 
 # TODO: reorganize this so that it is more modular. HugggingFaceConfiguration should be a dataclass that TextToImageConfiguration and
 # TODO: NLPTConfiguration inherit from.
 @dataclass
 class HuggingFaceConfiguration:
-    training_args: TrainingArguments = field(default_factory=lambda: TrainingArguments)
-    pipeline: dict = field(default_factory=lambda: {})
-    unet: dict = field(default_factory=lambda: {})
-    scheduler: dict = field(default_factory=lambda: {})
-    tokenizer: dict = field(default_factory=lambda: {})
-    text_encoder: dict = field(default_factory=lambda: {})
-    vae: dict = field(default_factory=lambda: {})
     lr_scheduler: dict = field(default_factory=lambda: {})
+    peft: dict = field(default_factory=lambda: {})
+    pipeline: dict = field(default_factory=lambda: {})
+    scheduler: dict = field(default_factory=lambda: {})
+    text_encoder: dict = field(default_factory=lambda: {})
+    tokenizer: dict = field(default_factory=lambda: {})
+    training_args: TrainingArguments = field(default_factory=lambda: TrainingArguments)
+    unet: dict = field(default_factory=lambda: {})
+    vae: dict = field(default_factory=lambda: {})
 
 
 @dataclass
@@ -399,7 +410,6 @@ class NLPTConfiguration(BaseConfiguration):
     huggingface: HuggingFaceConfiguration = field(
         default_factory=HuggingFaceConfiguration
     )
-    sklearn: SklearnConfiguration = field(default_factory=SklearnConfiguration)
     gradient_accumulation_steps: int = 1
     gradient_checkpointing: bool = False
     learning_rate: float = 3e-5
@@ -409,6 +419,8 @@ class NLPTConfiguration(BaseConfiguration):
     num_train_epochs: int = 3
     pretrained_model_name_or_path: str = ""
     seed: int = 0
+    sklearn: SklearnConfiguration = field(default_factory=SklearnConfiguration)
+    use_peft: bool = False
     weight_decay: float = 0.0
 
 
