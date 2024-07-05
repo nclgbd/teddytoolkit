@@ -53,7 +53,7 @@ def nih_get_target_counts(df: pd.DataFrame, target: str = ""):
     return Counter(",".join(df[target]).replace("|", ",").split(","))
 
 
-def load_nih_dataset(
+def load_nih_image_dataset(
     cfg: ImageClassificationConfiguration = None,
     save_metadata=True,
     return_metadata=False,

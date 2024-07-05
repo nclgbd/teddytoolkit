@@ -59,7 +59,7 @@ def build_patient_metadata(cfg: ImageConfiguration, **kwargs):
     )
 
     n = df_records.shape[0]
-    console.print(f"{n} DICOMs in MIMIC-CXR v2.0.0.")
+    console.print(f"{n} DICOMs in 'MIMIC-CXR v2.0.0.'")
 
     n = df_records["study_id"].nunique()
     console.print(f"  {n} studies.")
@@ -96,6 +96,7 @@ def load_mimic_text_dataset(
     metadata: pd.DataFrame,
     tokenizer: AutoTokenizer,
     subset_to_positive_class=False,
+    return_metadata=False,
     **kwargs,
 ):
     class_names = MIMIC_CLASS_NAMES
@@ -166,6 +167,9 @@ def load_mimic_text_dataset(
         class_counts = data[class_names].sum()
         console.log(f"'{split.capitalize()}' class counts:\n{class_counts}")
 
+    if return_metadata:
+        return train_metadata, val_metadata, test_metadata
+
     train_dataset: HGFDataset = create_text_dataset(
         train_metadata,
         data_path=dataset_cfg.scan_data,
@@ -198,7 +202,7 @@ def load_mimic_text_dataset(
     return ret
 
 
-def load_mimic_dataset(
+def load_mimic_image_datasets(
     cfg: ImageConfiguration = None,
     return_metadata=False,
     save_metadata=False,

@@ -195,6 +195,60 @@ def load_metadata(
     return metadata
 
 
+def remove_punctuation(text):
+    import string
+
+    return text.translate(str.maketrans("", "", string.punctuation))
+
+
+def remove_stopwords(tokens, remove_nots=True):
+    from nltk.corpus import stopwords
+
+    stopwords = stopwords.words("english")
+
+    if remove_nots:
+        _ = stopwords.pop(stopwords.index("no"))
+        _ = stopwords.pop(stopwords.index("not"))
+        assert "no" not in stopwords
+        assert "not" not in stopwords
+
+    # stop_words = set(stopwords)
+    return [token for token in tokens if token not in stopwords]
+
+
+def lemmatize(tokens):
+    import spacy
+
+    nlp = spacy.load("en_core_web_sm")
+    doc = nlp(" ".join(tokens))
+    return [token.lemma_ for token in doc]
+
+
+# Define the preprocessing function
+def process_report(text: str):
+    from nltk.tokenize import word_tokenize
+
+    # Step 1: Lowercase the text
+    text = text.lower()
+
+    # Step 2: Remove punctuation
+    text = remove_punctuation(text)
+
+    # Step 3: Tokenize the text
+    tokens = word_tokenize(text)
+
+    # Step 4: Remove stopwords
+    tokens = remove_stopwords(tokens)
+
+    # Step 5: Perform lemmatization
+    tokens = lemmatize(tokens)
+
+    # Step 6: Join tokens back into a single string (optional)
+    preprocessed_text = " ".join(tokens)
+
+    return preprocessed_text
+
+
 def create_text_dataset(
     data,
     target: str,
@@ -202,14 +256,11 @@ def create_text_dataset(
     mlb: MultiLabelBinarizer,
     tokenizer: AutoTokenizer,
     split="split",
-    stop_words=[],
 ):
-
     def __read_reports(f):
         with open(os.path.join(data_path, f), "r") as f:
             text = f.read()
-            text = text.lower()
-            text = " ".join([word for word in text.split() if word not in (stop_words)])
+            text = process_report(text)
         return text
 
     data[target] = data[target].apply(__read_reports)

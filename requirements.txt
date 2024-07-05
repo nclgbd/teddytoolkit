@@ -8,6 +8,11 @@ hydra-colorlog
 hydra-core
 imbalanced-learn
 itk
+langchain
+langchain-chroma
+langchain-community
+langchain-core
+langchain-huggingface
 matplotlib
 mlflow
 monai
@@ -19,8 +24,8 @@ rich
 scikit-image
 scikit-learn
 timm==0.9.7
-torch==2.0.0
-torchvision==0.15.1
+torch==2.1.2+cu118
+torchvision==0.16.2+cu118
 tqdm
+transformers==4.37.2
 xlrd
-git+https://github.com/nclgbd/GenerativeModels.git

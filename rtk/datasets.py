@@ -154,69 +154,6 @@ def set_labels_from_encoding(cfg: ImageConfiguration, encoding: dict = None):
     return list(encoding.keys())
 
 
-# def transform_labels_to_metaclass(
-#     df: pd.DataFrame,
-#     target_name: str,
-#     positive_class: str,
-#     negative_class: str = None,
-#     drop: bool = True,
-# ):
-#     """
-#     Transform the labels to the metaclass.
-#     """
-
-#     def _transform_to_metaclass(x, positive_class: str, negative_class: str):
-#         """
-#         Transform the label to the metaclass.
-#         """
-#         if negative_class is None:
-#             negative_class = f"Non-{positive_class}"
-#         if positive_class in x:
-#             return positive_class
-#         return negative_class
-
-#     console.log("Transforming labels to metaclass...")
-#     old_target_name = f"old_{target_name}"
-#     df[old_target_name] = df[target_name]
-#     df[target_name] = df[old_target_name].apply(
-#         _transform_to_metaclass,
-#         positive_class=positive_class,
-#         negative_class=negative_class,
-#     )
-#     console.log("Labels transformed.\n")
-#     if drop:
-#         df.drop(columns=[old_target_name], inplace=True)
-
-#     logger.debug(f"Dataframe:\n\n{df.head()}\n")
-#     classes = df[target_name].value_counts().to_dict()
-#     console.log(f"Labels transformed. New class counts:\n{classes}.\n")
-
-#     return df
-
-
-# def preprocess_dataset(
-#     cfg: ImageConfiguration,
-#     dataset: ImageDataset,
-#     **kwargs,
-# ):
-#     preprocessing_cfg = cfg.datasets.preprocessing
-#     X, y = get_images_and_classes(dataset=dataset)
-#     data_df = pd.DataFrame({IMAGE_KEYNAME: X, LABEL_KEYNAME: y})
-
-#     # 1. subset to class
-#     if preprocessing_cfg.use_subset:
-#         data_df = subset_to_class(cfg=cfg, data_df=data_df, **kwargs)
-#         X, y = data_df[IMAGE_KEYNAME].values, data_df[LABEL_KEYNAME].values
-
-#     # . convert to persistent dataset for faster lookup time
-#     new_dataset = PersistentDataset(
-#         data=data_df.to_dict(orient="records"),
-#         transform=dataset.transform,
-#         cache_dir=CACHE_DIR,
-#     )
-#     return new_dataset
-
-
 def create_subset(df: pd.DataFrame, target: str, labels: list = []) -> pd.DataFrame:
     """"""
 
@@ -389,6 +326,7 @@ def instantiate_text_dataset(
             tokenizer=tokenizer,
             subset_to_positive_class=subset_to_positive_class,
             stop_words=stop,
+            **kwargs,
         )
         return ret
 
@@ -409,7 +347,7 @@ def instantiate_image_dataset(
     dataset_name = dataset_cfg.name
 
     if dataset_name == "nih" or dataset_name == "cxr14":
-        loaded_datasets = load_nih_dataset(
+        loaded_datasets = load_nih_image_dataset(
             cfg=cfg,
             return_metadata=return_metadata,
             save_metadata=save_metadata,
@@ -417,7 +355,7 @@ def instantiate_image_dataset(
         )
 
     elif dataset_name == "mimic-cxr":
-        loaded_datasets = load_mimic_dataset(
+        loaded_datasets = load_mimic_image_datasets(
             cfg=cfg,
             return_metadata=return_metadata,
             save_metadata=save_metadata,
