@@ -1,7 +1,6 @@
 accelerate
 azureml-core
 azureml-dataset-runtime
-bitstring
 diffusers
 einops
 hydra-colorlog
@@ -27,5 +26,5 @@ timm==0.9.7
 torch==2.1.2+cu118
 torchvision==0.16.2+cu118
 tqdm
-transformers==4.37.2
+transformers==4.39.0
 xlrd
