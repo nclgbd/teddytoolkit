@@ -1,3 +1,4 @@
+--extra-index-url https://download.pytorch.org/whl/cu118
 accelerate
 azureml-core
 azureml-dataset-runtime
@@ -23,8 +24,8 @@ rich
 scikit-image
 scikit-learn
 timm==0.9.7
-torch==2.1.2+cu118
-torchvision==0.16.2+cu118
+torch==2.3.1
+torchvision==0.18.1
 tqdm
-transformers==4.39.0
+transformers==4.36.2
 xlrd
