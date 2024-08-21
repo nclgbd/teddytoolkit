@@ -91,6 +91,12 @@ def build_patient_metadata(cfg: ImageConfiguration, **kwargs):
     return patient_df
 
 
+def read_mimic_reports(x, data_dir: str = None):
+    report_file = os.path.join(data_dir, str(os.path.dirname(x)) + ".txt")
+    with open(report_file, "r") as f:
+        return f.read()
+
+
 def load_mimic_text_dataset(
     cfg: BaseConfiguration,
     metadata: pd.DataFrame,
@@ -103,6 +109,7 @@ def load_mimic_text_dataset(
     random_state = cfg.random_state
     dataset_cfg = cfg.datasets
     target = dataset_cfg.target
+    data_dir: str = dataset_cfg.scan_data
     preprocessing_cfg = cfg.datasets.preprocessing
     positive_class = kwargs.get("positive_class", preprocessing_cfg.positive_class)
     id2label = {i: l for i, l in enumerate(class_names)}
@@ -138,6 +145,14 @@ def load_mimic_text_dataset(
     metadata["multiclass_labels"] = metadata.apply(_create_multiclass_labels, axis=1)
     mlb = MultiLabelBinarizer(classes=class_names)
     mlb.fit(metadata["multiclass_labels"])
+
+    console.log("Reading reports...")
+    metadata["image_files"] = metadata["image_files"].apply(
+        lambda x: os.path.join(data_dir, x)
+    )
+    metadata["reports"] = metadata["image_files"].apply(
+        lambda x: read_mimic_reports(x, data_dir)
+    )
 
     # split the dataset into train/val/test
     train_metadata = metadata[metadata["split"] == "train"]
