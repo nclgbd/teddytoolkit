@@ -202,7 +202,6 @@ def instantiate_text_dataset(
     if dataset_cfg is None:
         dataset_cfg = cfg.datasets
     index = dataset_cfg.index
-    target = dataset_cfg.target
     data_path = dataset_cfg.scan_data
     preprocessing_cfg = dataset_cfg.preprocessing
     positive_class = kwargs.get("positive_class", None)
@@ -312,20 +311,11 @@ def instantiate_text_dataset(
         return ret
 
     elif dataset_cfg.name == "mimic-cxr":
-        import nltk.corpus
-
-        nltk.download("stopwords")
-        from nltk.corpus import stopwords
-
-        stop = stopwords.words("english")
-        _ = stop.pop(stop.index("no"))
-        _ = stop.pop(stop.index("not"))
         ret: list = load_mimic_text_dataset(
             cfg,
             metadata,
             tokenizer=tokenizer,
             subset_to_positive_class=subset_to_positive_class,
-            stop_words=stop,
             **kwargs,
         )
         return ret

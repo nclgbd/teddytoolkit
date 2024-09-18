@@ -253,7 +253,6 @@ def create_text_dataset(
     data,
     target: str,
     data_path: str,
-    mlb: MultiLabelBinarizer,
     tokenizer: AutoTokenizer,
     split="split",
 ):
@@ -266,12 +265,12 @@ def create_text_dataset(
     data[target] = data[target].apply(__read_reports)
     console.log(f"Creating :huggingface: Dataset from '{split}' data...")
     dataset = HGFDataset.from_pandas(data, split=split)
-    dataset = dataset.map(
-        lambda x: {
-            "labels": torch.from_numpy(mlb.transform(x["multiclass_labels"])).float()
-        },
-        batched=True,
-    )
+    # dataset = dataset.map(
+    #     lambda x: {
+    #         "labels": torch.from_numpy(mlb.transform(x["multiclass_labels"])).float()
+    #     },
+    #     batched=True,
+    # )
 
     # Tokenize and remove unwanted columns
     if tokenizer is not None:
@@ -285,8 +284,8 @@ def create_text_dataset(
             )
 
         columns = dataset.column_names
-        columns.remove(target)
-        columns.remove("labels")
+        # columns.remove(target)
+        # columns.remove("labels")
         dataset = dataset.map(
             tokenize_function,
             batched=True,

@@ -91,10 +91,14 @@ def build_patient_metadata(cfg: ImageConfiguration, **kwargs):
     return patient_df
 
 
-def read_mimic_reports(x, data_dir: str = None):
-    report_file = os.path.join(data_dir, str(os.path.dirname(x)) + ".txt")
-    with open(report_file, "r") as f:
+def read_mimic_reports(x):
+    with open(x, "r") as f:
         return f.read()
+
+
+def create_mimic_reports(x, data_dir: str = None):
+    report_file = os.path.join(data_dir, str(os.path.dirname(x)) + ".txt")
+    return report_file
 
 
 def load_mimic_text_dataset(
@@ -132,27 +136,28 @@ def load_mimic_text_dataset(
         class_counts = metadata[class_names].sum()
         console.log(f"Class counts:\n{class_counts}")
 
-    def _create_multiclass_labels(x):
-        finding_labels = []
-        for column in class_names:
-            if x[column] == 1:
-                finding_labels.append(column)
-        if finding_labels == []:
-            finding_labels.append("No Finding")
-        return finding_labels
+    # def _create_multiclass_labels(x):
+    #     finding_labels = []
+    #     for column in class_names:
+    #         if x[column] == 1:
+    #             finding_labels.append(column)
+    #     if finding_labels == []:
+    #         finding_labels.append("No Finding")
+    #     return finding_labels
 
-    console.log("Creating multiclass labels...")
-    metadata["multiclass_labels"] = metadata.apply(_create_multiclass_labels, axis=1)
-    mlb = MultiLabelBinarizer(classes=class_names)
-    mlb.fit(metadata["multiclass_labels"])
+    # console.log("Creating multiclass labels...")
+    # metadata["multiclass_labels"] = metadata.apply(_create_multiclass_labels, axis=1)
+    # mlb = MultiLabelBinarizer(classes=class_names)
+    # mlb.fit(metadata["multiclass_labels"])
 
     console.log("Reading reports...")
-    metadata["image_files"] = metadata["image_files"].apply(
-        lambda x: os.path.join(data_dir, x)
-    )
-    metadata["reports"] = metadata["image_files"].apply(
-        lambda x: read_mimic_reports(x, data_dir)
-    )
+    # metadata["image_files"] = metadata["image_files"].apply(
+    #     lambda x: os.path.join(data_dir, x)
+    # )
+    # metadata["report_files"] = metadata["image_files"].apply(
+    #     lambda x: create_mimic_reports(x, data_dir)
+    # )
+    metadata["reports"] = metadata["report_files"].apply(read_mimic_reports)
 
     # split the dataset into train/val/test
     train_metadata = metadata[metadata["split"] == "train"]
@@ -189,7 +194,7 @@ def load_mimic_text_dataset(
         train_metadata,
         data_path=dataset_cfg.scan_data,
         target=target,
-        mlb=mlb,
+        # mlb=mlb,
         tokenizer=tokenizer,
         split="train",
         **kwargs,
@@ -197,7 +202,7 @@ def load_mimic_text_dataset(
     eval_dataset: HGFDataset = create_text_dataset(
         val_metadata,
         target=target,
-        mlb=mlb,
+        # mlb=mlb,
         data_path=dataset_cfg.scan_data,
         tokenizer=tokenizer,
         split="validation",
@@ -206,7 +211,7 @@ def load_mimic_text_dataset(
     test_dataset: HGFDataset = create_text_dataset(
         test_metadata,
         target=target,
-        mlb=mlb,
+        # mlb=mlb,
         data_path=dataset_cfg.scan_data,
         tokenizer=tokenizer,
         split="test",
