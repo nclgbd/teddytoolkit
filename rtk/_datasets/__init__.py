@@ -25,6 +25,8 @@ from rtk import *
 from rtk.config import *
 from rtk.utils import load_patient_dataset, login
 
+BASE_PROMPT = "this is a photo of chest x-ray depicting "
+
 
 def get_class_counts(metadata: pd.DataFrame, dataset_labels: list):
 
@@ -43,6 +45,53 @@ def get_class_name_intersection(class_names: List[str]):
         list(set(class_names).intersection(set(FULL_DATA_CLASS_NAMES)))
     )
     return class_intersection
+
+
+def create_binary_prompts(cfg: BaseConfiguration, metadata: pd.DataFrame):
+    dataset_cfg: DatasetConfiguration = cfg.datasets
+    preprocessing_cfg = dataset_cfg.preprocessing
+    positive_class = preprocessing_cfg.positive_class.lower()
+
+    def _create_binary_prompts(x):
+
+        if x[preprocessing_cfg.positive_class] == 1:
+            return BASE_PROMPT + positive_class
+        else:
+            return BASE_PROMPT + f"no {positive_class}"
+
+    metadata["clip_prompts"] = metadata.apply(_create_binary_prompts, axis=1)
+
+
+def apply_label_to_text_prompts(x, classes: list, base: list = None):
+    if base == None:
+        base = "this is a photo of a chest x-ray".split(" ")
+    if x["No Finding"] == 1 or sum(x[classes].values) == 0:
+        base.extend(["depicting", "no", "finding"])
+        if x["Support Devices"] == 1:
+            base.extend(["with", "support", "devices"])
+        return " ".join(base).lower()
+
+    prompt = base.copy()
+    prompt.extend(["depicting", "visible"])
+
+    classes = []
+    for i, s in enumerate(x):
+        if s == 1:
+            clss = x.index[i] + ","
+            classes.append(clss)
+
+    if len(classes) >= 2:
+        classes.insert(-1, "and")
+
+    prompt.extend(classes)
+    prompt = " ".join(prompt).lower()
+
+    len_prompt = len(prompt.split(","))
+    if len_prompt == 3:
+        prompt = prompt.replace(",", "")
+        return prompt
+
+    return prompt[:-1]  # remove the last comma
 
 
 def resample_to_value(
@@ -187,7 +236,7 @@ def load_metadata(
     try:
         metadata = metadata.set_index(index)
     except KeyError:
-        logger.warn(f"Index '{index}' not found in metadata. Using default index.")
+        logger.warning(f"Index '{index}' not found in metadata. Using default index.")
         pass
 
     if return_workspace:

@@ -163,35 +163,6 @@ def create_subset(df: pd.DataFrame, target: str, labels: list = []) -> pd.DataFr
     return df[subset_condition]
 
 
-def apply_label_to_text_prompts(x, base: list = None):
-    if base == None:
-        base = "A photo of a lung xray".split(" ")
-    if x["No Finding"] == 1 or sum(x.values) == 0:
-        return " ".join(base).lower()
-
-    prompt = base.copy()
-    prompt.extend(["depicting", "visible"])
-
-    classes = []
-    for i, s in enumerate(x):
-        if s == 1:
-            clss = x.index[i] + ","
-            classes.append(clss)
-
-    if len(classes) >= 2:
-        classes.insert(-1, "and")
-
-    prompt.extend(classes)
-    prompt = " ".join(prompt).lower()
-
-    len_prompt = len(prompt.split(","))
-    if len_prompt == 3:
-        prompt = prompt.replace(",", "")
-        return prompt
-
-    return prompt[:-1]  # remove the last comma
-
-
 def instantiate_text_dataset(
     cfg: TextConfiguration,
     subset_to_positive_class=False,

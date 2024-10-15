@@ -107,6 +107,7 @@ def load_mimic_text_dataset(
     tokenizer: AutoTokenizer,
     subset_to_positive_class=False,
     return_metadata=False,
+    use_absolute_paths=True,
     **kwargs,
 ):
     class_names = MIMIC_CLASS_NAMES
@@ -150,14 +151,26 @@ def load_mimic_text_dataset(
     # mlb = MultiLabelBinarizer(classes=class_names)
     # mlb.fit(metadata["multiclass_labels"])
 
-    console.log("Reading reports...")
-    # metadata["image_files"] = metadata["image_files"].apply(
-    #     lambda x: os.path.join(data_dir, x)
-    # )
-    # metadata["report_files"] = metadata["image_files"].apply(
-    #     lambda x: create_mimic_reports(x, data_dir)
-    # )
-    metadata["reports"] = metadata["report_files"].apply(read_mimic_reports)
+    if use_absolute_paths:
+        console.log(f"Formatting file paths '{data_dir}'...")
+        metadata["image_files"] = metadata["image_files"].apply(
+            lambda x: os.path.join(data_dir, x)
+        )
+        metadata["report_files"] = metadata["report_files"].apply(
+            lambda x: os.path.join(data_dir, x)
+        )
+
+    console.log(f"Creating binary prompts based on '{positive_class}'...")
+    create_binary_prompts(cfg, metadata)
+
+    console.log("Creating text prompts...")
+    metadata["text_prompts"] = metadata.apply(
+        apply_label_to_text_prompts, classes=class_names, axis=1
+    )
+
+    if use_absolute_paths:
+        console.log("Reading reports...")
+        metadata["reports"] = metadata["report_files"].apply(read_mimic_reports)
 
     # split the dataset into train/val/test
     train_metadata = metadata[metadata["split"] == "train"]

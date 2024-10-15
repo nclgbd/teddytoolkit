@@ -1,5 +1,6 @@
 # imports
 import os
+from PIL import Image
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 
@@ -10,6 +11,9 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
+
+# open clip
+import open_clip
 
 # monai
 from generative.inferers import DiffusionInferer
@@ -82,6 +86,44 @@ def download_model_weights(
     return location
 
 
+def create_clip_model(cfg: ImageClassificationConfiguration, **kwargs):
+    dataset_cfg = cfg.datasets
+    caption_column = dataset_cfg.caption_column
+    image_column = dataset_cfg.image_column
+    model_path: str = cfg.models.model_path
+    pretrained: str = cfg.models.pretrained
+
+    model, train_image_processor, val_image_processor = (
+        open_clip.create_model_and_transforms(model_path, pretrained=pretrained)
+    )
+    model.eval()
+    tokenizer = open_clip.get_tokenizer(model_path, context_length=model.context_length)
+
+    def tokenize_captions(examples):
+        captions = list(examples[caption_column])
+        text = tokenizer(captions)
+        examples["text"] = text
+        return examples
+
+    def train_transform_images(examples):
+        images = [Image.open(image_file) for image_file in examples[image_column]]
+        examples["pixel_values"] = [train_image_processor(image) for image in images]
+        return examples
+
+    def val_transform_images(examples):
+        images = [Image.open(image_file) for image_file in examples[image_column]]
+        examples["pixel_values"] = [val_image_processor(image) for image in images]
+        return examples
+
+    return (
+        model,
+        tokenizer,
+        tokenize_captions,
+        train_transform_images,
+        val_transform_images,
+    )
+
+
 def instantiate_model(
     cfg: ImageClassificationConfiguration,
     device: torch.device = torch.device("cpu"),
@@ -92,13 +134,16 @@ def instantiate_model(
     Instantiates a model from the given configuration.
 
     ## Args:
-    * `model_cfg` (`ModelConfiguration`): The model configuration.
+    * `cfg` (`ImageClassificationConfiguration`): The configuration.
     * `device` (`torch.device`, optional): The device to instantiate the model on. Defaults to `torch.device("cpu")`.
     """
     console.log("Instantiating model...")
     model_cfg: ModelConfiguration = (
         cfg.models if kwargs.get("model_cfg", None) is None else kwargs.get("model_cfg")
     )
+    if "clip" in model_cfg.get("model_name", None):
+        return create_clip_model(cfg, **kwargs)
+
     model: nn.Module = hydra_instantiate(cfg=model_cfg.model, **kwargs)
 
     if cfg.models.get("last_layer", False):
@@ -108,9 +153,6 @@ def instantiate_model(
     pretrained_weights = model_cfg.get("pretrained_weights", None)
     if pretrained_weights is not None:
         console.log("Loading model weights...")
-        from rtk.utils import login
-
-        ws = login()
 
         try:
             model_name = pretrained_weights.get("name", "")
@@ -119,6 +161,9 @@ def instantiate_model(
             model_path = os.path.join(model_dir, path)
             console.log(f"Found model at: '{model_path}'.")
         except Exception:
+            from rtk.utils import login
+
+            ws = login()
             model_path = download_model_weights(ws, **pretrained_weights)
 
         if use_huggingface:

@@ -86,6 +86,8 @@ class ImageDatasetConfiguration(DatasetConfiguration):
     scan_dataset_version: str = "latest"
     # the extension of the scan files
     extension: str = ".png"
+    caption_column: str = "text_prompts"
+    image_column: str = "image_files"
 
 
 @dataclass
@@ -239,6 +241,12 @@ class ModelConfiguration:
     model: DictConfig = field(default_factory=lambda: DictConfig({"_target_": ""}))
     criterion: DictConfig = field(default_factory=lambda: DictConfig({"_target_": ""}))
     optimizer: DictConfig = field(default_factory=lambda: DictConfig({"_target_": ""}))
+
+
+@dataclass
+class VQAConfiguration(BaseConfiguration):
+    datasets: DatasetConfiguration = field(default_factory=ImageDatasetConfiguration)
+    models: ModelConfiguration = field(default_factory=ModelConfiguration)
 
 
 @dataclass

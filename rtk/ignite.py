@@ -369,7 +369,7 @@ def _log_metrics(
         predictions_df.to_csv(f"artifacts/{split}/predictions_epoch={epoch_str}.csv")
 
     except AttributeError as e:
-        logger.warn(f"Could not save predictions due to: {e}")
+        logger.warning(f"Could not save predictions due to: {e}")
 
     # classification report
     cr_str = classification_report(

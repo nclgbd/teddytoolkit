@@ -8,11 +8,6 @@ hydra-colorlog
 hydra-core
 imbalanced-learn
 itk
-langchain
-langchain-chroma
-langchain-community
-langchain-core
-langchain-huggingface
 matplotlib
 mlflow
 monai
@@ -24,8 +19,8 @@ rich
 scikit-image
 scikit-learn
 timm==0.9.7
-torch==2.3.1
-torchvision==0.18.1
+torch==2.1.2
+torchvision==0.16.2
 tqdm
-transformers==4.36.2
+transformers==4.37.2
 xlrd
