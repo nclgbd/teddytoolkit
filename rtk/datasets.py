@@ -194,92 +194,93 @@ def instantiate_text_dataset(
     )
 
     if dataset_cfg.name == "nih" or dataset_cfg.name == "cxr14":
-        from rtk._datasets.nih import DATA_ENTRY_PATH
+        raise NotImplementedError("NIH and CXR14 datasets are not supported.")
+        # from rtk._datasets.nih import DATA_ENTRY_PATH
 
-        id2label = {i: l for i, l in enumerate(class_names)}
-        label2id = {l: i for i, l in enumerate(class_names)}
-        encodings = {"id2label": id2label, "label2id": label2id}
+        # id2label = {i: l for i, l in enumerate(class_names)}
+        # label2id = {l: i for i, l in enumerate(class_names)}
+        # encodings = {"id2label": id2label, "label2id": label2id}
 
-        data_entry = pd.read_csv(DATA_ENTRY_PATH).set_index("Image Index")
-        finding_labels = data_entry["Finding Labels"]
-        metadata = metadata.join(finding_labels, on="Image Index")
-        metadata["multiclass_labels"] = metadata["Finding Labels"].apply(
-            lambda x: [x_i for x_i in x.split("|")] if "|" in x else [x]
-        )
+        # data_entry = pd.read_csv(DATA_ENTRY_PATH).set_index("Image Index")
+        # finding_labels = data_entry["Finding Labels"]
+        # metadata = metadata.join(finding_labels, on="Image Index")
+        # metadata["multiclass_labels"] = metadata["Finding Labels"].apply(
+        #     lambda x: [x_i for x_i in x.split("|")] if "|" in x else [x]
+        # )
 
-        # remove all of the negative class for diffusion
-        if subset_to_positive_class:
-            console.log("Removing all negative classes...")
-            metadata = metadata[metadata[positive_class] == 1]
+        # # remove all of the negative class for diffusion
+        # if subset_to_positive_class:
+        #     console.log("Removing all negative classes...")
+        #     metadata = metadata[metadata[positive_class] == 1]
 
-        if cfg.mode == "evaluate":
-            overlapped_classes = set(NIH_CLASS_NAMES).intersection(
-                set(MIMIC_CLASS_NAMES)
-            )
-            drop_classes = list(set(class_names) - set(overlapped_classes))
-            for d in drop_classes:
-                metadata = metadata.drop(metadata[metadata[d] == 1].index)
-            console.log(
-                f"Overlapped classes: {overlapped_classes}. Dropping: {drop_classes}"
-            )
+        # if cfg.mode == "evaluate":
+        #     overlapped_classes = set(NIH_CLASS_NAMES).intersection(
+        #         set(MIMIC_CLASS_NAMES)
+        #     )
+        #     drop_classes = list(set(class_names) - set(overlapped_classes))
+        #     for d in drop_classes:
+        #         metadata = metadata.drop(metadata[metadata[d] == 1].index)
+        #     console.log(
+        #         f"Overlapped classes: {overlapped_classes}. Dropping: {drop_classes}"
+        #     )
 
-        mlb = MultiLabelBinarizer(classes=NIH_CLASS_NAMES)
-        mlb.fit(metadata["multiclass_labels"])
+        # mlb = MultiLabelBinarizer(classes=NIH_CLASS_NAMES)
+        # mlb.fit(metadata["multiclass_labels"])
 
-        # Create train and test splits
-        console.log("Creating huggingface dataset...")
+        # # Create train and test splits
+        # console.log("Creating huggingface dataset...")
 
-        def split_data(metadata: dict, split: str = "train"):
-            console.log(f"Creating '{split}' split...")
-            if split == "train":
-                # train split
-                with open(os.path.join(data_path, "train_val_list.txt"), "r") as f:
-                    train_val_list = [idx.strip() for idx in f.readlines()]
-                    metadata = metadata[metadata.index.isin(train_val_list)]
-                    metadata, val_metadata = train_test_split(
-                        metadata,
-                        stratify=metadata[positive_class],
-                        random_state=cfg.random_state,
-                        **cfg.sklearn.model_selection.train_test_split,
-                    )
+        # def split_data(metadata: dict, split: str = "train"):
+        #     console.log(f"Creating '{split}' split...")
+        #     if split == "train":
+        #         # train split
+        #         with open(os.path.join(data_path, "train_val_list.txt"), "r") as f:
+        #             train_val_list = [idx.strip() for idx in f.readlines()]
+        #             metadata = metadata[metadata.index.isin(train_val_list)]
+        #             metadata, val_metadata = train_test_split(
+        #                 metadata,
+        #                 stratify=metadata[positive_class],
+        #                 random_state=cfg.random_state,
+        #                 **cfg.sklearn.model_selection.train_test_split,
+        #             )
 
-                    if (
-                        preprocessing_cfg.use_sampling
-                        and subset_to_positive_class == False
-                        and cfg.mode != "evaluate"
-                    ):
-                        metadata = resample_to_value(cfg, metadata, class_names)
-                    return metadata, val_metadata
-            else:
-                # test split
-                with open(os.path.join(data_path, "test_list.txt"), "r") as f:
-                    test_list = [idx.strip() for idx in f.readlines()]
-                    metadata = metadata[metadata.index.isin(test_list)]
-                    return metadata
+        #             if (
+        #                 preprocessing_cfg.use_sampling
+        #                 and subset_to_positive_class == False
+        #                 and cfg.mode != "evaluate"
+        #             ):
+        #                 metadata = resample_to_value(cfg, metadata, class_names)
+        #             return metadata, val_metadata
+        #     else:
+        #         # test split
+        #         with open(os.path.join(data_path, "test_list.txt"), "r") as f:
+        #             test_list = [idx.strip() for idx in f.readlines()]
+        #             metadata = metadata[metadata.index.isin(test_list)]
+        #             return metadata
 
-        train_metadata, val_metadata = split_data(metadata, split="train")
-        test_metadata = split_data(metadata, split="test")
+        # train_metadata, val_metadata = split_data(metadata, split="train")
+        # test_metadata = split_data(metadata, split="test")
 
-        for split, data in {
-            "train": train_metadata,
-            "validation": val_metadata,
-            "test": test_metadata,
-        }.items():
-            class_counts = data[class_names].sum()
-            console.log(f"{split.capitalize()} class counts:\n{class_counts}")
+        # for split, data in {
+        #     "train": train_metadata,
+        #     "validation": val_metadata,
+        #     "test": test_metadata,
+        # }.items():
+        #     class_counts = data[class_names].sum()
+        #     console.log(f"{split.capitalize()} class counts:\n{class_counts}")
 
-        train_dataset = create_text_dataset(
-            train_metadata, tokenizer=tokenizer, split="train"
-        )
-        eval_dataset = create_text_dataset(
-            val_metadata, tokenizer=tokenizer, split="validation"
-        )
-        test_dataset = create_text_dataset(
-            test_metadata, tokenizer=tokenizer, split="test"
-        )
+        # train_dataset = create_text_dataset(
+        #     train_metadata, tokenizer=tokenizer, split="train"
+        # )
+        # eval_dataset = create_text_dataset(
+        #     val_metadata, tokenizer=tokenizer, split="validation"
+        # )
+        # test_dataset = create_text_dataset(
+        #     test_metadata, tokenizer=tokenizer, split="test"
+        # )
 
-        ret: list = [train_dataset, eval_dataset, test_dataset, encodings]
-        return ret
+        # ret: list = [train_dataset, eval_dataset, test_dataset, encodings]
+        # return ret
 
     elif dataset_cfg.name == "mimic-cxr":
         ret: list = load_mimic_text_dataset(

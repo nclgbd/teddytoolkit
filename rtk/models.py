@@ -15,10 +15,6 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 # open clip
 import open_clip
 
-# monai
-from generative.inferers import DiffusionInferer
-from generative.networks.schedulers import Scheduler
-
 # rtk
 from rtk import DEFAULT_MODEL_PATH
 from rtk.config import (
@@ -211,32 +207,3 @@ def instantiate_optimizer(
         cfg=cfg.models.optimizer, params=model.parameters(), **kwargs
     )
     return optimizer
-
-
-def instantiate_diffusion_scheduler(cfg: DiffusionModelConfiguration, **kwargs):
-    """
-    Instantiates the scheduler from a given configuration.
-
-    ## Args:
-    * `model_cfg` (`DiffusionModelConfiguration`): The model configuration.
-    """
-    model_cfg = cfg.models
-    scheduler: Scheduler = hydra_instantiate(cfg=model_cfg.scheduler, **kwargs)
-    return scheduler
-
-
-def instantiate_diffusion_inferer(
-    cfg: ImageClassificationConfiguration, scheduler: Scheduler, **kwargs
-):
-    """
-    Instantiates the inferer from a given configuration.
-
-    ## Args:
-    * `model_cfg` (`ModelConfiguration`): The model configuration.
-    * `scheduler` (`Scheduler`): The scheduler to use.
-    """
-    model_cfg = cfg.models
-    inferer: DiffusionInferer = hydra_instantiate(
-        cfg=model_cfg.inference, scheduler=scheduler, **kwargs
-    )
-    return inferer

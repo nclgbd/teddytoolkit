@@ -200,39 +200,38 @@ def load_mimic_text_dataset(
         class_counts = data[class_names].sum()
         console.log(f"'{split.capitalize()}' class counts:\n{class_counts}")
 
-    if return_metadata:
-        return train_metadata, val_metadata, test_metadata
+    return train_metadata, val_metadata, test_metadata
 
-    train_dataset: HGFDataset = create_text_dataset(
-        train_metadata,
-        data_path=dataset_cfg.scan_data,
-        target=target,
-        # mlb=mlb,
-        tokenizer=tokenizer,
-        split="train",
-        **kwargs,
-    )
-    eval_dataset: HGFDataset = create_text_dataset(
-        val_metadata,
-        target=target,
-        # mlb=mlb,
-        data_path=dataset_cfg.scan_data,
-        tokenizer=tokenizer,
-        split="validation",
-        **kwargs,
-    )
-    test_dataset: HGFDataset = create_text_dataset(
-        test_metadata,
-        target=target,
-        # mlb=mlb,
-        data_path=dataset_cfg.scan_data,
-        tokenizer=tokenizer,
-        split="test",
-        **kwargs,
-    )
+    # train_dataset: HGFDataset = create_text_dataset(
+    #     train_metadata,
+    #     data_path=dataset_cfg.scan_data,
+    #     target=target,
+    #     # mlb=mlb,
+    #     tokenizer=tokenizer,
+    #     split="train",
+    #     **kwargs,
+    # )
+    # eval_dataset: HGFDataset = create_text_dataset(
+    #     val_metadata,
+    #     target=target,
+    #     # mlb=mlb,
+    #     data_path=dataset_cfg.scan_data,
+    #     tokenizer=tokenizer,
+    #     split="validation",
+    #     **kwargs,
+    # )
+    # test_dataset: HGFDataset = create_text_dataset(
+    #     test_metadata,
+    #     target=target,
+    #     # mlb=mlb,
+    #     data_path=dataset_cfg.scan_data,
+    #     tokenizer=tokenizer,
+    #     split="test",
+    #     **kwargs,
+    # )
 
-    ret: list = [train_dataset, eval_dataset, test_dataset, encodings]
-    return ret
+    # ret: list = [train_dataset, eval_dataset, test_dataset, encodings]
+    # return ret
 
 
 def load_mimic_image_datasets(
